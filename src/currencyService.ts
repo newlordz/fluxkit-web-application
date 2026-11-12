@@ -168,6 +168,20 @@ export async function convertCurrencyOnBackend(
           source: "backend",
         }
       }
+    } else {
+      // Try GET query conversion route
+      const getRes = await fetch(
+        `/api/currency?amount=${cleanAmount}&from=${from}&to=${to}`,
+      )
+      if (getRes.ok) {
+        const data = await getRes.json()
+        if (data && typeof data.convertedAmount === "number") {
+          return {
+            ...data,
+            source: "backend",
+          }
+        }
+      }
     }
   } catch {
     // If backend endpoint is offline or running in mock test mode, continue to fallback

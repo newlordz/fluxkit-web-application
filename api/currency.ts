@@ -112,12 +112,21 @@ export default async function handler(req: any, res: any) {
 
     if (req.method === "POST") {
       let body: any = req.body
-      if (typeof body === "string") {
+      if (!body) {
+        const buffers: Buffer[] = []
+        for await (const chunk of req) {
+          buffers.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
+        }
+        const data = Buffer.concat(buffers).toString("utf-8")
+        if (data) {
+          try {
+            body = JSON.parse(data)
+          } catch {}
+        }
+      } else if (typeof body === "string") {
         try {
           body = JSON.parse(body)
-        } catch {
-          body = {}
-        }
+        } catch {}
       }
 
       // If updating the backend exchange rate
