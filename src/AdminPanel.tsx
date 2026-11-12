@@ -34,6 +34,10 @@ import {
   approveProSubscription,
   revokeProSubscription,
   updateUserRole,
+  isRootAdmin,
+  deleteUser,
+  createUserByAdmin,
+  changeUserPassword,
 } from "./adminService"
 import {
   getCustomPages,
