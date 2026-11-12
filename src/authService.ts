@@ -20,6 +20,7 @@ export interface UserAccount {
   role: "admin" | "sub-admin" | "user"
   subscriptionTier: "standard" | "pro"
   proStatus: "none" | "pending" | "active"
+  unlockedTools?: string[]
   createdAt: string
   lastLoginAt: string
   message?: string

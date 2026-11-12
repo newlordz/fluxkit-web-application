@@ -43,7 +43,11 @@ import {
   onAuthStateChanged,
   type UserAccount,
 } from "./authService"
-import { canUserAccessTool } from "./adminService"
+import {
+  canUserAccessTool,
+  isToolPro,
+  getFormattedToolPrice,
+} from "./adminService"
 import {
   getCustomPageBySlug,
   getPublishedCustomPages,
@@ -112,20 +116,40 @@ function ToolCard({
       <span className="tool-card-bottom">
         <span className="tool-card-category">{tool.category}</span>
         <span
-          className={`tool-badge ${
-            tool.integrationRequired
-              ? "badge-backend"
-              : tool.available
-                ? "badge-live"
-                : "badge-soon"
-          }`}
+          style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
         >
-          {tool.integrationRequired
-            ? "Backend required"
-            : tool.available
-              ? "Open tool"
-              : "Coming soon"}{" "}
-          <ArrowRight size={12} />
+          <span
+            style={{
+              fontSize: "11px",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              fontWeight: 700,
+              background: isToolPro(tool.id)
+                ? "rgba(168,85,247,0.15)"
+                : "rgba(16,185,129,0.15)",
+              color: isToolPro(tool.id) ? "#a855f7" : "#10b981",
+            }}
+          >
+            {isToolPro(tool.id)
+              ? `PRO · ${getFormattedToolPrice(tool.id)}`
+              : "FREE"}
+          </span>
+          <span
+            className={`tool-badge ${
+              tool.integrationRequired
+                ? "badge-backend"
+                : tool.available
+                  ? "badge-live"
+                  : "badge-soon"
+            }`}
+          >
+            {tool.integrationRequired
+              ? "Backend required"
+              : tool.available
+                ? "Open tool"
+                : "Coming soon"}{" "}
+            <ArrowRight size={12} />
+          </span>
         </span>
       </span>
     </button>
@@ -138,7 +162,7 @@ export default function App() {
   )
   const [page, setPage] = useState(() => {
     const initialUser = getCurrentUser()
-    if (initialUser?.role === "admin") {
+    if (initialUser?.role === "admin" || initialUser?.role === "sub-admin") {
       return "admin"
     }
     return location.hash.slice(1) || "overview"
@@ -397,7 +421,7 @@ export default function App() {
         currentUser={currentUser}
         onAuthSuccess={(user) => {
           setCurrentUser(user)
-          if (user.role === "admin") {
+          if (user.role === "admin" || user.role === "sub-admin") {
             navigate("admin")
           } else {
             navigate("overview")
@@ -405,6 +429,8 @@ export default function App() {
         }}
       />
     )
+  const isAdmin =
+    currentUser?.role === "admin" || currentUser?.role === "sub-admin"
   return (
     <div className={`app-shell ${collapsed ? "is-collapsed" : ""}`}>
       <a
@@ -432,9 +458,7 @@ export default function App() {
       >
         <button
           className="brand"
-          onClick={() =>
-            navigate(currentUser?.role === "admin" ? "admin" : "overview")
-          }
+          onClick={() => navigate(isAdmin ? "admin" : "overview")}
         >
           <span className="brand-mark">
             <Zap size={23} fill="currentColor" />
@@ -444,13 +468,17 @@ export default function App() {
             <span className="brand-period">.</span>
           </span>
           <span className="workspace-badge">
-            {currentUser?.role === "admin" ? "ADMIN" : "WORKSPACE"}
+            {isAdmin
+              ? currentUser?.role === "sub-admin"
+                ? "SUB-ADMIN"
+                : "ADMIN"
+              : "WORKSPACE"}
           </span>
         </button>
         <button
           className="workspace-switch"
           onClick={() => {
-            if (currentUser?.role === "admin") {
+            if (isAdmin) {
               navigate("admin")
             } else {
               navigate("settings")
@@ -460,9 +488,7 @@ export default function App() {
           <span
             className="workspace-avatar"
             style={
-              currentUser?.role === "admin"
-                ? { background: "#a855f7", color: "#ffffff" }
-                : undefined
+              isAdmin ? { background: "#a855f7", color: "#ffffff" } : undefined
             }
           >
             {currentUser ? currentUser.name.slice(0, 1).toUpperCase() : "J"}
@@ -472,8 +498,10 @@ export default function App() {
               ? `${currentUser.name.split(" ")[0]}'s workspace`
               : "Personal workspace"}
             <small>
-              {currentUser?.role === "admin"
-                ? "Administrator (Full Access)"
+              {isAdmin
+                ? currentUser?.role === "sub-admin"
+                  ? "Sub-Administrator"
+                  : "Administrator (Full Access)"
                 : currentUser?.subscriptionTier === "pro"
                   ? "Pro plan"
                   : currentUser
@@ -484,7 +512,7 @@ export default function App() {
           <ChevronDown size={15} />
         </button>
         <nav>
-          {currentUser?.role === "admin" && (
+          {isAdmin && (
             <>
               <div className="nav-label">ADMINISTRATION</div>
               <button
@@ -510,7 +538,7 @@ export default function App() {
           )}
 
           <div className="nav-label">
-            {currentUser?.role === "admin" ? "WORKSTATION" : "WORKSPACE"}
+            {isAdmin ? "WORKSTATION" : "WORKSPACE"}
           </div>
           {navItems.map((n) => (
             <button
@@ -558,12 +586,10 @@ export default function App() {
               <Sparkles size={17} />
             </span>
             <h3>
-              {currentUser?.role === "admin"
-                ? "Admin & Tools Ready."
-                : "A little less busywork."}
+              {isAdmin ? "Admin & Tools Ready." : "A little less busywork."}
             </h3>
             <p>
-              {currentUser?.role === "admin"
+              {isAdmin
                 ? "All workstation tools & gateway integrations at your disposal."
                 : "A little more possibility. Find your next favorite tool."}
             </p>
@@ -582,16 +608,12 @@ export default function App() {
           </button>
           <button
             className="user-profile"
-            onClick={() =>
-              currentUser?.role === "admin"
-                ? navigate("admin")
-                : navigate("settings")
-            }
+            onClick={() => (isAdmin ? navigate("admin") : navigate("settings"))}
           >
             <span
               className="avatar"
               style={
-                currentUser?.role === "admin"
+                isAdmin
                   ? { background: "#a855f7", color: "#ffffff" }
                   : undefined
               }
@@ -603,7 +625,13 @@ export default function App() {
             <span>
               {currentUser ? currentUser.name : `${profile} Davis`}
               <small>
-                {currentUser ? currentUser.email : "Personal account"}
+                {isAdmin
+                  ? currentUser?.role === "sub-admin"
+                    ? "Sub-Administrator"
+                    : "Administrator"
+                  : currentUser
+                    ? currentUser.email
+                    : "Personal account"}
               </small>
             </span>
             <ChevronDown size={15} />
@@ -655,7 +683,7 @@ export default function App() {
               <span>Find a tool</span>
               <kbd>⌘ K</kbd>
             </button>
-            {currentUser?.role === "admin" && (
+            {isAdmin && (
               <button
                 type="button"
                 onClick={() => navigate("admin")}
@@ -771,7 +799,7 @@ export default function App() {
                       </button>
                     </>
                   ) : null}
-                  {currentUser?.role === "admin" ? (
+                  {isAdmin ? (
                     <button
                       onClick={() => {
                         setMenu(false)

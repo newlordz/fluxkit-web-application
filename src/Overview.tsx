@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { tools, brand, type Tool, type Category } from "./config"
 import ToolBadgeIcon from "./ToolBadgeIcon"
+import { isToolPro, getFormattedToolPrice } from "./adminService"
 
 interface ActivityItem {
   name: string
@@ -1058,6 +1059,26 @@ export default function Overview({
                     />
 
                     <div className="card-header-actions">
+                      <span
+                        className="card-format-tag"
+                        style={
+                          isToolPro(t.id)
+                            ? {
+                                background: "rgba(168,85,247,0.15)",
+                                color: "#a855f7",
+                                fontWeight: 700,
+                              }
+                            : {
+                                background: "rgba(16,185,129,0.15)",
+                                color: "#10b981",
+                                fontWeight: 700,
+                              }
+                        }
+                      >
+                        {isToolPro(t.id)
+                          ? `PRO · ${getFormattedToolPrice(t.id)}`
+                          : "FREE"}
+                      </span>
                       {t.formatBadge && (
                         <span className="card-format-tag">{t.formatBadge}</span>
                       )}

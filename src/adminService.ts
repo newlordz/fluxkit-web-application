@@ -145,7 +145,89 @@ export function canUserAccessTool(
   if (user.role === "admin" || user.role === "sub-admin") {
     return true
   }
-  return user.subscriptionTier === "pro" && user.proStatus === "active"
+  if (user.subscriptionTier === "pro" && user.proStatus === "active") {
+    return true
+  }
+  if (
+    user.unlockedTools &&
+    Array.isArray(user.unlockedTools) &&
+    user.unlockedTools.includes(toolId)
+  ) {
+    return true
+  }
+  return false
+}
+
+export function unlockSingleToolForUser(
+  userId: string,
+  toolId: string,
+): UserAccount {
+  const accounts = getRegisteredAccounts()
+  const idx = accounts.findIndex((a) => a.id === userId)
+  let updated: UserAccount
+
+  if (idx >= 0) {
+    const existing = accounts[idx].unlockedTools || []
+    if (!existing.includes(toolId)) {
+      accounts[idx] = {
+        ...accounts[idx],
+        unlockedTools: [...existing, toolId],
+      }
+    }
+    saveRegisteredAccounts(accounts)
+    updated = accounts[idx]
+  } else {
+    const current = getCurrentUser()
+    const existing = current?.unlockedTools || []
+    const combined = existing.includes(toolId)
+      ? existing
+      : [...existing, toolId]
+    if (current && current.id === userId) {
+      updated = {
+        ...current,
+        unlockedTools: combined,
+      }
+    } else {
+      updated = {
+        id: userId,
+        name: "Customer",
+        email: "customer@fluxkit.com",
+        provider: "email",
+        role: "user",
+        subscriptionTier: "standard",
+        proStatus: "none",
+        unlockedTools: [toolId],
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      }
+    }
+  }
+
+  const current = getCurrentUser()
+  if (current && (current.id === userId || !current.id)) {
+    saveCurrentUser(updated)
+  }
+  return updated
+}
+
+export function setBulkToolPrices(toolIds: string[], price: number): void {
+  const prices = getAllToolPrices()
+  const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
+  const val = isNaN(clean) ? 0 : clean
+  for (const id of toolIds) {
+    prices[id] = val
+  }
+  saveAllToolPrices(prices)
+}
+
+export function setCategoryPrice(category: string, price: number): void {
+  const matchingTools = tools.filter(
+    (t) => t.category.toLowerCase() === category.toLowerCase(),
+  )
+  setBulkToolPrices(
+    matchingTools.map((t) => t.id),
+    price,
+  )
 }
 
 export function activateProSimulatedPayment(userId: string): UserAccount {

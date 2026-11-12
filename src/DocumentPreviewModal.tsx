@@ -7,6 +7,7 @@ import {
   Layers,
   RotateCw,
   ChevronRight,
+  ChevronLeft,
   Check,
   Trash2,
   FileText,
@@ -14,7 +15,10 @@ import {
   ArrowUpDown,
   Maximize2,
   ZoomIn,
+  LayoutGrid,
+  List,
 } from "lucide-react"
+import { PDFDocument } from "pdf-lib"
 import {
   extractPDFPages,
   getSinglePagePdfUrl,
@@ -36,6 +40,117 @@ interface DocumentPreviewModalProps {
     orderedPages?: number[]
   }) => void
   onClose: () => void
+}
+
+export interface DocumentPreviewData {
+  pageCount: number
+  imageUrl?: string
+  pdfUrl?: string
+  textLines?: string[]
+  fullText?: string
+  width?: number
+  height?: number
+  isImage?: boolean
+}
+
+export function getFileKey(file: File, index?: number): string {
+  return `${file.name}-${file.size}-${file.lastModified || index || 0}`
+}
+
+export async function loadFilePreview(
+  file: File,
+): Promise<DocumentPreviewData> {
+  const isImg =
+    file.type.startsWith("image/") ||
+    /\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(file.name)
+  if (isImg) {
+    try {
+      const url = URL.createObjectURL(file)
+      return {
+        pageCount: 1,
+        imageUrl: url,
+        isImage: true,
+      }
+    } catch {
+      return { pageCount: 1, isImage: true }
+    }
+  }
+
+  const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+  if (isPdf) {
+    try {
+      const buf = await file.arrayBuffer()
+      const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
+      const pageCount = doc.getPageCount()
+      let width = 595
+      let height = 842
+      try {
+        const p1 = doc.getPage(0)
+        const size = p1.getSize()
+        width = size.width
+        height = size.height
+      } catch {}
+
+      // Embedded images
+      let imageUrl: string | undefined = undefined
+      try {
+        const imgs = await extractEmbeddedImagesFromPdf(new Uint8Array(buf))
+        if (imgs && imgs.length > 0) {
+          imageUrl = imgs[0]
+        }
+      } catch {}
+
+      // Extracted text lines from page 1
+      let textLines: string[] = []
+      let fullText: string = ""
+      try {
+        const pgs = await extractPDFPages(buf)
+        if (pgs && pgs.length > 0) {
+          textLines = pgs[0].lines.slice(0, 8)
+          fullText = pgs[0].fullText
+        }
+      } catch {}
+
+      // Single-page PDF URL for clean inspection
+      let pdfUrl: string | undefined = undefined
+      try {
+        pdfUrl = await getSinglePagePdfUrl(file, 1)
+      } catch {
+        try {
+          pdfUrl = URL.createObjectURL(file)
+        } catch {}
+      }
+
+      return {
+        pageCount,
+        imageUrl,
+        pdfUrl,
+        textLines,
+        fullText,
+        width,
+        height,
+      }
+    } catch {
+      return { pageCount: 1, textLines: [file.name] }
+    }
+  }
+
+  // Text or others
+  try {
+    const text = await file.text()
+    const lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+    return {
+      pageCount: 1,
+      textLines: lines,
+      fullText: text.slice(0, 500),
+    }
+  } catch {
+    return { pageCount: 1 }
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -97,29 +212,208 @@ function splitPointsToRanges(
   return parts.join(", ")
 }
 
-// ─── FileCard (merge mode) ───────────────────────────────────────────────────
+// ─── FilePreviewCard (visual grid mode) ──────────────────────────────────────
 
-interface FileCardProps {
+interface FilePreviewCardProps {
   file: File
   index: number
   total: number
+  preview?: DocumentPreviewData
   isDragSource: boolean
   isDragOver: boolean
   onDragStart: (e: React.DragEvent, i: number) => void
   onDragEnter: (i: number) => void
   onDragEnd: () => void
   onRemove: (i: number) => void
+  onInspect: (file: File, index: number) => void
+  onMove: (from: number, to: number) => void
 }
 
-function FileCard({
+function FilePreviewCard({
   file,
   index,
+  total,
+  preview,
   isDragSource,
   isDragOver,
   onDragStart,
   onDragEnter,
   onDragEnd,
   onRemove,
+  onInspect,
+  onMove,
+}: FilePreviewCardProps) {
+  const ext = fileExt(file)
+  const color = extColor(ext)
+
+  return (
+    <div
+      className={[
+        "dpm-file-preview-card",
+        isDragSource ? "dpm-file-preview-card--dragging" : "",
+        isDragOver ? "dpm-file-preview-card--over" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => e.preventDefault()}
+    >
+      {/* Card Header */}
+      <div className="dpm-file-preview-card__header">
+        <span className="dpm-file-preview-card__order">#{index + 1}</span>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "2px",
+            color: "var(--muted)",
+          }}
+          title="Grab and move this card to set merge order"
+        >
+          <GripVertical size={16} />
+        </div>
+        <div className="dpm-file-preview-card__actions">
+          <button
+            type="button"
+            className="dpm-icon-btn"
+            disabled={index === 0}
+            onClick={() => onMove(index, index - 1)}
+            title="Move earlier in merge order"
+            aria-label={`Move ${file.name} earlier`}
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <button
+            type="button"
+            className="dpm-icon-btn"
+            disabled={index === total - 1}
+            onClick={() => onMove(index, index + 1)}
+            title="Move later in merge order"
+            aria-label={`Move ${file.name} later`}
+          >
+            <ChevronRight size={15} />
+          </button>
+          <button
+            type="button"
+            className="dpm-icon-btn dpm-icon-btn--danger"
+            onClick={() => onRemove(index)}
+            title={`Remove ${file.name}`}
+            aria-label={`Remove ${file.name}`}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Card Preview Canvas */}
+      <div
+        className="dpm-file-preview-canvas"
+        onClick={() => onInspect(file, index)}
+        title="Click to inspect enlarged preview"
+      >
+        {preview?.imageUrl ? (
+          <img
+            src={preview.imageUrl}
+            alt={`Preview of ${file.name}`}
+            className="dpm-file-preview-canvas__img"
+          />
+        ) : preview?.textLines && preview.textLines.length > 0 ? (
+          <div className="dpm-file-preview-canvas__paper">
+            <div className="dpm-file-preview-canvas__line dpm-file-preview-canvas__line--title" />
+            {preview.textLines.map((line, li) => (
+              <div key={li} className="dpm-file-preview-canvas__text-flow">
+                {line}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="dpm-file-preview-canvas__paper">
+            <div className="dpm-file-preview-canvas__line dpm-file-preview-canvas__line--title" />
+            <div className="dpm-file-preview-canvas__line" />
+            <div className="dpm-file-preview-canvas__line" />
+            <div className="dpm-file-preview-canvas__line" />
+            <div
+              className="dpm-file-preview-canvas__line"
+              style={{ width: "60%" }}
+            />
+          </div>
+        )}
+
+        {/* Page Count Badge */}
+        <span className="dpm-file-preview-canvas__badge">
+          {preview?.pageCount ?? 1} page
+          {(preview?.pageCount ?? 1) !== 1 ? "s" : ""}
+        </span>
+
+        {/* Hover Click to Preview */}
+        <div className="dpm-file-preview-canvas__overlay">
+          <ZoomIn size={20} />
+          <span>Inspect Preview</span>
+        </div>
+      </div>
+
+      {/* Card Footer */}
+      <div className="dpm-file-preview-card__footer">
+        <div className="dpm-file-preview-card__info">
+          <span className="dpm-file-preview-card__title" title={file.name}>
+            {file.name}
+          </span>
+          <span className="dpm-file-preview-card__meta">
+            <span
+              className="dpm-file-preview-card__tag"
+              style={{ background: color }}
+            >
+              {ext}
+            </span>
+            <span>{fmtSize(file.size)}</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          className="dpm-icon-btn"
+          onClick={() => onInspect(file, index)}
+          title="Inspect preview"
+        >
+          <Eye size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── FileCard (merge mode - list view) ────────────────────────────────────────
+
+interface FileCardProps {
+  file: File
+  index: number
+  total: number
+  preview?: DocumentPreviewData
+  isDragSource: boolean
+  isDragOver: boolean
+  onDragStart: (e: React.DragEvent, i: number) => void
+  onDragEnter: (i: number) => void
+  onDragEnd: () => void
+  onRemove: (i: number) => void
+  onInspect?: (file: File, index: number) => void
+  onMove?: (from: number, to: number) => void
+}
+
+function FileCard({
+  file,
+  index,
+  total,
+  preview,
+  isDragSource,
+  isDragOver,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onRemove,
+  onInspect,
+  onMove,
 }: FileCardProps) {
   const ext = fileExt(file)
   const color = extColor(ext)
@@ -139,19 +433,83 @@ function FileCard({
       onDragEnd={onDragEnd}
       onDragOver={(e) => e.preventDefault()}
     >
-      <div className="dpm-file-card__grip">
+      <div className="dpm-file-card__grip" title="Grab & move">
         <GripVertical size={16} />
       </div>
+
+      {/* Mini Thumbnail Preview */}
+      <div
+        className="dpm-file-card__thumb"
+        onClick={() => onInspect?.(file, index)}
+        title="Click to inspect preview"
+      >
+        {preview?.imageUrl ? (
+          <img src={preview.imageUrl} alt={file.name} />
+        ) : (
+          <div className="dpm-file-card__thumb-lines">
+            <div
+              className="dpm-file-card__thumb-line"
+              style={{ width: "80%" }}
+            />
+            <div className="dpm-file-card__thumb-line" />
+            <div
+              className="dpm-file-card__thumb-line"
+              style={{ width: "60%" }}
+            />
+          </div>
+        )}
+      </div>
+
       <div className="dpm-file-card__badge" style={{ background: color }}>
         {ext}
       </div>
+
       <div className="dpm-file-card__info">
         <span className="dpm-file-card__name" title={file.name}>
           {file.name}
         </span>
-        <span className="dpm-file-card__meta">{fmtSize(file.size)}</span>
+        <span className="dpm-file-card__meta">
+          {fmtSize(file.size)} · {preview?.pageCount ?? 1} page
+          {(preview?.pageCount ?? 1) !== 1 ? "s" : ""}
+        </span>
       </div>
+
       <div className="dpm-file-card__order">#{index + 1}</div>
+
+      {onMove && (
+        <div style={{ display: "inline-flex", gap: "2px" }}>
+          <button
+            type="button"
+            className="dpm-icon-btn"
+            disabled={index === 0}
+            onClick={() => onMove(index, index - 1)}
+            title="Move up"
+          >
+            <ChevronLeft size={14} style={{ transform: "rotate(90deg)" }} />
+          </button>
+          <button
+            type="button"
+            className="dpm-icon-btn"
+            disabled={index === total - 1}
+            onClick={() => onMove(index, index + 1)}
+            title="Move down"
+          >
+            <ChevronRight size={14} style={{ transform: "rotate(90deg)" }} />
+          </button>
+        </div>
+      )}
+
+      {onInspect && (
+        <button
+          type="button"
+          className="dpm-icon-btn"
+          onClick={() => onInspect(file, index)}
+          title="Inspect preview"
+        >
+          <Eye size={14} />
+        </button>
+      )}
+
       <button
         type="button"
         className="dpm-file-card__remove"

@@ -14,6 +14,8 @@ import {
   activateProSimulatedPayment,
   requestProApproval,
   getFormattedToolPrice,
+  getToolPrice,
+  unlockSingleToolForUser,
 } from "./adminService"
 import {
   getActiveGateway,
@@ -54,6 +56,23 @@ export default function ProActivationModal({
     tool.id,
     activeGateway?.currency || "USD",
   )
+  const rawToolPrice = getToolPrice(tool.id)
+
+  const handleBuySingleTool = () => {
+    setLoading("payment")
+    setErrorMessage("")
+    setTimeout(() => {
+      const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
+      const updated = unlockSingleToolForUser(userId, tool.id)
+      setLoading(null)
+      setSuccessMessage(
+        `Success! You have unlocked a Single-Tool Pass for ${tool.name}. Full access is now active!`,
+      )
+      if (onActivated) {
+        onActivated(updated)
+      }
+    }, 600)
+  }
 
   const handleSimulatedPayment = () => {
     setLoading("payment")
@@ -224,10 +243,100 @@ export default function ProActivationModal({
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: "16px",
-              marginBottom: "28px",
+              marginBottom: "20px",
             }}
           >
-            {/* Instant Card Payment option */}
+            {/* Option 1: Single-Tool Pass */}
+            <div
+              style={{
+                border: "1px solid rgba(59,130,246,0.4)",
+                background: "rgba(59,130,246,0.06)",
+                borderRadius: "12px",
+                padding: "20px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    color: "#3b82f6",
+                    fontWeight: 600,
+                  }}
+                >
+                  <Sparkles size={18} /> Single-Tool Pass
+                </div>
+                <div
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: 800,
+                    margin: "12px 0 6px",
+                  }}
+                >
+                  {toolPriceLabel}{" "}
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 400,
+                      color: "var(--muted)",
+                    }}
+                  >
+                    one-off
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--muted)",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Unlock access to <strong>{tool.name}</strong> only. No
+                  recurring billing or automatic subscription renewals.
+                </p>
+              </div>
+              <div>
+                <button
+                  className="primary"
+                  style={{
+                    marginTop: "16px",
+                    width: "100%",
+                    justifyContent: "center",
+                    background: "#3b82f6",
+                    borderColor: "#3b82f6",
+                  }}
+                  disabled={loading !== null}
+                  onClick={handleBuySingleTool}
+                >
+                  {loading === "payment"
+                    ? "Unlocking tool…"
+                    : `Buy ${tool.name} (${toolPriceLabel})`}
+                </button>
+                <div style={{ textAlign: "center", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={handleBuySingleTool}
+                    disabled={loading !== null}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted)",
+                      fontSize: "11px",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Simulate one-off tool purchase
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Option 2: All-Access Pro Plan */}
             <div
               style={{
                 border: "1px solid rgba(168,85,247,0.4)",
@@ -249,22 +358,7 @@ export default function ProActivationModal({
                     fontWeight: 600,
                   }}
                 >
-                  <CreditCard size={18} /> Instant Activation
-                </div>
-                <div style={{ marginTop: "6px" }}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      fontSize: "11px",
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      background: "rgba(168,85,247,0.15)",
-                      color: "#a855f7",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Tool Price: {toolPriceLabel}
-                  </span>
+                  <CreditCard size={18} /> All-Access Pro Plan
                 </div>
                 <div
                   style={{
@@ -281,7 +375,7 @@ export default function ProActivationModal({
                       color: "var(--muted)",
                     }}
                   >
-                    activation fee
+                    per month
                   </span>
                 </div>
                 <p
@@ -291,10 +385,8 @@ export default function ProActivationModal({
                     lineHeight: 1.6,
                   }}
                 >
-                  Processed securely via{" "}
-                  <strong>{activeGateway?.name || "Paystack"}</strong> (
-                  {activeGateway?.mode?.toUpperCase() || "TEST"} MODE). Unlock
-                  all designated Pro tools immediately.
+                  Unlock all 37 creative & conversion tools across the platform
+                  with priority client WebAssembly processing.
                 </p>
               </div>
               <div>
@@ -310,7 +402,7 @@ export default function ProActivationModal({
                 >
                   {loading === "payment"
                     ? "Processing checkout…"
-                    : `Pay ${formattedFee} with ${activeGateway?.name || "Card"}`}
+                    : `Unlock All-Access (${formattedFee})`}
                 </button>
                 <div style={{ textAlign: "center", marginTop: "8px" }}>
                   <button
@@ -326,101 +418,46 @@ export default function ProActivationModal({
                       cursor: "pointer",
                     }}
                   >
-                    Or test with simulated payment
+                    Simulate Pro monthly subscription
                   </button>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Manual Admin Approval Option */}
-            <div
-              style={{
-                border: "1px solid var(--border)",
-                background: "var(--surface)",
-                borderRadius: "12px",
-                padding: "20px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    color: "var(--text)",
-                    fontWeight: 600,
-                  }}
-                >
-                  <Send size={18} /> Request Admin Approval
-                </div>
-                <div
-                  style={{
-                    fontSize: "24px",
-                    fontWeight: 800,
-                    margin: "12px 0 6px",
-                  }}
-                >
-                  Free{" "}
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 400,
-                      color: "var(--muted)",
-                    }}
-                  >
-                    approval flow
-                  </span>
-                </div>
-                <p
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--muted)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Submit an activation request directly to the administrator
-                  dashboard to be manually verified and activated.
-                </p>
-              </div>
-              {isPending ? (
-                <div
-                  style={{
-                    marginTop: "16px",
-                    padding: "10px",
-                    background: "rgba(234,179,8,0.12)",
-                    border: "1px solid rgba(234,179,8,0.3)",
-                    borderRadius: "6px",
-                    color: "#eab308",
-                    fontSize: "12px",
-                    textAlign: "center",
-                    fontWeight: 600,
-                  }}
-                >
-                  Pending Admin Approval
-                </div>
-              ) : (
-                <button
-                  className="secondary text-button"
-                  style={{
-                    marginTop: "16px",
-                    width: "100%",
-                    justifyContent: "center",
-                    border: "1px solid var(--border)",
-                    padding: "10px",
-                    borderRadius: "6px",
-                  }}
-                  disabled={loading !== null}
-                  onClick={handleRequestApproval}
-                >
-                  {loading === "approval"
-                    ? "Submitting…"
-                    : "Request Activation"}
-                </button>
-              )}
+          {/* Option 3: Manual Admin Approval */}
+          <div
+            style={{
+              padding: "12px 18px",
+              border: "1px dashed var(--border)",
+              borderRadius: "10px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "12px",
+              color: "var(--muted)",
+              marginBottom: "24px",
+            }}
+          >
+            <div>
+              <strong>Need free access?</strong> Request manual verification
+              from the platform administrator.
             </div>
+            {isPending ? (
+              <span style={{ color: "#eab308", fontWeight: 600 }}>
+                Approval Pending
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="secondary"
+                style={{ fontSize: "11px", padding: "5px 12px" }}
+                onClick={handleRequestApproval}
+                disabled={loading !== null}
+              >
+                Request Free Approval
+              </button>
+            )}
           </div>
 
           <div

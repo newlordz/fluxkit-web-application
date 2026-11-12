@@ -30,6 +30,8 @@ import {
   getAllToolPrices,
   setToolPrice,
   getFormattedToolPrice,
+  setBulkToolPrices,
+  setCategoryPrice,
   getAllUsers,
   approveProSubscription,
   revokeProSubscription,
@@ -68,8 +70,11 @@ export default function AdminPanel({
   navigate,
   initialTab,
 }: AdminPanelProps) {
-  // Check access: only users with role === 'admin' can access
-  if (!currentUser || currentUser.role !== "admin") {
+  // Check access: users with role === 'admin' or 'sub-admin' can access
+  if (
+    !currentUser ||
+    (currentUser.role !== "admin" && currentUser.role !== "sub-admin")
+  ) {
     return (
       <div
         className="panel coming-soon page-enter"
@@ -135,6 +140,30 @@ export default function AdminPanel({
   )
   const [toolQuery, setToolQuery] = useState("")
   const [toastMessage, setToastMessage] = useState("")
+
+  // User Management & Security States
+  const [showAddUserModal, setShowAddUserModal] = useState(false)
+  const [newUserForm, setNewUserForm] = useState<{
+    name: string
+    email: string
+    password: string
+    role: "admin" | "sub-admin" | "user"
+    subscriptionTier: "standard" | "pro"
+  }>({
+    name: "",
+    email: "",
+    password: "",
+    role: "user",
+    subscriptionTier: "standard",
+  })
+  const [newUserError, setNewUserError] = useState("")
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordTargetUser, setPasswordTargetUser] =
+    useState<UserAccount | null>(null)
+  const [newPasswordValue, setNewPasswordValue] = useState("")
+  const [confirmPasswordValue, setConfirmPasswordValue] = useState("")
+  const [passwordError, setPasswordError] = useState("")
+  const [showPasswordText, setShowPasswordText] = useState(false)
 
   useEffect(() => {
     if (initialTab) {
@@ -241,11 +270,111 @@ export default function AdminPanel({
     showToast("User subscription reverted to standard.")
   }
 
-  const handleRoleToggle = (userId: string, currentRole: "admin" | "user") => {
+  const handleRoleToggle = (
+    userId: string,
+    currentRole: "admin" | "sub-admin" | "user",
+  ) => {
+    if (isRootAdmin(userId)) {
+      showToast("Root administrator account is locked and cannot be demoted.")
+      return
+    }
     const nextRole = currentRole === "admin" ? "user" : "admin"
-    updateUserRole(userId, nextRole)
-    setUserList(getAllUsers())
-    showToast(`User role updated to ${nextRole.toUpperCase()}.`)
+    try {
+      updateUserRole(userId, nextRole)
+      setUserList(getAllUsers())
+      showToast(`User role updated to ${nextRole.toUpperCase()}.`)
+    } catch (e: any) {
+      showToast(e.message || "Failed to update role.")
+    }
+  }
+
+  const handleRoleChange = (
+    userId: string,
+    newRole: "admin" | "sub-admin" | "user",
+  ) => {
+    if (isRootAdmin(userId) && newRole !== "admin") {
+      showToast("Root administrator account is locked and cannot be demoted.")
+      return
+    }
+    try {
+      updateUserRole(userId, newRole)
+      setUserList(getAllUsers())
+      showToast(`User role updated to ${newRole.toUpperCase()}.`)
+    } catch (e: any) {
+      showToast(e.message || "Failed to update role.")
+    }
+  }
+
+  const handleDeleteUser = (userId: string, userName: string) => {
+    if (isRootAdmin(userId)) {
+      showToast("Root administrator account is locked and cannot be deleted.")
+      return
+    }
+    if (
+      typeof window !== "undefined" &&
+      window.confirm &&
+      !window.confirm(`Permanently remove account for "${userName}"?`)
+    ) {
+      return
+    }
+    try {
+      deleteUser(userId)
+      setUserList(getAllUsers())
+      showToast(`User "${userName}" has been removed.`)
+    } catch (e: any) {
+      showToast(e.message || "Failed to delete user.")
+    }
+  }
+
+  const handleOpenChangePassword = (u: UserAccount) => {
+    setPasswordTargetUser(u)
+    setNewPasswordValue("")
+    setConfirmPasswordValue("")
+    setPasswordError("")
+    setShowPasswordText(false)
+    setShowPasswordModal(true)
+  }
+
+  const handleSavePassword = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!passwordTargetUser) return
+    if (!newPasswordValue || newPasswordValue.length < 8) {
+      setPasswordError("Password must be at least 8 characters long.")
+      return
+    }
+    if (newPasswordValue !== confirmPasswordValue) {
+      setPasswordError("Passwords do not match.")
+      return
+    }
+    try {
+      changeUserPassword(passwordTargetUser.id, newPasswordValue)
+      setShowPasswordModal(false)
+      const targetName = passwordTargetUser.name
+      setPasswordTargetUser(null)
+      showToast(`Password successfully updated for ${targetName}.`)
+    } catch (err: any) {
+      setPasswordError(err.message || "Failed to update password.")
+    }
+  }
+
+  const handleCreateUser = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    setNewUserError("")
+    try {
+      const created = createUserByAdmin(newUserForm)
+      setUserList(getAllUsers())
+      setShowAddUserModal(false)
+      setNewUserForm({
+        name: "",
+        email: "",
+        password: "",
+        role: "user",
+        subscriptionTier: "standard",
+      })
+      showToast(`User "${created.name}" created successfully.`)
+    } catch (err: any) {
+      setNewUserError(err.message || "Failed to create user.")
+    }
   }
 
   // Payment Gateway Handlers
@@ -356,13 +485,39 @@ export default function AdminPanel({
     })
   }
 
+  const [selectedCategory, setSelectedCategory] = useState("all")
+
+  const handleBulkSetProPrice = (amount: number) => {
+    const proIds = tools
+      .filter((t) => (toolTiers[t.id] || "standard") === "pro")
+      .map((t) => t.id)
+    setBulkToolPrices(proIds, amount)
+    setToolPrices(getAllToolPrices())
+    showToast(
+      `Updated all ${proIds.length} Pro tools to $${amount.toFixed(2)} USD.`,
+    )
+  }
+
+  const handleBulkSetStandardFree = () => {
+    const stdIds = tools
+      .filter((t) => (toolTiers[t.id] || "standard") === "standard")
+      .map((t) => t.id)
+    setBulkToolPrices(stdIds, 0)
+    setToolPrices(getAllToolPrices())
+    showToast(`Reset all ${stdIds.length} Standard tools to FREE ($0.00).`)
+  }
+
   const proCount = Object.values(toolTiers).filter((t) => t === "pro").length
-  const filteredTools = tools.filter(
-    (t) =>
+  const filteredTools = tools.filter((t) => {
+    const matchesQuery =
       t.name.toLowerCase().includes(toolQuery.toLowerCase()) ||
       t.category.toLowerCase().includes(toolQuery.toLowerCase()) ||
-      t.id.toLowerCase().includes(toolQuery.toLowerCase()),
-  )
+      t.id.toLowerCase().includes(toolQuery.toLowerCase())
+    const matchesCategory =
+      selectedCategory === "all" ||
+      t.category.toLowerCase() === selectedCategory.toLowerCase()
+    return matchesQuery && matchesCategory
+  })
 
   return (
     <div
@@ -507,44 +662,210 @@ export default function AdminPanel({
       {/* TAB 1: TOOL TIER MANAGER */}
       {activeTab === "tiers" && (
         <div>
+          {/* Pricing & Tier Stats */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "12px",
+              marginBottom: "16px",
+            }}
+          >
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                TOTAL PLATFORM TOOLS
+              </span>
+              <span style={{ fontSize: "20px", fontWeight: 700 }}>
+                {tools.length}
+              </span>
+            </div>
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                PRO / PAID TOOLS
+              </span>
+              <span
+                style={{ fontSize: "20px", fontWeight: 700, color: "#a855f7" }}
+              >
+                {proCount}
+              </span>
+            </div>
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                STANDARD / FREE TOOLS
+              </span>
+              <span
+                style={{ fontSize: "20px", fontWeight: 700, color: "#10b981" }}
+              >
+                {tools.length - proCount}
+              </span>
+            </div>
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                PRO ACCESS PLAN
+              </span>
+              <span
+                style={{ fontSize: "16px", fontWeight: 700, marginTop: "2px" }}
+              >
+                $19 USD / mo
+              </span>
+            </div>
+          </div>
+
+          {/* Bulk Pricing Actions */}
+          <div
+            className="panel"
+            style={{
+              padding: "10px 16px",
+              marginBottom: "16px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "var(--text)",
+                }}
+              >
+                Bulk Price Adjust:
+              </span>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  fontSize: "11px",
+                  padding: "4px 10px",
+                  borderRadius: "5px",
+                }}
+                onClick={() => handleBulkSetProPrice(4.99)}
+              >
+                Set All Pro → $4.99
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  fontSize: "11px",
+                  padding: "4px 10px",
+                  borderRadius: "5px",
+                }}
+                onClick={() => handleBulkSetProPrice(2.99)}
+              >
+                Set All Pro → $2.99
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  fontSize: "11px",
+                  padding: "4px 10px",
+                  borderRadius: "5px",
+                }}
+                onClick={handleBulkSetStandardFree}
+              >
+                Reset Standard → Free ($0)
+              </button>
+            </div>
+          </div>
+
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
               marginBottom: "16px",
+              gap: "12px",
             }}
           >
-            <p style={{ fontSize: "12px", color: "var(--muted)" }}>
-              Toggle any tool to <strong>PRO</strong> to place it behind the
-              activation paywall, or leave as <strong>STANDARD</strong> for
-              immediate free access.
+            <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
+              Adjust individual tool prices and toggle <strong>PRO</strong> or{" "}
+              <strong>STANDARD</strong> tiers.
             </p>
-            <div style={{ position: "relative", width: "240px" }}>
-              <input
-                type="text"
-                placeholder="Filter tools..."
-                value={toolQuery}
-                onChange={(e) => setToolQuery(e.target.value)}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
                 style={{
-                  width: "100%",
-                  padding: "6px 12px 6px 30px",
+                  padding: "6px 12px",
                   fontSize: "12px",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
                   borderRadius: "6px",
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
                   color: "var(--text)",
                 }}
-              />
-              <Search
-                size={14}
-                style={{
-                  position: "absolute",
-                  left: "10px",
-                  top: "9px",
-                  color: "var(--muted)",
-                }}
-              />
+              >
+                <option value="all">All Categories</option>
+                <option value="File tools">File tools</option>
+                <option value="AI text tools">AI text tools</option>
+                <option value="Audio tools">Audio tools</option>
+                <option value="QR tools">QR tools</option>
+                <option value="Studio & Collaboration">
+                  Studio & Collaboration
+                </option>
+              </select>
+              <div style={{ position: "relative", width: "220px" }}>
+                <input
+                  type="text"
+                  placeholder="Filter tools..."
+                  value={toolQuery}
+                  onChange={(e) => setToolQuery(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "6px 12px 6px 30px",
+                    fontSize: "12px",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "6px",
+                    color: "var(--text)",
+                  }}
+                />
+                <Search
+                  size={14}
+                  style={{
+                    position: "absolute",
+                    left: "10px",
+                    top: "9px",
+                    color: "var(--muted)",
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -750,16 +1071,60 @@ export default function AdminPanel({
       {/* TAB 2: USER APPROVALS */}
       {activeTab === "users" && (
         <div>
-          <p
+          <div
             style={{
-              fontSize: "12px",
-              color: "var(--muted)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
               marginBottom: "16px",
+              gap: "12px",
+              flexWrap: "wrap",
             }}
           >
-            Review registered accounts, grant/revoke Pro tier activations, and
-            assign administrator roles.
-          </p>
+            <div>
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "var(--muted)",
+                  margin: 0,
+                }}
+              >
+                Review registered accounts, promote users to Sub-Admin or Admin,
+                manage Pro activations, and change account passwords.
+              </p>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#eab308",
+                  marginTop: "4px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <Lock size={12} /> Root Administrator account is permanently
+                locked from deletion and demotion.
+              </div>
+            </div>
+            <button
+              className="primary"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                borderRadius: "8px",
+              }}
+              onClick={() => {
+                setNewUserError("")
+                setShowAddUserModal(true)
+              }}
+            >
+              <Plus size={15} /> Add User
+            </button>
+          </div>
           <div className="panel" style={{ padding: "0", overflow: "hidden" }}>
             <table
               style={{
@@ -831,6 +1196,7 @@ export default function AdminPanel({
                   </tr>
                 ) : (
                   userList.map((u) => {
+                    const isRoot = isRootAdmin(u)
                     const isProActive =
                       u.subscriptionTier === "pro" && u.proStatus === "active"
                     const isPending = u.proStatus === "pending"
@@ -840,97 +1206,231 @@ export default function AdminPanel({
                         style={{ borderBottom: "1px solid var(--border)" }}
                       >
                         <td style={{ padding: "12px 16px" }}>
-                          <div style={{ fontWeight: 600 }}>{u.name}</div>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            {u.name}
+                            {isRoot && (
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "1px 6px",
+                                  borderRadius: "10px",
+                                  background: "rgba(234, 179, 8, 0.2)",
+                                  color: "#eab308",
+                                  fontWeight: 700,
+                                  border: "1px solid rgba(234, 179, 8, 0.4)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                }}
+                              >
+                                <Lock size={10} /> Root
+                              </span>
+                            )}
+                          </div>
                           <small style={{ color: "var(--muted)" }}>
                             {u.email}
                           </small>
                         </td>
                         <td style={{ padding: "12px 16px" }}>
-                          <span
-                            style={{
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              fontWeight: 600,
-                              background:
-                                u.role === "admin"
-                                  ? "rgba(234,179,8,0.15)"
-                                  : "var(--surface)",
-                              color:
-                                u.role === "admin" ? "#eab308" : "var(--muted)",
-                            }}
-                          >
-                            {u.role.toUpperCase()}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 16px" }}>
-                          <span
-                            style={{
-                              padding: "3px 8px",
-                              borderRadius: "4px",
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              background: isProActive
-                                ? "rgba(16,185,129,0.15)"
-                                : isPending
-                                  ? "rgba(234,179,8,0.15)"
-                                  : "var(--surface)",
-                              color: isProActive
-                                ? "#10b981"
-                                : isPending
-                                  ? "#eab308"
-                                  : "var(--muted)",
-                            }}
-                          >
-                            {isProActive
-                              ? "ACTIVE PRO"
-                              : isPending
-                                ? "PENDING APPROVAL"
-                                : "STANDARD"}
-                          </span>
-                        </td>
-                        <td
-                          style={{ padding: "12px 16px", textAlign: "right" }}
-                        >
-                          <div style={{ display: "inline-flex", gap: "6px" }}>
-                            {isProActive ? (
-                              <button
-                                className="secondary"
-                                style={{
-                                  padding: "4px 8px",
-                                  fontSize: "11px",
-                                  borderRadius: "4px",
-                                  border: "1px solid var(--border)",
-                                }}
-                                onClick={() => handleRevokePro(u.id)}
-                              >
-                                Revoke Pro
-                              </button>
-                            ) : (
-                              <button
-                                className="primary"
-                                style={{
-                                  padding: "4px 8px",
-                                  fontSize: "11px",
-                                  borderRadius: "4px",
-                                }}
-                                onClick={() => handleApprovePro(u.id)}
-                              >
-                                Approve Pro
-                              </button>
-                            )}
-                            <button
-                              className="secondary"
+                          {isRoot ? (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "rgba(234,179,8,0.2)",
+                                color: "#eab308",
+                                border: "1px solid rgba(234,179,8,0.4)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Lock size={11} /> ROOT ADMIN
+                            </span>
+                          ) : (
+                            <select
+                              value={u.role || "user"}
+                              aria-label={`Change role for ${u.name}`}
+                              onChange={(e) =>
+                                handleRoleChange(
+                                  u.id,
+                                  e.target
+                                    .value as "admin" | "sub-admin" | "user",
+                                )
+                              }
                               style={{
                                 padding: "4px 8px",
                                 fontSize: "11px",
                                 borderRadius: "4px",
                                 border: "1px solid var(--border)",
+                                background:
+                                  u.role === "admin"
+                                    ? "rgba(234,179,8,0.15)"
+                                    : u.role === "sub-admin"
+                                      ? "rgba(168,85,247,0.15)"
+                                      : "var(--surface)",
+                                color:
+                                  u.role === "admin"
+                                    ? "#eab308"
+                                    : u.role === "sub-admin"
+                                      ? "#a855f7"
+                                      : "var(--text)",
+                                fontWeight: 600,
+                                cursor: "pointer",
                               }}
-                              onClick={() => handleRoleToggle(u.id, u.role)}
                             >
-                              {u.role === "admin" ? "Make User" : "Make Admin"}
-                            </button>
+                              <option value="user">User</option>
+                              <option value="sub-admin">Sub-Admin</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 16px" }}>
+                          {isRoot ? (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "rgba(16,185,129,0.2)",
+                                color: "#10b981",
+                                border: "1px solid rgba(16,185,129,0.4)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Lock size={11} /> PERMANENT PRO
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                background: isProActive
+                                  ? "rgba(16,185,129,0.15)"
+                                  : isPending
+                                    ? "rgba(234,179,8,0.15)"
+                                    : "var(--surface)",
+                                color: isProActive
+                                  ? "#10b981"
+                                  : isPending
+                                    ? "#eab308"
+                                    : "var(--muted)",
+                              }}
+                            >
+                              {isProActive
+                                ? "ACTIVE PRO"
+                                : isPending
+                                  ? "PENDING APPROVAL"
+                                  : "STANDARD"}
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          style={{ padding: "12px 16px", textAlign: "right" }}
+                        >
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              gap: "6px",
+                              alignItems: "center",
+                            }}
+                          >
+                            {/* Root Admin: ONLY Change Password */}
+                            {isRoot ? (
+                              <button
+                                className="secondary"
+                                style={{
+                                  padding: "4px 10px",
+                                  fontSize: "11px",
+                                  borderRadius: "4px",
+                                  border: "1px solid rgba(234,179,8,0.4)",
+                                  color: "#eab308",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                }}
+                                onClick={() => handleOpenChangePassword(u)}
+                                title="Change root administrator password"
+                              >
+                                <Key size={12} /> Change Password
+                              </button>
+                            ) : (
+                              <>
+                                {isProActive ? (
+                                  <button
+                                    className="secondary"
+                                    style={{
+                                      padding: "4px 8px",
+                                      fontSize: "11px",
+                                      borderRadius: "4px",
+                                      border: "1px solid var(--border)",
+                                    }}
+                                    onClick={() => handleRevokePro(u.id)}
+                                  >
+                                    Revoke Pro
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="primary"
+                                    style={{
+                                      padding: "4px 8px",
+                                      fontSize: "11px",
+                                      borderRadius: "4px",
+                                    }}
+                                    onClick={() => handleApprovePro(u.id)}
+                                  >
+                                    Approve Pro
+                                  </button>
+                                )}
+                                <button
+                                  className="secondary"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: "11px",
+                                    borderRadius: "4px",
+                                    border: "1px solid var(--border)",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                  onClick={() => handleOpenChangePassword(u)}
+                                  title={`Change password for ${u.name}`}
+                                >
+                                  <Key size={12} /> Password
+                                </button>
+                                <button
+                                  className="secondary"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: "11px",
+                                    borderRadius: "4px",
+                                    border: "1px solid rgba(239,68,68,0.3)",
+                                    color: "#ef4444",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                  onClick={() => handleDeleteUser(u.id, u.name)}
+                                  title={`Delete ${u.name}`}
+                                >
+                                  <Trash2 size={12} /> Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -940,6 +1440,496 @@ export default function AdminPanel({
               </tbody>
             </table>
           </div>
+
+          {/* Add User Modal */}
+          {showAddUserModal && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.7)",
+                backdropFilter: "blur(4px)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 999999,
+                padding: "20px",
+              }}
+              onClick={() => setShowAddUserModal(false)}
+            >
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  maxWidth: "460px",
+                  width: "100%",
+                  boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      margin: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <Plus size={18} color="#a855f7" /> Add New User
+                  </h3>
+                  <button
+                    onClick={() => setShowAddUserModal(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {newUserError && (
+                  <div
+                    style={{
+                      padding: "8px 12px",
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      borderRadius: "6px",
+                      color: "#ef4444",
+                      fontSize: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    {newUserError}
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateUser}>
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Alex Morgan"
+                      value={newUserForm.name}
+                      onChange={(e) =>
+                        setNewUserForm({ ...newUserForm, name: e.target.value })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="user@fluxkit.com"
+                      value={newUserForm.email}
+                      onChange={(e) =>
+                        setNewUserForm({
+                          ...newUserForm,
+                          email: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Initial Password (min 8 chars)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={8}
+                      placeholder="••••••••••••"
+                      value={newUserForm.password}
+                      onChange={(e) =>
+                        setNewUserForm({
+                          ...newUserForm,
+                          password: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "12px",
+                      marginBottom: "18px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Role
+                      </label>
+                      <select
+                        value={newUserForm.role}
+                        onChange={(e) =>
+                          setNewUserForm({
+                            ...newUserForm,
+                            role: e.target.value as any,
+                          })
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <option value="user">Standard User</option>
+                        <option value="sub-admin">Sub-Admin</option>
+                        <option value="admin">Full Admin</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Subscription Tier
+                      </label>
+                      <select
+                        value={newUserForm.subscriptionTier}
+                        onChange={(e) =>
+                          setNewUserForm({
+                            ...newUserForm,
+                            subscriptionTier: e.target.value as any,
+                          })
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <option value="standard">Standard Tier</option>
+                        <option value="pro">Pro (Active)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "10px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setShowAddUserModal(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="primary">
+                      Create User Account
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Change Password Modal */}
+          {showPasswordModal && passwordTargetUser && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.7)",
+                backdropFilter: "blur(4px)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 999999,
+                padding: "20px",
+              }}
+              onClick={() => setShowPasswordModal(false)}
+            >
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  maxWidth: "440px",
+                  width: "100%",
+                  boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "14px",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      margin: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <Key size={18} color="#eab308" /> Change Password
+                  </h3>
+                  <button
+                    onClick={() => setShowPasswordModal(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    marginBottom: "14px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div>
+                    <strong>User:</strong> {passwordTargetUser.name}
+                  </div>
+                  <small style={{ color: "var(--muted)" }}>
+                    {passwordTargetUser.email}
+                  </small>
+                </div>
+
+                {passwordError && (
+                  <div
+                    style={{
+                      padding: "8px 12px",
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      borderRadius: "6px",
+                      color: "#ef4444",
+                      fontSize: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    {passwordError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSavePassword}>
+                  <div style={{ marginBottom: "12px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      <label
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                        }}
+                      >
+                        New Password (min 8 chars)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowPasswordText(!showPasswordText)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--muted)",
+                          cursor: "pointer",
+                          fontSize: "11px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        {showPasswordText ? (
+                          <EyeOff size={13} />
+                        ) : (
+                          <Eye size={13} />
+                        )}
+                        {showPasswordText ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <input
+                      type={showPasswordText ? "text" : "password"}
+                      required
+                      minLength={8}
+                      placeholder="Enter new password"
+                      value={newPasswordValue}
+                      onChange={(e) => setNewPasswordValue(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "18px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Confirm New Password
+                    </label>
+                    <input
+                      type={showPasswordText ? "text" : "password"}
+                      required
+                      minLength={8}
+                      placeholder="Repeat new password"
+                      value={confirmPasswordValue}
+                      onChange={(e) => setConfirmPasswordValue(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "10px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setShowPasswordModal(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="primary">
+                      Update Password
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

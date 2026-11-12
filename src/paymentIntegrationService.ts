@@ -168,7 +168,7 @@ export function setActiveGateway(id: PaymentProvider): void {
 
 export async function testGatewayConnection(
   id: PaymentProvider,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean message: string }> {
   const gateway = getGateway(id)
   if (!gateway) {
     return { success: false, message: `Gateway '${id}' not found.` }
