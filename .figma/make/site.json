@@ -1,0 +1,10 @@
+{
+  "description": "An all-in-one productivity toolkit offering file management, PDF tools, QR code generation, and AI text utilities in a sleek, user-friendly workspace.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
