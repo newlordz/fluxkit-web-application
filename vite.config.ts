@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: "/src/**/*.stories.{ts,tsx,js,jsx}" }),
+      currencyApiPlugin(),
     ],
     resolve: {
       alias: {
@@ -446,6 +447,147 @@ function figmaMakeKitPlugin(options: {
         } catch (err) {
           next(err as Error)
         }
+      })
+    },
+  }
+}
+
+function currencyApiPlugin(): Plugin {
+  let exchangeRate = 15.5
+  return {
+    name: "currency-api-plugin",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const rawUrl = req.url || ""
+        const [pathname, queryString] = rawUrl.split("?")
+        if (pathname !== "/api/currency" && pathname !== "/api/convert") {
+          return next()
+        }
+
+        res.setHeader("Content-Type", "application/json")
+        res.setHeader("Access-Control-Allow-Origin", "*")
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+
+        if (req.method === "OPTIONS") {
+          res.statusCode = 200
+          res.end()
+          return
+        }
+
+        if (req.method === "GET") {
+          const params = new URLSearchParams(queryString || "")
+          const amountParam = params.get("amount")
+          const fromParam = (params.get("from") || "USD").toUpperCase()
+          const toParam = (params.get("to") || "GHS").toUpperCase()
+
+          if (amountParam !== null) {
+            const amount = parseFloat(amountParam) || 0
+            let converted = amount
+            if (fromParam === "USD" && toParam === "GHS") {
+              converted = Math.round(amount * exchangeRate * 100) / 100
+            } else if (fromParam === "GHS" && toParam === "USD") {
+              converted = Math.round((amount / exchangeRate) * 100) / 100
+            }
+            res.end(
+              JSON.stringify({
+                success: true,
+                from: fromParam,
+                to: toParam,
+                originalAmount: amount,
+                convertedAmount: converted,
+                exchangeRate,
+                formattedOriginal:
+                  fromParam === "GHS"
+                    ? `GH₵ ${amount.toFixed(2)} GHS`
+                    : `$${amount.toFixed(2)} USD`,
+                formattedConverted:
+                  toParam === "GHS"
+                    ? `GH₵ ${converted.toFixed(2)} GHS`
+                    : `$${converted.toFixed(2)} USD`,
+                timestamp: new Date().toISOString(),
+                source: "dev-server",
+              }),
+            )
+            return
+          }
+
+          res.end(
+            JSON.stringify({
+              base: "USD",
+              rate: exchangeRate,
+              currencies: {
+                USD: { code: "USD", symbol: "$", name: "US Dollar", rateFromUSD: 1 },
+                GHS: { code: "GHS", symbol: "GH₵", name: "Ghanaian Cedi", rateFromUSD: exchangeRate },
+              },
+              updatedAt: new Date().toISOString(),
+            }),
+          )
+          return
+        }
+
+        if (req.method === "POST") {
+          let bodyStr = ""
+          req.on("data", (chunk: any) => {
+            bodyStr += chunk
+          })
+          req.on("end", () => {
+            try {
+              const body = bodyStr ? JSON.parse(bodyStr) : {}
+              if (body.action === "set_rate" && typeof body.rate === "number" && body.rate > 0) {
+                exchangeRate = Math.round(body.rate * 100) / 100
+                res.end(
+                  JSON.stringify({
+                    success: true,
+                    rate: exchangeRate,
+                    message: `Exchange rate updated to 1 USD = ${exchangeRate} GHS`,
+                  }),
+                )
+                return
+              }
+
+              const amount = Number(body.amount ?? 0)
+              const from = (body.from || "USD").toUpperCase()
+              const to = (body.to || "GHS").toUpperCase()
+              const rate = typeof body.rate === "number" && body.rate > 0 ? body.rate : exchangeRate
+
+              let converted = amount
+              if (from === "USD" && to === "GHS") {
+                converted = Math.round(amount * rate * 100) / 100
+              } else if (from === "GHS" && to === "USD") {
+                converted = Math.round((amount / rate) * 100) / 100
+              }
+
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  from,
+                  to,
+                  originalAmount: amount,
+                  convertedAmount: converted,
+                  exchangeRate: rate,
+                  formattedOriginal:
+                    from === "GHS"
+                      ? `GH₵ ${amount.toFixed(2)} GHS`
+                      : `$${amount.toFixed(2)} USD`,
+                  formattedConverted:
+                    to === "GHS"
+                      ? `GH₵ ${converted.toFixed(2)} GHS`
+                      : `$${converted.toFixed(2)} USD`,
+                  timestamp: new Date().toISOString(),
+                  source: "dev-server",
+                }),
+              )
+            } catch (err: any) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
+        res.statusCode = 405
+        res.end(JSON.stringify({ error: "Method not allowed" }))
       })
     },
   }

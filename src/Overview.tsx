@@ -32,6 +32,7 @@ import {
 import { tools, brand, type Tool, type Category } from "./config"
 import ToolBadgeIcon from "./ToolBadgeIcon"
 import { isToolPro, getFormattedToolPrice } from "./adminService"
+import { getActiveCurrency } from "./currencyService"
 
 interface ActivityItem {
   name: string
@@ -76,6 +77,16 @@ export default function Overview({
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [activeCurrency, setActiveCurrency] = useState(getActiveCurrency)
+
+  useEffect(() => {
+    const handleCurr = (e: any) => {
+      if (e.detail) setActiveCurrency(e.detail)
+    }
+    window.addEventListener("fluxkit-currency-changed", handleCurr)
+    return () => window.removeEventListener("fluxkit-currency-changed", handleCurr)
+  }, [])
 
   // Track client mount for safe portal rendering
   useEffect(() => {

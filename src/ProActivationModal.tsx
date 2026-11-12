@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Lock,
   Sparkles,
@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ArrowLeft,
   ShieldCheck,
+  Coins,
 } from "lucide-react"
 import type { Tool } from "./config"
 import type { UserAccount } from "./authService"
@@ -21,6 +22,12 @@ import {
   getActiveGateway,
   triggerLivePaystackCheckout,
 } from "./paymentIntegrationService"
+import {
+  getActiveCurrency,
+  setActiveCurrency,
+  getExchangeRate,
+  type SupportedCurrency,
+} from "./currencyService"
 
 export interface ProActivationModalProps {
   tool: Tool
@@ -38,24 +45,32 @@ export default function ProActivationModal({
   const [loading, setLoading] = useState<"payment" | "approval" | null>(null)
   const [successMessage, setSuccessMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const [activeCurrency, setActiveCurrencyLocal] =
+    useState<SupportedCurrency>(getActiveCurrency)
+  const exchangeRate = getExchangeRate()
+
+  useEffect(() => {
+    const onCurrChange = (e: any) => {
+      if (e.detail) setActiveCurrencyLocal(e.detail)
+    }
+    window.addEventListener("fluxkit-currency-changed", onCurrChange)
+    return () =>
+      window.removeEventListener("fluxkit-currency-changed", onCurrChange)
+  }, [])
+
+  const handleSelectCurrency = (c: SupportedCurrency) => {
+    setActiveCurrency(c)
+    setActiveCurrencyLocal(c)
+  }
 
   const isPending = currentUser?.proStatus === "pending"
   const activeGateway = getActiveGateway()
   const formattedFee =
-    activeGateway?.currency === "GHS"
-      ? "₵250 GHS"
-      : activeGateway?.currency === "NGN"
-        ? "₦25,000 NGN"
-        : activeGateway?.currency === "EUR"
-          ? "€19 EUR"
-          : activeGateway?.currency === "GBP"
-            ? "£16 GBP"
-            : "$19 USD"
+    activeCurrency === "GHS"
+      ? `GH₵ ${(19 * exchangeRate).toFixed(2)} GHS / month`
+      : "$19.00 USD / month"
 
-  const toolPriceLabel = getFormattedToolPrice(
-    tool.id,
-    activeGateway?.currency || "USD",
-  )
+  const toolPriceLabel = getFormattedToolPrice(tool.id, activeCurrency)
   const rawToolPrice = getToolPrice(tool.id)
 
   const handleBuySingleTool = () => {
@@ -160,6 +175,74 @@ export default function ProActivationModal({
       className="panel pro-paywall-panel page-enter"
       style={{ maxWidth: "680px", margin: "40px auto", padding: "36px" }}
     >
+      {/* Currency Switcher */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: "8px",
+          marginBottom: "16px",
+        }}
+      >
+        <span style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+          Currency:
+        </span>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "20px",
+            padding: "2px",
+            fontSize: "11px",
+            fontWeight: 600,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => handleSelectCurrency("USD")}
+            style={{
+              padding: "3px 9px",
+              borderRadius: "16px",
+              border: "none",
+              background:
+                activeCurrency === "USD" ? "#6366f1" : "transparent",
+              color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+              cursor: "pointer",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🇺🇸</span>
+            <span>USD ($)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectCurrency("GHS")}
+            style={{
+              padding: "3px 9px",
+              borderRadius: "16px",
+              border: "none",
+              background:
+                activeCurrency === "GHS" ? "#6366f1" : "transparent",
+              color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+              cursor: "pointer",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🇬🇭</span>
+            <span>GHS (GH₵)</span>
+          </button>
+        </div>
+      </div>
+
       <div style={{ textAlign: "center", marginBottom: "28px" }}>
         <div
           style={{

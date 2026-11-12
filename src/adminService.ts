@@ -11,6 +11,22 @@ import {
 } from "./authService"
 export { isRootAdmin } from "./authService"
 import { tools } from "./config"
+import {
+  getActiveCurrency,
+  getExchangeRate,
+  setExchangeRate,
+  setActiveCurrency,
+  convertCurrencyOnBackend,
+  type SupportedCurrency,
+} from "./currencyService"
+export {
+  getActiveCurrency,
+  getExchangeRate,
+  setExchangeRate,
+  setActiveCurrency,
+  convertCurrencyOnBackend,
+  type SupportedCurrency,
+}
 
 const TOOL_TIERS_KEY = "fluxkit-tool-tiers"
 const TOOL_PRICES_KEY = "fluxkit-tool-prices"
@@ -113,13 +129,15 @@ export function setToolPrice(toolId: string, price: number): void {
 
 export function getFormattedToolPrice(
   toolId: string,
-  currency: string = "USD",
+  currency?: string,
 ): string {
   const price = getToolPrice(toolId)
   if (price === 0) return "Free"
-  switch (currency.toUpperCase()) {
+  const activeCurr = currency || getActiveCurrency()
+  const rate = getExchangeRate()
+  switch (activeCurr.toUpperCase()) {
     case "GHS":
-      return `₵${(price * 13).toFixed(2)} GHS`
+      return `GH₵ ${(price * rate).toFixed(2)} GHS`
     case "NGN":
       return `₦${(price * 1500).toLocaleString()} NGN`
     case "EUR":

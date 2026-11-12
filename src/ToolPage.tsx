@@ -20,6 +20,7 @@ import {
   FileCheck2,
   FileSpreadsheet,
   FileText,
+  GripVertical,
   Image,
   Languages,
   Layers,
@@ -479,6 +480,7 @@ export default function ToolPage({
 
   // Document Preview Modal
   const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const fileDragIndexRef = useRef<number | null>(null)
   const previewModalMode = ((): "merge" | "split" | "rotate" | "arrange" => {
     if (tool.id === "split-pdf" || tool.id === "split-compress") return "split"
     if (tool.id === "rotate-pdf") return "rotate"
@@ -4523,12 +4525,64 @@ export default function ToolPage({
                 {files.length > 0 && (
                   <div className="file-list">
                     {files.map((file, i) => (
-                      <div className="file-row" key={`${file.name}-${i}`}>
+                      <div
+                        className="file-row"
+                        key={`${file.name}-${i}`}
+                        draggable={files.length > 1}
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move"
+                          e.dataTransfer.setData("text/plain", `${i}`)
+                          fileDragIndexRef.current = i
+                        }}
+                        onDragEnter={() => {
+                          if (
+                            fileDragIndexRef.current === null ||
+                            fileDragIndexRef.current === i
+                          )
+                            return
+                          setFiles((prev) => {
+                            const copy = [...prev]
+                            const [moved] = copy.splice(
+                              fileDragIndexRef.current!,
+                              1,
+                            )
+                            copy.splice(i, 0, moved)
+                            fileDragIndexRef.current = i
+                            return copy
+                          })
+                        }}
+                        onDragEnd={() => {
+                          fileDragIndexRef.current = null
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
+                        style={{ cursor: files.length > 1 ? "grab" : "default" }}
+                      >
+                        {files.length > 1 && (
+                          <span
+                            title="Grab and move to reorder file"
+                            style={{
+                              color: "var(--muted)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              cursor: "grab",
+                            }}
+                          >
+                            <GripVertical size={15} />
+                          </span>
+                        )}
                         <FileText size={18} />
                         <span>
                           {file.name}
                           <small>{(file.size / 1024).toFixed(1)} KB</small>
                         </span>
+                        <button
+                          type="button"
+                          aria-label={`Preview ${file.name}`}
+                          title={`Preview ${file.name}`}
+                          onClick={() => setShowPreviewModal(true)}
+                        >
+                          <Eye size={15} />
+                        </button>
                         {files.length > 1 && (
                           <>
                             <button

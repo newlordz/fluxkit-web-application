@@ -49,6 +49,11 @@ import {
   getFormattedToolPrice,
 } from "./adminService"
 import {
+  getActiveCurrency,
+  setActiveCurrency,
+  type SupportedCurrency,
+} from "./currencyService"
+import {
   getCustomPageBySlug,
   getPublishedCustomPages,
 } from "./pageManagerService"
@@ -183,6 +188,16 @@ export default function App() {
   const [notifications, setNotifications] = useState(false)
   const [profile, setProfile] = useState(() => stored("fluxkit-name", "Jamie"))
   const [saved, setSaved] = useState(false)
+  const [activeCurrency, setActiveCurrencyState] =
+    useState<SupportedCurrency>(getActiveCurrency)
+
+  useEffect(() => {
+    const handleCurr = (e: any) => {
+      if (e.detail) setActiveCurrencyState(e.detail)
+    }
+    window.addEventListener("fluxkit-currency-changed", handleCurr)
+    return () => window.removeEventListener("fluxkit-currency-changed", handleCurr)
+  }, [])
 
   useEffect(() => {
     return onAuthStateChanged((user) => {
@@ -707,6 +722,73 @@ export default function App() {
               </button>
             )}
             <div className="top-divider" />
+            {/* Header Currency Switcher */}
+            <div
+              className="currency-header-switch"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "20px",
+                padding: "2px",
+                gap: "2px",
+              }}
+              title="Change platform currency (USD / Ghanaian Cedi)"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCurrency("USD")
+                  setActiveCurrencyState("USD")
+                }}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: "16px",
+                  border: "none",
+                  background:
+                    activeCurrency === "USD"
+                      ? "var(--accent)"
+                      : "transparent",
+                  color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>🇺🇸</span>
+                <span>$</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCurrency("GHS")
+                  setActiveCurrencyState("GHS")
+                }}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: "16px",
+                  border: "none",
+                  background:
+                    activeCurrency === "GHS"
+                      ? "var(--accent)"
+                      : "transparent",
+                  color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>🇬🇭</span>
+                <span>GH₵</span>
+              </button>
+            </div>
             <button
               className="icon-button"
               aria-label="Toggle color theme"

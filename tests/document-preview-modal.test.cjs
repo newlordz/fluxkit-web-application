@@ -12,9 +12,13 @@ test("DocumentPreviewModal file exists and is cleanly structured", () => {
   assert.match(content, /createPortal/)
   assert.match(content, /splitPointsToRanges/)
   assert.match(content, /dpm-file-card/)
+  assert.match(content, /dpm-file-grid/)
+  assert.match(content, /FilePreviewCard/)
+  assert.match(content, /loadFilePreview/)
   assert.match(content, /dpm-page-grid/)
   assert.match(content, /dpm-split-btn/)
   assert.match(content, /dpm-rotate-btn/)
+  assert.match(content, /dpm-inspect-reorder-bar/)
 })
 
 test("ToolPage imports and connects DocumentPreviewModal", () => {
@@ -46,4 +50,8 @@ test("document-preview-modal.css defines necessary styling and animations", () =
   assert.match(css, /@keyframes dpm-split-pulse/)
   assert.match(css, /@keyframes dpm-chip-in/)
   assert.match(css, /\.dpm-trigger-btn/)
+  assert.match(css, /\.dpm-file-grid/)
+  assert.match(css, /\.dpm-file-preview-card/)
+  assert.match(css, /\.dpm-file-preview-canvas/)
+  assert.match(css, /\.dpm-view-toggle/)
 })

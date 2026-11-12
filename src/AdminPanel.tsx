@@ -22,6 +22,9 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
+  Coins,
+  ArrowRightLeft,
+  TrendingUp,
 } from "lucide-react"
 import type { UserAccount } from "./authService"
 import {
@@ -41,6 +44,14 @@ import {
   createUserByAdmin,
   changeUserPassword,
 } from "./adminService"
+import {
+  getActiveCurrency,
+  setActiveCurrency,
+  getExchangeRate,
+  setExchangeRate,
+  convertCurrencyOnBackend,
+  type SupportedCurrency,
+} from "./currencyService"
 import {
   getCustomPages,
   createCustomPage,
@@ -127,6 +138,54 @@ export default function AdminPanel({
     useState<Record<string, "standard" | "pro">>(getAllToolTiers)
   const [toolPrices, setToolPrices] =
     useState<Record<string, number>>(getAllToolPrices)
+  const [activeCurrency, setActiveCurrencyState] =
+    useState<SupportedCurrency>(getActiveCurrency)
+  const [exchangeRate, setExchangeRateState] = useState<number>(getExchangeRate)
+  const [rateInput, setRateInput] = useState<string>(() =>
+    getExchangeRate().toString(),
+  )
+  const [isUpdatingRate, setIsUpdatingRate] = useState(false)
+  const [rateSuccessMsg, setRateSuccessMsg] = useState("")
+
+  // Real-time GHS prices cache for instantaneous inputs
+  const [ghsPrices, setGhsPrices] = useState<Record<string, number>>(() => {
+    const prices = getAllToolPrices()
+    const rate = getExchangeRate()
+    const mapped: Record<string, number> = {}
+    tools.forEach((t) => {
+      const isPro = (getAllToolTiers()[t.id] || "standard") === "pro"
+      const usd = prices[t.id] ?? (isPro ? 4.99 : 0)
+      mapped[t.id] = Math.round(usd * rate * 100) / 100
+    })
+    return mapped
+  })
+
+  // Quick Currency Converter Sandbox State
+  const [calcUsd, setCalcUsd] = useState("10")
+  const [calcGhs, setCalcGhs] = useState(() =>
+    (10 * getExchangeRate()).toFixed(2),
+  )
+  const [calcLoading, setCalcLoading] = useState(false)
+
+  // Listen to currency & rate change events across tabs/windows
+  useEffect(() => {
+    const handleCurrChange = (e: any) => {
+      if (e.detail) setActiveCurrencyState(e.detail)
+    }
+    const handleRateChange = (e: any) => {
+      if (typeof e.detail === "number") {
+        setExchangeRateState(e.detail)
+        setRateInput(e.detail.toString())
+      }
+    }
+    window.addEventListener("fluxkit-currency-changed", handleCurrChange)
+    window.addEventListener("fluxkit-rate-changed", handleRateChange)
+    return () => {
+      window.removeEventListener("fluxkit-currency-changed", handleCurrChange)
+      window.removeEventListener("fluxkit-rate-changed", handleRateChange)
+    }
+  }, [])
+
   const [userList, setUserList] = useState<UserAccount[]>(getAllUsers)
   const [customPages, setCustomPages] = useState<CustomPage[]>(getCustomPages)
   const [gateways, setGateways] =
@@ -190,15 +249,145 @@ export default function AdminPanel({
   }
 
   const handlePriceChange = (toolId: string, rawVal: string) => {
-    const val = parseFloat(rawVal)
-    const newPrice = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
-    setToolPrice(toolId, newPrice)
-    setToolPrices((prev) => ({ ...prev, [toolId]: newPrice }))
+    handleUsdPriceChange(toolId, rawVal)
   }
 
   const handlePriceBlur = (toolId: string, toolName: string) => {
     const p = toolPrices[toolId] ?? (toolTiers[toolId] === "pro" ? 4.99 : 0)
-    showToast(`Price for '${toolName}' set to $${Number(p).toFixed(2)} USD.`)
+    const ghs = ghsPrices[toolId] ?? Math.round(Number(p) * exchangeRate * 100) / 100
+    showToast(
+      `Price for '${toolName}' set to $${Number(p).toFixed(2)} USD (GH₵ ${ghs.toFixed(2)} GHS).`,
+    )
+  }
+
+  // Change store-wide active currency
+  const handleCurrencySelect = (currency: SupportedCurrency) => {
+    setActiveCurrency(currency)
+    setActiveCurrencyState(currency)
+    showToast(
+      `Store display currency set to ${
+        currency === "GHS" ? "Ghanaian Cedi (GH₵)" : "US Dollar ($)"
+      }.`,
+    )
+  }
+
+  // Update backend exchange rate
+  const handleUpdateBackendRate = async () => {
+    const parsed = parseFloat(rateInput)
+    if (isNaN(parsed) || parsed <= 0) {
+      showToast("Please enter a valid positive exchange rate.")
+      return
+    }
+    setIsUpdatingRate(true)
+    try {
+      await fetch("/api/currency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_rate", rate: parsed }),
+      })
+    } catch {}
+    setExchangeRate(parsed)
+    setExchangeRateState(parsed)
+
+    // Recalculate all GHS equivalents with the new backend rate
+    const updatedGhs: Record<string, number> = {}
+    for (const [id, usd] of Object.entries(toolPrices)) {
+      updatedGhs[id] = Math.round(usd * parsed * 100) / 100
+    }
+    setGhsPrices(updatedGhs)
+    setCalcGhs((parseFloat(calcUsd || "0") * parsed).toFixed(2))
+    setIsUpdatingRate(false)
+    setRateSuccessMsg(
+      `Backend rate synchronized: 1 USD = ${parsed.toFixed(2)} GHS`,
+    )
+    showToast(`Exchange rate updated: 1 USD = ${parsed.toFixed(2)} GHS`)
+    setTimeout(() => setRateSuccessMsg(""), 3500)
+  }
+
+  // Real-time backend conversion when user edits USD price
+  const handleUsdPriceChange = async (toolId: string, rawVal: string) => {
+    const val = parseFloat(rawVal)
+    const newUsd = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
+    setToolPrice(toolId, newUsd)
+    setToolPrices((prev) => ({ ...prev, [toolId]: newUsd }))
+
+    // Trigger backend conversion from USD -> GHS
+    try {
+      const conv = await convertCurrencyOnBackend(
+        newUsd,
+        "USD",
+        "GHS",
+        exchangeRate,
+      )
+      setGhsPrices((prev) => ({ ...prev, [toolId]: conv.convertedAmount }))
+    } catch {
+      setGhsPrices((prev) => ({
+        ...prev,
+        [toolId]: Math.round(newUsd * exchangeRate * 100) / 100,
+      }))
+    }
+  }
+
+  // Real-time backend conversion when user edits GHS (Cedi) price
+  const handleGhsPriceChange = async (toolId: string, rawVal: string) => {
+    const val = parseFloat(rawVal)
+    const newGhs = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
+    setGhsPrices((prev) => ({ ...prev, [toolId]: newGhs }))
+
+    // Trigger backend conversion from GHS -> USD
+    try {
+      const conv = await convertCurrencyOnBackend(
+        newGhs,
+        "GHS",
+        "USD",
+        exchangeRate,
+      )
+      setToolPrice(toolId, conv.convertedAmount)
+      setToolPrices((prev) => ({ ...prev, [toolId]: conv.convertedAmount }))
+    } catch {
+      const convertedUsd = Math.round((newGhs / exchangeRate) * 100) / 100
+      setToolPrice(toolId, convertedUsd)
+      setToolPrices((prev) => ({ ...prev, [toolId]: convertedUsd }))
+    }
+  }
+
+  // Interactive quick calculator converters
+  const handleCalcUsdChange = async (val: string) => {
+    setCalcUsd(val)
+    const num = parseFloat(val) || 0
+    setCalcLoading(true)
+    try {
+      const res = await convertCurrencyOnBackend(
+        num,
+        "USD",
+        "GHS",
+        exchangeRate,
+      )
+      setCalcGhs(res.convertedAmount.toFixed(2))
+    } catch {
+      setCalcGhs((num * exchangeRate).toFixed(2))
+    } finally {
+      setCalcLoading(false)
+    }
+  }
+
+  const handleCalcGhsChange = async (val: string) => {
+    setCalcGhs(val)
+    const num = parseFloat(val) || 0
+    setCalcLoading(true)
+    try {
+      const res = await convertCurrencyOnBackend(
+        num,
+        "GHS",
+        "USD",
+        exchangeRate,
+      )
+      setCalcUsd(res.convertedAmount.toFixed(2))
+    } catch {
+      setCalcUsd((num / exchangeRate).toFixed(2))
+    } finally {
+      setCalcLoading(false)
+    }
   }
 
   const handleTierToggle = (toolId: string) => {
@@ -220,18 +409,21 @@ export default function AdminPanel({
       "Transparent, flexible pricing for all 37 creative, conversion, and intelligence tools. Run tools completely client-side in your browser with zero upload latency.",
       "",
       "## All-Access Pro Subscription",
-      "- **Monthly Pro Plan:** $19 USD / month (or equivalent in GHS, NGN, EUR, GBP)",
+      `- **Monthly Pro Plan:** $19.00 USD / month (or GH₵ ${(19 * exchangeRate).toFixed(2)} GHS / month via Mobile Money / Card)`,
       "- **Unlimited access** to all Pro PDF utilities, OCR scanners, AI workflows, and Studio workspaces.",
       "- Commercial-use rights and priority local client processing.",
       "",
       "## Individual Tool Tiers & Prices",
-      "| Tool | Category | Tier | Price |",
+      "| Tool | Category | Tier | Price (USD / GHS) |",
       "| :--- | :--- | :--- | :--- |",
     ]
     tools.forEach((t) => {
       const isPro = (toolTiers[t.id] || "standard") === "pro"
       const price = toolPrices[t.id] ?? (isPro ? 4.99 : 0)
-      const priceLabel = price === 0 ? "Free" : `$${price.toFixed(2)} USD`
+      const priceLabel =
+        price === 0
+          ? "Free"
+          : `$${price.toFixed(2)} USD (GH₵ ${(price * exchangeRate).toFixed(2)} GHS)`
       lines.push(
         `| ${t.name} | ${t.category} | ${
           isPro ? "PRO" : "Standard"
@@ -738,8 +930,285 @@ export default function AdminPanel({
               <span
                 style={{ fontSize: "16px", fontWeight: 700, marginTop: "2px" }}
               >
-                $19 USD / mo
+                {activeCurrency === "GHS"
+                  ? `GH₵ ${(19 * exchangeRate).toFixed(2)} GHS / mo`
+                  : "$19 USD / mo"}
               </span>
+            </div>
+          </div>
+
+          {/* Currency Control & Real-time Backend Conversion Station */}
+          <div
+            className="panel"
+            style={{
+              padding: "14px 18px",
+              marginBottom: "16px",
+              background:
+                "linear-gradient(135deg, var(--surface) 0%, rgba(99, 102, 241, 0.05) 100%)",
+              border: "1px solid rgba(99, 102, 241, 0.25)",
+              borderRadius: "10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    color: "var(--text)",
+                  }}
+                >
+                  <Coins size={16} style={{ color: "#6366f1" }} />
+                  <span>Currency &amp; Backend Conversion Station</span>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: "rgba(16, 185, 129, 0.15)",
+                      color: "#10b981",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ● Backend API Active (/api/currency)
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    margin: "2px 0 0 0",
+                  }}
+                >
+                  Change display currency between US Dollar ($) and Ghanaian
+                  Cedi (GH₵). Changing values automatically recalculates both
+                  currencies via the backend conversion engine.
+                </p>
+              </div>
+
+              {/* Active Currency Selector Pill */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "20px",
+                  padding: "3px",
+                  gap: "2px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleCurrencySelect("USD")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "16px",
+                    border: "none",
+                    background:
+                      activeCurrency === "USD"
+                        ? "#6366f1"
+                        : "transparent",
+                    color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <span>🇺🇸</span>
+                  <span>USD ($)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCurrencySelect("GHS")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "16px",
+                    border: "none",
+                    background:
+                      activeCurrency === "GHS"
+                        ? "#6366f1"
+                        : "transparent",
+                    color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <span>🇬🇭</span>
+                  <span>GHS (GH₵)</span>
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "14px",
+                paddingTop: "10px",
+                borderTop: "1px solid var(--border)",
+              }}
+            >
+              {/* Backend Exchange Rate Setting */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "12px",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>
+                  Backend Rate:
+                </span>
+                <span style={{ color: "var(--muted)" }}>1 USD =</span>
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.1"
+                    value={rateInput}
+                    onChange={(e) => setRateInput(e.target.value)}
+                    style={{
+                      width: "80px",
+                      padding: "4px 8px 4px 18px",
+                      fontSize: "12px",
+                      borderRadius: "5px",
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      color: "var(--text)",
+                      fontWeight: 700,
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: "6px",
+                      top: "4px",
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    ₵
+                  </span>
+                </div>
+                <span style={{ color: "var(--muted)" }}>GHS</span>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    fontSize: "11px",
+                    padding: "4px 10px",
+                    borderRadius: "5px",
+                  }}
+                  disabled={isUpdatingRate}
+                  onClick={handleUpdateBackendRate}
+                >
+                  {isUpdatingRate ? "Syncing..." : "Update Rate"}
+                </button>
+                {rateSuccessMsg && (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#10b981",
+                      fontWeight: 600,
+                    }}
+                  >
+                    ✓ {rateSuccessMsg}
+                  </span>
+                )}
+              </div>
+
+              {/* Real-time Bidirectional Sandbox Calculator */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "11px",
+                  background: "var(--surface)",
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+                  Live Test Converter:
+                </span>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                >
+                  <span>$</span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={calcUsd}
+                    onChange={(e) => handleCalcUsdChange(e.target.value)}
+                    style={{
+                      width: "60px",
+                      padding: "2px 4px",
+                      fontSize: "11px",
+                      borderRadius: "3px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      fontWeight: 600,
+                    }}
+                  />
+                  <span style={{ color: "var(--muted)" }}>USD</span>
+                </div>
+                <ArrowRightLeft
+                  size={12}
+                  style={{
+                    color: calcLoading ? "#6366f1" : "var(--muted)",
+                  }}
+                />
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                >
+                  <span>GH₵</span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={calcGhs}
+                    onChange={(e) => handleCalcGhsChange(e.target.value)}
+                    style={{
+                      width: "65px",
+                      padding: "2px 4px",
+                      fontSize: "11px",
+                      borderRadius: "3px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      fontWeight: 600,
+                    }}
+                  />
+                  <span style={{ color: "var(--muted)" }}>GHS</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -919,7 +1388,16 @@ export default function AdminPanel({
                       fontWeight: 600,
                     }}
                   >
-                    Tool Price ($ USD)
+                    Price (USD $)
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      color: "var(--muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Price (GHS GH₵)
                   </th>
                   <th
                     style={{
@@ -937,6 +1415,11 @@ export default function AdminPanel({
                 {filteredTools.map((t) => {
                   const isPro = (toolTiers[t.id] || "standard") === "pro"
                   const priceVal = toolPrices[t.id] ?? (isPro ? 4.99 : 0)
+                  const ghsVal =
+                    ghsPrices[t.id] ??
+                    (priceVal === 0
+                      ? 0
+                      : Math.round(priceVal * exchangeRate * 100) / 100)
                   return (
                     <tr
                       key={t.id}
@@ -974,6 +1457,7 @@ export default function AdminPanel({
                           {isPro ? "PRO" : "STANDARD"}
                         </span>
                       </td>
+                      {/* USD Column - Live Backend Conversion */}
                       <td style={{ padding: "12px 16px" }}>
                         <div
                           style={{
@@ -998,11 +1482,56 @@ export default function AdminPanel({
                             placeholder={isPro ? "4.99" : "0.00"}
                             value={priceVal}
                             onChange={(e) =>
-                              handlePriceChange(t.id, e.target.value)
+                              handleUsdPriceChange(t.id, e.target.value)
                             }
                             onBlur={() => handlePriceBlur(t.id, t.name)}
                             style={{
-                              width: "76px",
+                              width: "72px",
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                              borderRadius: "4px",
+                              border: "1px solid var(--border)",
+                              background: "var(--surface)",
+                              color: "var(--text)",
+                              fontWeight: 600,
+                            }}
+                          />
+                        </div>
+                      </td>
+                      {/* GHS Column - Live Backend Conversion */}
+                      <td style={{ padding: "12px 16px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "var(--muted)",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            GH₵
+                          </span>
+                          <input
+                            type="number"
+                            step="5"
+                            min="0"
+                            placeholder={
+                              isPro
+                                ? (4.99 * exchangeRate).toFixed(2)
+                                : "0.00"
+                            }
+                            value={ghsVal}
+                            onChange={(e) =>
+                              handleGhsPriceChange(t.id, e.target.value)
+                            }
+                            onBlur={() => handlePriceBlur(t.id, t.name)}
+                            style={{
+                              width: "78px",
                               padding: "4px 8px",
                               fontSize: "12px",
                               borderRadius: "4px",

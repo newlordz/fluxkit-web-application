@@ -1038,3 +1038,56 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
   assert.ok(html.includes("Payment &amp; APIs") || html.includes("Payment & APIs"), "Admin sees Payment & APIs link")
   assert.ok(html.includes("WORKSTATION"), "Admin has workstation tools available at their disposal")
 })
+
+test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", (t) => {
+  const harness = createHarness({
+    hash: "admin",
+  })
+  const admin = harness.load("adminService")
+  const auth = harness.load("authService")
+
+  // 1. Root admin verification
+  assert.equal(admin.isRootAdmin("usr_admin_default"), true)
+  assert.equal(admin.isRootAdmin("admin@fluxkit.com"), true)
+
+  // 2. Root admin cannot be deleted
+  assert.throws(
+    () => admin.deleteUser("usr_admin_default"),
+    /permanently locked and cannot be deleted/,
+  )
+
+  // 3. Root admin cannot be demoted
+  assert.throws(
+    () => admin.updateUserRole("usr_admin_default", "user"),
+    /permanently locked and cannot be demoted/,
+  )
+
+  // 4. Admin creates new user with sub-admin role
+  const subAdmin = admin.createUserByAdmin({
+    name: "Operations Lead",
+    email: "ops@fluxkit.com",
+    password: "OpsPassword2026!",
+    role: "sub-admin",
+    subscriptionTier: "pro",
+  })
+  assert.equal(subAdmin.role, "sub-admin")
+  assert.equal(subAdmin.subscriptionTier, "pro")
+
+  // 5. Sub-Admin can access tools
+  assert.equal(admin.canUserAccessTool("merge-pdf", subAdmin), true)
+
+  // 6. Change user password
+  assert.doesNotThrow(() => {
+    admin.changeUserPassword(subAdmin.id, "NewOpsPassword2026!")
+  })
+
+  // 7. Change Root admin password
+  assert.doesNotThrow(() => {
+    admin.changeUserPassword("admin@fluxkit.com", "BrandNewRootAdminPass123!")
+  })
+
+  // 8. Non-root user can be deleted
+  assert.doesNotThrow(() => {
+    admin.deleteUser(subAdmin.id)
+  })
+})
