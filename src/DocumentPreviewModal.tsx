@@ -740,10 +740,20 @@ export default function DocumentPreviewModal({
   onConfirm,
   onClose,
 }: DocumentPreviewModalProps) {
-  // File reordering state
+  // File reordering & preview state
   const [orderedFiles, setOrderedFiles] = useState<File[]>([...files])
   const dragIndexRef = useRef<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [arrangeViewMode, setArrangeViewMode] = useState<"grid" | "list">(
+    "grid",
+  )
+  const [filePreviews, setFilePreviews] = useState<
+    Record<string, DocumentPreviewData>
+  >({})
+  const [inspectDocModal, setInspectDocModal] = useState<{
+    file: File
+    index: number
+  } | null>(null)
 
   // Real Page Content & Count extraction
   const [extractedPages, setExtractedPages] = useState<ExtractedPage[]>([])
@@ -758,6 +768,34 @@ export default function DocumentPreviewModal({
     imageUrl?: string
   } | null>(null)
   const [isLoadingPages, setIsLoadingPages] = useState(false)
+
+  // Load real previews for all files in merge / arrange mode
+  useEffect(() => {
+    let active = true
+    if (mode === "merge" || mode === "arrange") {
+      orderedFiles.forEach(async (file, idx) => {
+        const key = getFileKey(file, idx)
+        if (filePreviews[key]) return
+        try {
+          const preview = await loadFilePreview(file)
+          if (!active) return
+          setFilePreviews((prev) => ({
+            ...prev,
+            [key]: preview,
+          }))
+        } catch {
+          if (!active) return
+          setFilePreviews((prev) => ({
+            ...prev,
+            [key]: { pageCount: 1, textLines: [file.name] },
+          }))
+        }
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [orderedFiles, mode])
 
   // Page Drag & Drop
   const pageDragIndexRef = useRef<number | null>(null)
@@ -832,7 +870,9 @@ export default function DocumentPreviewModal({
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (inspectModal) {
+        if (inspectDocModal) {
+          setInspectDocModal(null)
+        } else if (inspectModal) {
           if (inspectModal.pdfUrl) URL.revokeObjectURL(inspectModal.pdfUrl)
           setInspectModal(null)
         } else {
@@ -842,15 +882,37 @@ export default function DocumentPreviewModal({
     }
     window.addEventListener("keydown", handleKey)
     return () => window.removeEventListener("keydown", handleKey)
-  }, [inspectModal])
+  }, [inspectModal, inspectDocModal])
 
   const handleClose = useCallback(() => {
     if (inspectModal?.pdfUrl) {
       URL.revokeObjectURL(inspectModal.pdfUrl)
     }
+    setInspectDocModal(null)
     setVisible(false)
     setTimeout(onClose, 260)
   }, [onClose, inspectModal])
+
+  // File Move Handler
+  const handleMoveFile = (from: number, to: number) => {
+    if (to < 0 || to >= orderedFiles.length || from === to) return
+    setOrderedFiles((prev) => {
+      const copy = [...prev]
+      const [moved] = copy.splice(from, 1)
+      copy.splice(to, 0, moved)
+      return copy
+    })
+    if (inspectDocModal && inspectDocModal.index === from) {
+      setInspectDocModal({
+        file: orderedFiles[to] || inspectDocModal.file,
+        index: to,
+      })
+    }
+  }
+
+  const handleInspectDoc = (file: File, index: number) => {
+    setInspectDocModal({ file, index })
+  }
 
   // File Drag Handlers
   const handleFileDragStart = (e: React.DragEvent, i: number) => {
@@ -878,6 +940,9 @@ export default function DocumentPreviewModal({
 
   const handleFileRemove = (i: number) => {
     setOrderedFiles((prev) => prev.filter((_, idx) => idx !== i))
+    if (inspectDocModal && inspectDocModal.index === i) {
+      setInspectDocModal(null)
+    }
   }
 
   // Page Drag Handlers (Moving pages within the document)
@@ -1030,7 +1095,7 @@ export default function DocumentPreviewModal({
 
         {/* Body */}
         <div className="dpm-body">
-          {/* File Merge / Arrange Mode */}
+          {/* File Merge / Arrange Mode with Visual Previews and Grab & Move */}
           {(mode === "merge" || mode === "arrange") && (
             <>
               {orderedFiles.length === 0 ? (
@@ -1039,30 +1104,111 @@ export default function DocumentPreviewModal({
                   <p>No files to arrange</p>
                 </div>
               ) : (
-                <div className="dpm-file-list">
-                  {orderedFiles.map((file, i) => (
-                    <FileCard
-                      key={`${file.name}-${file.size}-${i}`}
-                      file={file}
-                      index={i}
-                      total={orderedFiles.length}
-                      isDragSource={dragIndexRef.current === i}
-                      isDragOver={dragOverIndex === i}
-                      onDragStart={handleFileDragStart}
-                      onDragEnter={handleFileDragEnter}
-                      onDragEnd={handleFileDragEnd}
-                      onRemove={handleFileRemove}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="dpm-arrange-toolbar">
+                    <div className="dpm-arrange-toolbar__hint">
+                      <GripVertical size={14} />
+                      <span>
+                        <strong>Grab &amp; move</strong> cards to set merge sequence
+                        · Merges top/left &rarr; bottom/right
+                      </span>
+                    </div>
+
+                    <div className="dpm-view-toggle">
+                      <button
+                        type="button"
+                        className={[
+                          "dpm-view-toggle__btn",
+                          arrangeViewMode === "grid"
+                            ? "dpm-view-toggle__btn--active"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => setArrangeViewMode("grid")}
+                        title="Visual Cards Preview"
+                      >
+                        <LayoutGrid size={14} />
+                        <span>Cards Preview</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={[
+                          "dpm-view-toggle__btn",
+                          arrangeViewMode === "list"
+                            ? "dpm-view-toggle__btn--active"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => setArrangeViewMode("list")}
+                        title="Detailed List View"
+                      >
+                        <List size={14} />
+                        <span>List View</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {arrangeViewMode === "grid" ? (
+                    <div className="dpm-file-grid">
+                      {orderedFiles.map((file, i) => {
+                        const key = getFileKey(file, i)
+                        const preview = filePreviews[key]
+                        return (
+                          <FilePreviewCard
+                            key={key}
+                            file={file}
+                            index={i}
+                            total={orderedFiles.length}
+                            preview={preview}
+                            isDragSource={dragIndexRef.current === i}
+                            isDragOver={dragOverIndex === i}
+                            onDragStart={handleFileDragStart}
+                            onDragEnter={handleFileDragEnter}
+                            onDragEnd={handleFileDragEnd}
+                            onRemove={handleFileRemove}
+                            onInspect={handleInspectDoc}
+                            onMove={handleMoveFile}
+                          />
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="dpm-file-list">
+                      {orderedFiles.map((file, i) => {
+                        const key = getFileKey(file, i)
+                        const preview = filePreviews[key]
+                        return (
+                          <FileCard
+                            key={key}
+                            file={file}
+                            index={i}
+                            total={orderedFiles.length}
+                            preview={preview}
+                            isDragSource={dragIndexRef.current === i}
+                            isDragOver={dragOverIndex === i}
+                            onDragStart={handleFileDragStart}
+                            onDragEnter={handleFileDragEnter}
+                            onDragEnd={handleFileDragEnd}
+                            onRemove={handleFileRemove}
+                            onInspect={handleInspectDoc}
+                            onMove={handleMoveFile}
+                          />
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="dpm-hint" style={{ marginTop: "14px" }}>
+                    <GripVertical size={14} />
+                    <span>
+                      Drag any document card or row to reposition · Order:{" "}
+                      {orderedFiles.map((f, i) => `#${i + 1} ${f.name}`).join(" → ")}
+                    </span>
+                  </div>
+                </>
               )}
-              <div className="dpm-hint">
-                <GripVertical size={14} />
-                <span>
-                  Drag file rows up/down to change sequence · Merges top &rarr;
-                  bottom
-                </span>
-              </div>
             </>
           )}
 
@@ -1270,6 +1416,163 @@ export default function DocumentPreviewModal({
               ) : (
                 <pre>{inspectModal.text}</pre>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enlarged Full Document Inspection Modal (Merge Mode) */}
+      {inspectDocModal && (
+        <div
+          className="dpm-inspect-backdrop"
+          onClick={() => setInspectDocModal(null)}
+        >
+          <div
+            className="dpm-inspect-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "880px" }}
+          >
+            <div className="dpm-inspect-header">
+              <FileText size={18} />
+              <h3 style={{ fontSize: "14px", flex: 1 }}>
+                Document #{inspectDocModal.index + 1} of {orderedFiles.length}:{" "}
+                <span style={{ color: "var(--accent, #aa91ff)" }}>
+                  {inspectDocModal.file.name}
+                </span>
+              </h3>
+              <button
+                type="button"
+                className="dpm-close-btn"
+                onClick={() => setInspectDocModal(null)}
+                aria-label="Close document inspection"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Reorder control strip in inspector */}
+            <div className="dpm-inspect-reorder-bar">
+              <div className="dpm-inspect-reorder-bar__pos">
+                <GripVertical size={14} />
+                <span>
+                  Current Merge Position:{" "}
+                  <strong>#{inspectDocModal.index + 1}</strong>
+                </span>
+                <span style={{ color: "var(--muted)" }}>
+                  ({fmtSize(inspectDocModal.file.size)} ·{" "}
+                  {filePreviews[
+                    getFileKey(inspectDocModal.file, inspectDocModal.index)
+                  ]?.pageCount ?? 1}{" "}
+                  page
+                  {(filePreviews[
+                    getFileKey(inspectDocModal.file, inspectDocModal.index)
+                  ]?.pageCount ?? 1) !== 1
+                    ? "s"
+                    : ""}
+                  )
+                </span>
+              </div>
+              <div className="dpm-inspect-reorder-bar__btns">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={inspectDocModal.index === 0}
+                  style={{
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    borderRadius: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  onClick={() =>
+                    handleMoveFile(
+                      inspectDocModal.index,
+                      inspectDocModal.index - 1,
+                    )
+                  }
+                >
+                  <ChevronLeft size={13} /> Move Earlier
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={inspectDocModal.index === orderedFiles.length - 1}
+                  style={{
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    borderRadius: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  onClick={() =>
+                    handleMoveFile(
+                      inspectDocModal.index,
+                      inspectDocModal.index + 1,
+                    )
+                  }
+                >
+                  Move Later <ChevronRight size={13} />
+                </button>
+              </div>
+            </div>
+
+            <div className="dpm-inspect-body">
+              {(() => {
+                const key = getFileKey(
+                  inspectDocModal.file,
+                  inspectDocModal.index,
+                )
+                const pInfo = filePreviews[key]
+                if (pInfo?.imageUrl) {
+                  return (
+                    <div className="dpm-inspect-image-wrap">
+                      <img
+                        src={pInfo.imageUrl}
+                        alt={`Preview of ${inspectDocModal.file.name}`}
+                        className="dpm-inspect-image"
+                      />
+                    </div>
+                  )
+                }
+                if (pInfo?.pdfUrl) {
+                  return (
+                    <object
+                      data={pInfo.pdfUrl}
+                      type="application/pdf"
+                      className="dpm-inspect-iframe"
+                    >
+                      <iframe
+                        src={`${pInfo.pdfUrl}#toolbar=0&navpanes=0`}
+                        title={`Preview ${inspectDocModal.file.name}`}
+                        className="dpm-inspect-iframe"
+                      />
+                    </object>
+                  )
+                }
+                if (pInfo?.fullText) {
+                  return <pre>{pInfo.fullText}</pre>
+                }
+                return (
+                  <div
+                    style={{
+                      padding: "40px",
+                      textAlign: "center",
+                      color: "var(--muted)",
+                      width: "100%",
+                    }}
+                  >
+                    <FileText size={48} style={{ margin: "0 auto 12px" }} />
+                    <p style={{ fontWeight: 600, color: "var(--text)" }}>
+                      {inspectDocModal.file.name}
+                    </p>
+                    <p style={{ fontSize: "12px" }}>
+                      Ready to merge as #{inspectDocModal.index + 1}
+                    </p>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>
