@@ -30,7 +30,8 @@ const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
   {
     id: "paystack",
     name: "Paystack",
-    description: "Modern payments for Africa and global cards (Cards, Mobile Money, Bank Transfer, Apple Pay).",
+    description:
+      "Modern payments for Africa and global cards (Cards, Mobile Money, Bank Transfer, Apple Pay).",
     enabled: true,
     mode: "test",
     publicKey: "pk_test_sample_fluxkit_paystack_key_2026",
@@ -43,20 +44,23 @@ const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
   {
     id: "stripe",
     name: "Stripe",
-    description: "Global credit card processing, Apple Pay, Google Pay, and recurring subscription checkouts.",
+    description:
+      "Global credit card processing, Apple Pay, Google Pay, and recurring subscription checkouts.",
     enabled: false,
     mode: "test",
     publicKey: "",
     secretKey: "",
     webhookSecret: "",
     currency: "USD",
-    notes: "Supports 135+ global currencies, 3D Secure, and Stripe Billing webhooks.",
+    notes:
+      "Supports 135+ global currencies, 3D Secure, and Stripe Billing webhooks.",
     testStatus: "untested",
   },
   {
     id: "flutterwave",
     name: "Flutterwave",
-    description: "Pan-African and international checkout gateway supporting cards, USSD, and MPesa.",
+    description:
+      "Pan-African and international checkout gateway supporting cards, USSD, and MPesa.",
     enabled: false,
     mode: "test",
     publicKey: "",
@@ -69,7 +73,8 @@ const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
   {
     id: "custom",
     name: "Custom Payment Webhook / API",
-    description: "Connect your self-hosted backend, LemonSqueezy, Paddle, or custom billing API.",
+    description:
+      "Connect your self-hosted backend, LemonSqueezy, Paddle, or custom billing API.",
     enabled: false,
     mode: "test",
     publicKey: "",
@@ -120,7 +125,9 @@ export function getAllGateways(): PaymentGatewayConfig[] {
   }
 }
 
-export function getGateway(id: PaymentProvider): PaymentGatewayConfig | undefined {
+export function getGateway(
+  id: PaymentProvider,
+): PaymentGatewayConfig | undefined {
   return getAllGateways().find((g) => g.id === id)
 }
 
@@ -161,7 +168,7 @@ export function setActiveGateway(id: PaymentProvider): void {
 
 export async function testGatewayConnection(
   id: PaymentProvider,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean message: string }> {
   const gateway = getGateway(id)
   if (!gateway) {
     return { success: false, message: `Gateway '${id}' not found.` }
@@ -229,7 +236,10 @@ export async function testGatewayConnection(
       })
       return res
     }
-    if (!gateway.publicKey.startsWith("pk_") || !gateway.secretKey.startsWith("sk_")) {
+    if (
+      !gateway.publicKey.startsWith("pk_") ||
+      !gateway.secretKey.startsWith("sk_")
+    ) {
       const res = {
         success: false,
         message: "Stripe keys must start with pk_ and sk_.",

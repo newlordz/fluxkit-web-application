@@ -1827,7 +1827,13 @@ export default function ToolPage({
         <button
           type="button"
           className="text-button"
-          onClick={() => navigate("overview")}
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              window.history.back()
+            } else {
+              navigate("overview")
+            }
+          }}
           style={{
             display: "inline-flex",
             alignItems: "center",

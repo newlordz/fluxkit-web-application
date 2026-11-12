@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import {
   Activity,
   AudioLines,
@@ -252,8 +252,52 @@ export default function App() {
     window.addEventListener("keydown", shortcut)
     return () => window.removeEventListener("keydown", shortcut)
   }, [])
+  const pageScrollPositions = useRef<Map<string, number>>(new Map())
+
+  // Continuously record scroll position of the active page
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    let ticking = false
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentY =
+            window.scrollY || document.documentElement.scrollTop || 0
+          pageScrollPositions.current.set(page, currentY)
+          ticking = false
+        })
+        ticking = true
+      }
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [page])
+
+  // Restore scroll position whenever `page` changes
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const isTool = tools.some((t) => t.id === page)
+    if (isTool) {
+      window.scrollTo({ top: 0, behavior: "instant" })
+    } else {
+      const savedY = pageScrollPositions.current.get(page)
+      if (typeof savedY === "number" && savedY > 0) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: savedY, behavior: "instant" })
+          })
+        })
+      }
+    }
+  }, [page])
+
   const [stagedFiles, setStagedFiles] = useState<File[]>([])
   function navigate(id: string, initialFiles?: File[]) {
+    if (typeof window !== "undefined") {
+      const currentScroll =
+        window.scrollY || document.documentElement.scrollTop || 0
+      pageScrollPositions.current.set(page, currentScroll)
+    }
     if (initialFiles && initialFiles.length > 0) {
       setStagedFiles(initialFiles)
     } else {
@@ -265,7 +309,6 @@ export default function App() {
     setMenu(false)
     setQuery("")
     setFilter("All tools")
-    window.scrollTo({ top: 0 })
   }
   const customPage = getCustomPageBySlug(page)
   const selected = tools.find((t) => t.id === page)
@@ -279,9 +322,9 @@ export default function App() {
           ? "Admin Dashboard"
           : page === "admin-integrations"
             ? "Payment Gateways & APIs"
-          : customPage?.title ||
-            selected?.name ||
-            (page === "help" ? "Help & resources" : "Page not found"))
+            : customPage?.title ||
+              selected?.name ||
+              (page === "help" ? "Help & resources" : "Page not found"))
   const category: Category | undefined =
     page === "files"
       ? "File tools"
@@ -389,7 +432,9 @@ export default function App() {
       >
         <button
           className="brand"
-          onClick={() => navigate(currentUser?.role === "admin" ? "admin" : "overview")}
+          onClick={() =>
+            navigate(currentUser?.role === "admin" ? "admin" : "overview")
+          }
         >
           <span className="brand-mark">
             <Zap size={23} fill="currentColor" />
@@ -526,17 +571,11 @@ export default function App() {
               Explore the toolkit <ArrowUpRight size={15} />
             </button>
           </div>
-          <button
-            className="bottom-nav"
-            onClick={() => navigate("settings")}
-          >
+          <button className="bottom-nav" onClick={() => navigate("settings")}>
             <Settings size={18} />
             <span>Settings</span>
           </button>
-          <button
-            className="bottom-nav"
-            onClick={() => navigate("help")}
-          >
+          <button className="bottom-nav" onClick={() => navigate("help")}>
             <HelpCircle size={18} />
             <span>Help & resources</span>
             <ArrowUpRight size={14} />

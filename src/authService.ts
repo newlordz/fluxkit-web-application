@@ -17,12 +17,26 @@ export interface UserAccount {
   email: string
   avatar?: string
   provider: "google" | "email"
-  role: "admin" | "user"
+  role: "admin" | "sub-admin" | "user"
   subscriptionTier: "standard" | "pro"
   proStatus: "none" | "pending" | "active"
   createdAt: string
   lastLoginAt: string
   message?: string
+}
+
+export function isRootAdmin(
+  userOrEmail: UserAccount | string | null | undefined,
+): boolean {
+  if (!userOrEmail) return false
+  if (typeof userOrEmail === "string") {
+    const clean = userOrEmail.trim().toLowerCase()
+    return clean === "admin@fluxkit.com" || clean === "usr_admin_default"
+  }
+  return (
+    userOrEmail.id === "usr_admin_default" ||
+    userOrEmail.email.trim().toLowerCase() === "admin@fluxkit.com"
+  )
 }
 
 export interface AuthAdapter {
@@ -421,6 +435,33 @@ function generateUserId(): string {
   return `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+export function generateSalt(): string {
+  return `salt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function changeAccountPassword(
+  email: string,
+  newPassword: string,
+): void {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  if (!cleanEmail) throw new Error("Email is required.")
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error("Password must be at least 8 characters long.")
+  }
+
+  const salt = generateSalt()
+  const hash = hashPassword(newPassword, salt)
+  saveStoredCredential(cleanEmail, salt, hash)
+
+  const current = getCurrentUser()
+  if (current && current.email.toLowerCase() === cleanEmail) {
+    saveCurrentUser({
+      ...current,
+      lastLoginAt: new Date().toISOString(),
+    })
+  }
+}
+
 // --- Local Authentication Handlers ---
 
 async function localSignUp(values: SignUpValues): Promise<UserAccount> {
@@ -448,7 +489,7 @@ async function localSignUp(values: SignUpValues): Promise<UserAccount> {
   }
 
   const now = new Date().toISOString()
-  const salt = `salt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const salt = generateSalt()
   const hash = hashPassword(password, salt)
 
   const newUser: UserAccount = {
@@ -477,10 +518,19 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
     throw new Error("Invalid email or password.")
   }
 
-  // 1. Seeded Admin Account Check
+  // 1. Seeded Admin Account Check (supports password change)
   if (cleanEmail === SEEDED_ADMIN_CREDENTIALS.email.toLowerCase()) {
-    if (password !== SEEDED_ADMIN_CREDENTIALS.password) {
-      throw new Error("Invalid email or password.")
+    const creds = getStoredCredentials()
+    const customAdminCred = creds[cleanEmail]
+    if (customAdminCred) {
+      const computedHash = hashPassword(password, customAdminCred.salt)
+      if (computedHash !== customAdminCred.hash) {
+        throw new Error("Invalid email or password.")
+      }
+    } else {
+      if (password !== SEEDED_ADMIN_CREDENTIALS.password) {
+        throw new Error("Invalid email or password.")
+      }
     }
     const now = new Date().toISOString()
     const adminUser: UserAccount = {

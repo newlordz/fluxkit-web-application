@@ -4,13 +4,20 @@ import {
   saveCurrentUser,
   getRegisteredAccounts,
   saveRegisteredAccounts,
+  isRootAdmin,
+  changeAccountPassword,
+  generateSalt,
+  hashPassword,
 } from "./authService"
+export { isRootAdmin } from "./authService"
 import { tools } from "./config"
 
 const TOOL_TIERS_KEY = "fluxkit-tool-tiers"
+const TOOL_PRICES_KEY = "fluxkit-tool-prices"
 
 // In-memory fallback for test harnesses without localStorage
 let inMemoryTiers: Record<string, "standard" | "pro"> | null = null
+let inMemoryPrices: Record<string, number> | null = null
 
 function getStorage(): Storage | null {
   if (typeof window !== "undefined" && window.localStorage) {
@@ -64,6 +71,66 @@ export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
   saveAllToolTiers(tiers)
 }
 
+export function getAllToolPrices(): Record<string, number> {
+  const storage = getStorage()
+  if (storage) {
+    try {
+      const raw = storage.getItem(TOOL_PRICES_KEY)
+      if (raw) return JSON.parse(raw)
+    } catch {}
+  }
+  if (inMemoryPrices) return { ...inMemoryPrices }
+  return {}
+}
+
+export function saveAllToolPrices(prices: Record<string, number>): void {
+  inMemoryPrices = { ...prices }
+  const storage = getStorage()
+  if (storage) {
+    try {
+      storage.setItem(TOOL_PRICES_KEY, JSON.stringify(prices))
+      window.dispatchEvent(
+        new CustomEvent("fluxkit-prices-changed", { detail: prices }),
+      )
+    } catch {}
+  }
+}
+
+export function getToolPrice(toolId: string): number {
+  const prices = getAllToolPrices()
+  if (typeof prices[toolId] === "number") {
+    return prices[toolId]
+  }
+  return isToolPro(toolId) ? 4.99 : 0
+}
+
+export function setToolPrice(toolId: string, price: number): void {
+  const prices = getAllToolPrices()
+  const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
+  prices[toolId] = isNaN(clean) ? 0 : clean
+  saveAllToolPrices(prices)
+}
+
+export function getFormattedToolPrice(
+  toolId: string,
+  currency: string = "USD",
+): string {
+  const price = getToolPrice(toolId)
+  if (price === 0) return "Free"
+  switch (currency.toUpperCase()) {
+    case "GHS":
+      return `₵${(price * 13).toFixed(2)} GHS`
+    case "NGN":
+      return `₦${(price * 1500).toLocaleString()} NGN`
+    case "EUR":
+      return `€${price.toFixed(2)} EUR`
+    case "GBP":
+      return `£${(price * 0.85).toFixed(2)} GBP`
+    default:
+      return `$${price.toFixed(2)} USD`
+  }
+}
+
 export function canUserAccessTool(
   toolId: string,
   user: UserAccount | null,
@@ -75,7 +142,7 @@ export function canUserAccessTool(
   if (!user) {
     return false
   }
-  if (user.role === "admin") {
+  if (user.role === "admin" || user.role === "sub-admin") {
     return true
   }
   return user.subscriptionTier === "pro" && user.proStatus === "active"
@@ -212,6 +279,11 @@ export function approveProSubscription(userId: string): UserAccount {
 }
 
 export function revokeProSubscription(userId: string): UserAccount {
+  if (isRootAdmin(userId)) {
+    throw new Error(
+      "Root administrator Pro status is permanently active and cannot be revoked.",
+    )
+  }
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.id === userId)
   let updated: UserAccount
@@ -260,8 +332,13 @@ export function getAllUsers(): UserAccount[] {
 
 export function updateUserRole(
   userId: string,
-  role: "admin" | "user",
+  role: "admin" | "sub-admin" | "user",
 ): UserAccount {
+  if (isRootAdmin(userId) && role !== "admin") {
+    throw new Error(
+      "The root administrator account is permanently locked and cannot be demoted.",
+    )
+  }
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.id === userId)
   let updated: UserAccount
@@ -282,4 +359,84 @@ export function updateUserRole(
     saveCurrentUser(updated)
   }
   return updated
+}
+
+export function deleteUser(userId: string): void {
+  if (isRootAdmin(userId)) {
+    throw new Error(
+      "The root administrator account is permanently locked and cannot be deleted.",
+    )
+  }
+  const accounts = getRegisteredAccounts()
+  const filtered = accounts.filter(
+    (a) => a.id !== userId && a.email.toLowerCase() !== "admin@fluxkit.com",
+  )
+  saveRegisteredAccounts(filtered)
+}
+
+export function createUserByAdmin(payload: {
+  name: string
+  email: string
+  password: string
+  role?: "admin" | "sub-admin" | "user"
+  subscriptionTier?: "standard" | "pro"
+}): UserAccount {
+  const cleanName = (payload.name || "").trim()
+  const cleanEmail = (payload.email || "").trim().toLowerCase()
+  const password = payload.password || ""
+  const role = payload.role || "user"
+  const subscriptionTier = payload.subscriptionTier || "standard"
+  const proStatus = subscriptionTier === "pro" ? "active" : "none"
+
+  if (!cleanName) {
+    throw new Error("Please enter a user name.")
+  }
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    throw new Error("Please enter a valid email address.")
+  }
+  if (!password || password.length < 8) {
+    throw new Error("Password must be at least 8 characters long.")
+  }
+
+  const accounts = getRegisteredAccounts()
+  if (
+    accounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
+    cleanEmail === "admin@fluxkit.com"
+  ) {
+    throw new Error("An account with this email address already exists.")
+  }
+
+  // Hash & store credential
+  changeAccountPassword(cleanEmail, password)
+
+  const now = new Date().toISOString()
+  const newUser: UserAccount = {
+    id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    name: cleanName,
+    email: cleanEmail,
+    provider: "email",
+    role,
+    subscriptionTier,
+    proStatus,
+    createdAt: now,
+    lastLoginAt: now,
+  }
+
+  accounts.push(newUser)
+  saveRegisteredAccounts(accounts)
+  return newUser
+}
+
+export function changeUserPassword(
+  userIdOrEmail: string,
+  newPassword: string,
+): void {
+  const accounts = getRegisteredAccounts()
+  const found = accounts.find(
+    (a) =>
+      a.id === userIdOrEmail ||
+      a.email.toLowerCase() === userIdOrEmail.toLowerCase(),
+  )
+  const targetEmail = found ? found.email : userIdOrEmail
+  changeAccountPassword(targetEmail, newPassword)
 }

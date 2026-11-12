@@ -10,7 +10,11 @@ import {
 } from "lucide-react"
 import type { Tool } from "./config"
 import type { UserAccount } from "./authService"
-import { activateProSimulatedPayment, requestProApproval } from "./adminService"
+import {
+  activateProSimulatedPayment,
+  requestProApproval,
+  getFormattedToolPrice,
+} from "./adminService"
 import {
   getActiveGateway,
   triggerLivePaystackCheckout,
@@ -46,6 +50,11 @@ export default function ProActivationModal({
             ? "£16 GBP"
             : "$19 USD"
 
+  const toolPriceLabel = getFormattedToolPrice(
+    tool.id,
+    activeGateway?.currency || "USD",
+  )
+
   const handleSimulatedPayment = () => {
     setLoading("payment")
     setErrorMessage("")
@@ -80,7 +89,9 @@ export default function ProActivationModal({
         amountInSubunits: subunits,
         currency: activeGateway.currency,
         onSuccess: (ref) => {
-          const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
+          const userId = currentUser
+            ? currentUser.id
+            : "usr_guest_" + Date.now()
           const updated = activateProSimulatedPayment(userId)
           setLoading(null)
           setSuccessMessage(
@@ -96,7 +107,8 @@ export default function ProActivationModal({
         onError: (err) => {
           setLoading(null)
           setErrorMessage(
-            err.message || "Paystack checkout was closed or encountered an error.",
+            err.message ||
+              "Paystack checkout was closed or encountered an error.",
           )
         },
       })
@@ -239,6 +251,21 @@ export default function ProActivationModal({
                 >
                   <CreditCard size={18} /> Instant Activation
                 </div>
+                <div style={{ marginTop: "6px" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      fontSize: "11px",
+                      padding: "2px 8px",
+                      borderRadius: "4px",
+                      background: "rgba(168,85,247,0.15)",
+                      color: "#a855f7",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Tool Price: {toolPriceLabel}
+                  </span>
+                </div>
                 <div
                   style={{
                     fontSize: "24px",
@@ -264,9 +291,10 @@ export default function ProActivationModal({
                     lineHeight: 1.6,
                   }}
                 >
-                  Processed securely via <strong>{activeGateway?.name || "Paystack"}</strong>{" "}
-                  ({activeGateway?.mode?.toUpperCase() || "TEST"} MODE). Unlock all
-                  designated Pro tools immediately.
+                  Processed securely via{" "}
+                  <strong>{activeGateway?.name || "Paystack"}</strong> (
+                  {activeGateway?.mode?.toUpperCase() || "TEST"} MODE). Unlock
+                  all designated Pro tools immediately.
                 </p>
               </div>
               <div>

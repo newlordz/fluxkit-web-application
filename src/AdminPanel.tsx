@@ -27,6 +27,9 @@ import type { UserAccount } from "./authService"
 import {
   getAllToolTiers,
   setToolTier,
+  getAllToolPrices,
+  setToolPrice,
+  getFormattedToolPrice,
   getAllUsers,
   approveProSubscription,
   revokeProSubscription,
@@ -107,19 +110,25 @@ export default function AdminPanel({
     )
   }
 
-  const [activeTab, setActiveTab] = useState<
-    "tiers" | "users" | "pages" | "integrations"
-  >(initialTab || "tiers")
+  const [activeTab, setActiveTab] =
+    useState<"tiers" | "users" | "pages" | "integrations">(
+      initialTab || "tiers",
+    )
   const [toolTiers, setToolTiers] =
     useState<Record<string, "standard" | "pro">>(getAllToolTiers)
+  const [toolPrices, setToolPrices] =
+    useState<Record<string, number>>(getAllToolPrices)
   const [userList, setUserList] = useState<UserAccount[]>(getAllUsers)
   const [customPages, setCustomPages] = useState<CustomPage[]>(getCustomPages)
-  const [gateways, setGateways] = useState<PaymentGatewayConfig[]>(getAllGateways)
+  const [gateways, setGateways] =
+    useState<PaymentGatewayConfig[]>(getAllGateways)
   const [activeGatewayId, setActiveGatewayId] = useState<PaymentProvider>(
     () => getActiveGateway()?.id || "paystack",
   )
   const [testingGatewayId, setTestingGatewayId] = useState<string | null>(null)
-  const [showSecretKey, setShowSecretKey] = useState<Record<string, boolean>>({})
+  const [showSecretKey, setShowSecretKey] = useState<Record<string, boolean>>(
+    {},
+  )
   const [toolQuery, setToolQuery] = useState("")
   const [toastMessage, setToastMessage] = useState("")
 
@@ -147,12 +156,73 @@ export default function AdminPanel({
     setTimeout(() => setToastMessage(""), 3500)
   }
 
+  const handlePriceChange = (toolId: string, rawVal: string) => {
+    const val = parseFloat(rawVal)
+    const newPrice = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
+    setToolPrice(toolId, newPrice)
+    setToolPrices((prev) => ({ ...prev, [toolId]: newPrice }))
+  }
+
+  const handlePriceBlur = (toolId: string, toolName: string) => {
+    const p = toolPrices[toolId] ?? (toolTiers[toolId] === "pro" ? 4.99 : 0)
+    showToast(`Price for '${toolName}' set to $${Number(p).toFixed(2)} USD.`)
+  }
+
   const handleTierToggle = (toolId: string) => {
     const current = toolTiers[toolId] || "standard"
     const next = current === "pro" ? "standard" : "pro"
     setToolTier(toolId, next)
     setToolTiers({ ...toolTiers, [toolId]: next })
+    if (next === "pro" && (!toolPrices[toolId] || toolPrices[toolId] === 0)) {
+      setToolPrice(toolId, 4.99)
+      setToolPrices((prev) => ({ ...prev, [toolId]: 4.99 }))
+    }
     showToast(`Tool '${toolId}' updated to ${next.toUpperCase()} tier.`)
+  }
+
+  const handleLoadPricingPageTemplate = () => {
+    const lines = [
+      "# Plans & Tool Pricing",
+      "",
+      "Transparent, flexible pricing for all 37 creative, conversion, and intelligence tools. Run tools completely client-side in your browser with zero upload latency.",
+      "",
+      "## All-Access Pro Subscription",
+      "- **Monthly Pro Plan:** $19 USD / month (or equivalent in GHS, NGN, EUR, GBP)",
+      "- **Unlimited access** to all Pro PDF utilities, OCR scanners, AI workflows, and Studio workspaces.",
+      "- Commercial-use rights and priority local client processing.",
+      "",
+      "## Individual Tool Tiers & Prices",
+      "| Tool | Category | Tier | Price |",
+      "| :--- | :--- | :--- | :--- |",
+    ]
+    tools.forEach((t) => {
+      const isPro = (toolTiers[t.id] || "standard") === "pro"
+      const price = toolPrices[t.id] ?? (isPro ? 4.99 : 0)
+      const priceLabel = price === 0 ? "Free" : `$${price.toFixed(2)} USD`
+      lines.push(
+        `| ${t.name} | ${t.category} | ${
+          isPro ? "PRO" : "Standard"
+        } | ${priceLabel} |`,
+      )
+    })
+    lines.push(
+      "",
+      "### Need Custom Enterprise Volumes?",
+      "Contact support or request approval directly from the workspace console.",
+    )
+
+    setEditingPageId(null)
+    setPageForm({
+      slug: "pricing",
+      title: "Plans & Tool Pricing",
+      navTitle: "Pricing",
+      description:
+        "Complete list of FluxKit subscription tiers and per-tool prices.",
+      content: lines.join("\n"),
+      showInNav: true,
+      status: "published",
+    })
+    showToast("Loaded dynamic Pricing Page template into editor.")
   }
 
   const handleApprovePro = (userId: string) => {
@@ -522,6 +592,15 @@ export default function AdminPanel({
                       padding: "12px 16px",
                       color: "var(--muted)",
                       fontWeight: 600,
+                    }}
+                  >
+                    Tool Price ($ USD)
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      color: "var(--muted)",
+                      fontWeight: 600,
                       textAlign: "right",
                     }}
                   >
@@ -532,6 +611,7 @@ export default function AdminPanel({
               <tbody>
                 {filteredTools.map((t) => {
                   const isPro = (toolTiers[t.id] || "standard") === "pro"
+                  const priceVal = toolPrices[t.id] ?? (isPro ? 4.99 : 0)
                   return (
                     <tr
                       key={t.id}
@@ -568,6 +648,73 @@ export default function AdminPanel({
                           {isPro ? <Lock size={12} /> : <Unlock size={12} />}
                           {isPro ? "PRO" : "STANDARD"}
                         </span>
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "var(--muted)",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            $
+                          </span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            placeholder={isPro ? "4.99" : "0.00"}
+                            value={priceVal}
+                            onChange={(e) =>
+                              handlePriceChange(t.id, e.target.value)
+                            }
+                            onBlur={() => handlePriceBlur(t.id, t.name)}
+                            style={{
+                              width: "76px",
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                              borderRadius: "4px",
+                              border: "1px solid var(--border)",
+                              background: "var(--surface)",
+                              color: "var(--text)",
+                              fontWeight: 600,
+                            }}
+                          />
+                          {priceVal === 0 ? (
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                padding: "2px 6px",
+                                borderRadius: "3px",
+                                background: "rgba(16,185,129,0.15)",
+                                color: "#10b981",
+                                fontWeight: 700,
+                              }}
+                            >
+                              FREE
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                padding: "2px 6px",
+                                borderRadius: "3px",
+                                background: "rgba(168,85,247,0.15)",
+                                color: "#a855f7",
+                                fontWeight: 600,
+                              }}
+                            >
+                              PAID
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         <button
@@ -897,9 +1044,35 @@ export default function AdminPanel({
 
           {/* Create / Edit Form */}
           <div>
-            <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>
-              {editingPageId ? "Edit Custom Page" : "Create New Custom Page"}
-            </h3>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
+              <h3 style={{ fontSize: "16px", margin: 0 }}>
+                {editingPageId ? "Edit Custom Page" : "Create New Custom Page"}
+              </h3>
+              {!editingPageId && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    fontSize: "11px",
+                    padding: "5px 10px",
+                    borderRadius: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                  onClick={handleLoadPricingPageTemplate}
+                >
+                  <FileCode2 size={13} /> Load Pricing Page Template
+                </button>
+              )}
+            </div>
             <form
               className="panel"
               onSubmit={handleSavePage}
@@ -1196,8 +1369,9 @@ export default function AdminPanel({
                   maxWidth: "580px",
                 }}
               >
-                Integrate Paystack, Stripe, Flutterwave, or custom payment webhooks.
-                Active gateways automatically process and verify subscription activations for Pro tools.
+                Integrate Paystack, Stripe, Flutterwave, or custom payment
+                webhooks. Active gateways automatically process and verify
+                subscription activations for Pro tools.
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -1215,7 +1389,9 @@ export default function AdminPanel({
                 }}
               >
                 <CheckCircle2 size={14} />
-                Primary: {gateways.find((g) => g.id === activeGatewayId)?.name || "Paystack"}
+                Primary:{" "}
+                {gateways.find((g) => g.id === activeGatewayId)?.name ||
+                  "Paystack"}
               </span>
             </div>
           </div>
@@ -1639,7 +1815,9 @@ export default function AdminPanel({
                             <option value="EUR">EUR (Euros €)</option>
                             <option value="GBP">GBP (British Pounds £)</option>
                             <option value="KES">KES (Kenyan Shillings)</option>
-                            <option value="ZAR">ZAR (South African Rand)</option>
+                            <option value="ZAR">
+                              ZAR (South African Rand)
+                            </option>
                           </select>
                         </div>
                       </div>

@@ -88,7 +88,7 @@ export function getCustomPageById(id: string): CustomPage | null {
 }
 
 export function createCustomPage(
-  data: Partial<CustomPage> & { slug: string; title: string; content: string },
+  data: Partial<CustomPage> & { slug: string title: string content: string },
 ): CustomPage {
   const cleanSlug = data.slug.trim().toLowerCase()
 
