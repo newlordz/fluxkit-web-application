@@ -582,6 +582,64 @@ export default function ToolBadgeIcon({
           </svg>
         )
 
+      case "visitor":
+        return (
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            className="badge-svg"
+            aria-hidden="true"
+          >
+            {/* Lanyard clip / strap slot */}
+            <rect
+              x="12"
+              y="3"
+              width="8"
+              height="3"
+              rx="1.5"
+              fill="currentColor"
+              fillOpacity="0.4"
+            />
+            {/* ID Badge Card frame */}
+            <rect
+              x="5"
+              y="7"
+              width="22"
+              height="22"
+              rx="3"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              fill="currentColor"
+              fillOpacity="0.12"
+            />
+            {/* Top header ribbon */}
+            <rect
+              x="6"
+              y="8"
+              width="20"
+              height="5"
+              rx="1"
+              fill="currentColor"
+              fillOpacity="0.5"
+            />
+            {/* Portrait avatar silhouette */}
+            <circle cx="11.5" cy="18" r="3" fill="currentColor" />
+            <path
+              d="M7.5 25c0-2.2 1.8-4 4-4s4 1.8 4 4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            {/* Details lines on right */}
+            <path
+              d="M19 16h6M19 19h5M19 22h4"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        )
+
       default:
         if (FallbackIcon) {
           return <FallbackIcon size={22} strokeWidth={2} />

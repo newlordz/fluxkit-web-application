@@ -11,6 +11,7 @@ import {
   Files,
   FileSpreadsheet,
   FileText,
+  IdCard,
   Image,
   Languages,
   Layers,
@@ -570,6 +571,18 @@ export const tools: Tool[] = [
     true,
     false,
     "purple",
+  ),
+  tool(
+    "visitor-pass",
+    "Visitor Pass & Badges",
+    "Generate branded visitor ID cards, adhesive badges, and digital mobile passes with scannable QR security.",
+    "Workspace",
+    IdCard,
+    true,
+    true,
+    "teal",
+    "visitor",
+    "PASS",
   ),
 ]
 
