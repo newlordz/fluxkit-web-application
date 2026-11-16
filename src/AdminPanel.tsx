@@ -4369,6 +4369,7 @@ export default function AdminPanel({
                         href={api.dashboardUrl}
                         target="_blank"
                         rel="noreferrer"
+                        className="api-dashboard-badge"
                         style={{
                           fontSize: "11px",
                           padding: "4px 8px",
@@ -4417,6 +4418,7 @@ export default function AdminPanel({
                 key={cat.id}
                 type="button"
                 onClick={() => setApiCategoryFilter(cat.id)}
+                className={`api-category-pill ${apiCategoryFilter === cat.id ? "is-active" : ""}`}
                 style={{
                   fontSize: "12px",
                   padding: "6px 14px",
@@ -4510,6 +4512,7 @@ export default function AdminPanel({
                           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                             {/* Priority Dropdown & Badge */}
                             <div
+                              className={`api-priority-badge ${api.priority === 1 ? "is-primary" : ""}`}
                               style={{
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -4523,8 +4526,9 @@ export default function AdminPanel({
                                 border: api.priority === 1 ? "1px solid #00C9B7" : "1px solid var(--border)",
                               }}
                             >
-                              <Zap size={12} color="#00C9B7" />
+                              <Zap size={12} className="api-priority-icon" color="#00C9B7" />
                               <select
+                                className="api-priority-select"
                                 value={api.priority}
                                 onChange={(e) =>
                                   handleSetExactPriority(api.id, Number(e.target.value), api.category)
