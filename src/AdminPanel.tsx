@@ -4618,6 +4618,7 @@ export default function AdminPanel({
                                 href={api.dashboardUrl}
                                 target="_blank"
                                 rel="noreferrer"
+                                className="api-dashboard-badge"
                                 style={{
                                   fontSize: "10px",
                                   padding: "2px 6px",
@@ -4788,7 +4789,7 @@ export default function AdminPanel({
                               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                                 <div>
                                   <span style={{ color: "var(--muted)" }}>{api.provider === "adobe" ? "ID: " : "Key: "}</span>
-                                  <code style={{ fontSize: "11px", color: "#00C9B7" }}>
+                                  <code className="api-key-code" style={{ fontSize: "11px", color: "#00C9B7" }}>
                                     {showSecret ? api.apiKey : (api.apiKey ? `${api.apiKey.substring(0, 8)}••••` : "Not set")}
                                   </code>
                                 </div>
@@ -4998,6 +4999,7 @@ export default function AdminPanel({
           >
             <div>
               <div
+                className="admin-banner-tag"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",

@@ -1,7 +1,7 @@
 import React from "react"
 import type { LucideIcon } from "lucide-react"
 
-export type BadgeIconType = "merge" | "split" | "compress" | "word" | "excel" | "powerpoint" | "word-pdf" | "excel-pdf" | "ppt-pdf" | "edit" | "pdf-jpg" | "jpg-pdf" | "sign" | "watermark" | "rotate" | "qr" | "audio" | "text" | "lock" | "scan" | "ai" | "edi" | "csv" | "batch"
+export type BadgeIconType = "merge" | "split" | "compress" | "word" | "excel" | "powerpoint" | "word-pdf" | "excel-pdf" | "ppt-pdf" | "edit" | "pdf-jpg" | "jpg-pdf" | "sign" | "watermark" | "rotate" | "qr" | "audio" | "text" | "lock" | "scan" | "ai" | "edi" | "csv" | "batch" | "visitor"
 
 interface ToolBadgeIconProps {
   type?: BadgeIconType

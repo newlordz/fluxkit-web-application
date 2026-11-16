@@ -37,6 +37,15 @@ export interface ApiHealthResult {
 
 const STORAGE_KEY = "fluxkit_cloud_apis_config_v2"
 
+const getEnv = (key: string): string => {
+  try {
+    if (typeof process !== "undefined" && process?.env && process.env[key]) {
+      return process.env[key] || ""
+    }
+  } catch {}
+  return ""
+}
+
 export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
   // --- 1. PDF COMPRESSION & OPTIMIZATION PIPELINE ---
   {
@@ -48,8 +57,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     enabled: true,
     description: "Industry-standard high-fidelity PDF compression, linearizing, and optimization with lossless font embedding.",
     dashboardUrl: "https://developer.adobe.com/document-services/apis/pdf-services/",
-    apiKey: process.env.VITE_ADOBE_CLIENT_ID || "",
-    clientSecret: process.env.VITE_ADOBE_CLIENT_SECRET || "",
+    apiKey: getEnv("VITE_ADOBE_CLIENT_ID"),
+    clientSecret: getEnv("VITE_ADOBE_CLIENT_SECRET"),
     endpoint: "https://pdf-services.adobe.io",
     monthlyQuota: 500,
     usedThisMonth: 0,
@@ -66,8 +75,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     enabled: true,
     description: "Cloud-based PDF compression with balanced ratios and fast failover processing.",
     dashboardUrl: "https://developer.ilovepdf.com/",
-    apiKey: process.env.VITE_ILOVEPDF_PUBLIC_KEY || "",
-    clientSecret: process.env.VITE_ILOVEPDF_SECRET_KEY || "",
+    apiKey: getEnv("VITE_ILOVEPDF_PUBLIC_KEY"),
+    clientSecret: getEnv("VITE_ILOVEPDF_SECRET_KEY"),
     endpoint: "https://api.ilovepdf.com",
     monthlyQuota: 250,
     usedThisMonth: 0,
@@ -130,7 +139,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     enabled: true,
     description: "Multi-language optical character recognition for scanned PDFs and document images. 25,000 requests/month free (500/day).",
     dashboardUrl: "https://ocr.space/ocrapi/freekey",
-    apiKey: process.env.VITE_OCRSPACE_API_KEY || "",
+    apiKey: getEnv("VITE_OCRSPACE_API_KEY"),
     endpoint: "https://api.ocr.space/parse/image",
     monthlyQuota: 25000,
     usedThisMonth: 0,

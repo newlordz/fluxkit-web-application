@@ -183,20 +183,13 @@ export async function saveShowcase(data: ImageShowcaseData): Promise<{
     // ignore
   }
 
-  // 3. Construct target URL
+  // 3. Construct target URL with clean ID (keeps payload under 50 chars for reliable QR generation)
   const origin =
     typeof window !== "undefined" && window.location.origin
       ? window.location.origin
       : "https://fluxfix.de5.net"
 
-  // If the image is compact (< 80KB), we can also attach the encoded payload as backup
-  let url = `${origin}/#showcase?id=${data.id}`
-  if (data.imageDataUrl && data.imageDataUrl.length < 80000) {
-    const hash = encodeShowcaseToHash(data)
-    if (hash) {
-      url = `${origin}/#showcase?id=${data.id}&p=${hash}`
-    }
-  }
+  const url = `${origin}/#showcase?id=${data.id}`
 
   return { id: data.id, url }
 }

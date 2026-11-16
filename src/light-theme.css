@@ -1260,3 +1260,104 @@
   color: #0f172a;
 }
 
+/* ============================================================================
+   HIGH-CONTRAST ACCENT & BADGE OVERRIDES (Fix for Pale Green/Teal on Light)
+   ============================================================================ */
+
+/* Primary Priority Badge (⚡ #1 • Primary ∨) */
+:root[data-theme='light'] .api-priority-badge.is-primary,
+:root[data-theme='light'] .api-pipeline-node.is-primary {
+  background: #ecfdf5 !important;
+  border: 1.5px solid #059669 !important;
+  color: #065f46 !important;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.12) !important;
+}
+
+:root[data-theme='light'] .api-priority-badge.is-primary .api-priority-select,
+:root[data-theme='light'] .api-priority-badge.is-primary select,
+:root[data-theme='light'] .api-pipeline-node.is-primary select,
+:root[data-theme='light'] .api-pipeline-node.is-primary .api-priority-select {
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+:root[data-theme='light'] .api-priority-badge.is-primary .api-priority-icon,
+:root[data-theme='light'] .api-priority-badge.is-primary svg,
+:root[data-theme='light'] .api-pipeline-node.is-primary svg {
+  color: #059669 !important;
+  stroke: #059669 !important;
+}
+
+/* Dashboard ↗ Link Badges */
+:root[data-theme='light'] .api-dashboard-badge {
+  background: #ecfdf5 !important;
+  border: 1.5px solid #10b981 !important;
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+:root[data-theme='light'] .api-dashboard-badge:hover {
+  background: #d1fae5 !important;
+  border-color: #059669 !important;
+  color: #044e39 !important;
+}
+
+:root[data-theme='light'] .api-dashboard-badge svg {
+  color: #059669 !important;
+}
+
+/* Category Filter Pills */
+:root[data-theme='light'] .api-category-pill.is-active {
+  background: #ecfdf5 !important;
+  border: 1.5px solid #059669 !important;
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+/* Primary Indicator Badges (Gateways, Auto-failover, etc.) */
+:root[data-theme='light'] .primary-gateway-indicator,
+:root[data-theme='light'] .api-status-active {
+  background: #ecfdf5 !important;
+  border: 1.5px solid #059669 !important;
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+:root[data-theme='light'] .primary-gateway-indicator svg,
+:root[data-theme='light'] .api-status-active svg {
+  color: #059669 !important;
+}
+
+/* Preset Buttons in Modal */
+:root[data-theme='light'] .api-preset-pill.is-selected {
+  background: #ecfdf5 !important;
+  border: 1.5px solid #059669 !important;
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+/* API Key Monospace Code Preview */
+:root[data-theme='light'] .api-key-code {
+  color: #0f766e !important;
+  font-weight: 700 !important;
+}
+
+/* Admin Banner Tag */
+:root[data-theme='light'] .admin-banner-tag {
+  color: #065f46 !important;
+  font-weight: 750 !important;
+}
+
+/* Global Light-Theme Safety Guards for High Contrast on Green/Teal */
+:root[data-theme='light'] [style*="color: #00E5D2"],
+:root[data-theme='light'] [style*="color:#00E5D2"],
+:root[data-theme='light'] [style*="color: rgb(0, 229, 210)"] {
+  color: #065f46 !important;
+}
+
+:root[data-theme='light'] a[style*="color: #00C9B7"],
+:root[data-theme='light'] a[style*="color:#00C9B7"] {
+  color: #065f46 !important;
+}
+
+
