@@ -4,6 +4,7 @@ import {
   AudioLines,
   Combine,
   FileArchive,
+  FileCode2,
   FileLock2,
   FilePenLine,
   FileScan,
@@ -26,6 +27,7 @@ import {
   Sparkles,
   Stamp,
   Tags,
+  Terminal,
   Video,
   WandSparkles,
   Workflow,
@@ -34,21 +36,24 @@ import {
 import type { BadgeIconType } from "./ToolBadgeIcon"
 
 export const brand = {
-  name: "FluxKit",
-  tagline: "Less friction. More flow.",
-  initials: "JD",
+  name: "Masterfilepro",
+  displayName: "Masterfilepro",
+  shortName: "Masterfile",
+  proTag: "pro",
+  tagline: "High-performance file & document toolkit.",
+  initials: "MP",
   colors: {
     dark: {
-      accent: "#818cf8",
-      background: "#0b0f19",
-      surface: "#111827",
-      text: "#f9fafb",
+      accent: "#00C9B7", // Vibrant brand teal from official logo
+      background: "#080E1A", // Deep midnight navy-slate canvas
+      surface: "#0E1726", // Refined navy surface
+      text: "#F0F4F8", // Crisp contrast text
     },
     light: {
-      accent: "#4f46e5",
-      background: "#f8fafc",
-      surface: "#ffffff",
-      text: "#0f172a",
+      accent: "#00A896", // Rich brand teal for light mode
+      background: "#F4F8FB", // Crisp arctic canvas
+      surface: "#FFFFFF", // Pure white surface
+      text: "#06204D", // Deep brand navy from official logo
     },
   },
 }
@@ -294,7 +299,7 @@ export const tools: Tool[] = [
   tool(
     "qr",
     "QR Code Studio",
-    "Connect the physical and digital. Instantly create custom styled QR codes.",
+    "Connect the physical and digital. Generate custom QR codes and mobile image showcases with designer landing pages.",
     "QR tools",
     QrCode,
     true,
@@ -363,6 +368,42 @@ export const tools: Tool[] = [
     true,
     true,
     "teal",
+  ),
+  tool(
+    "edi-convert",
+    "EDI Conversions",
+    "Parse and convert EDI ANSI ASC X12 & EDIFACT files into JSON, CSV, Excel, XML, or readable reports.",
+    "File tools",
+    FileCode2,
+    true,
+    true,
+    "purple",
+    "edi",
+    "EDI X12",
+  ),
+  tool(
+    "csv-convert",
+    "CSV Studio & Converter",
+    "Convert CSV and TSV spreadsheets to Excel (XLSX), JSON, PDF, XML, SQL, or custom delimiters with live table preview.",
+    "File tools",
+    FileSpreadsheet,
+    true,
+    true,
+    "emerald",
+    "csv",
+    "CSV / XLSX",
+  ),
+  tool(
+    "batch-convert",
+    "Batch File Converter (.bat)",
+    "Transpile Windows Batch (.bat / .cmd) scripts into PowerShell (.ps1), Bash (.sh), or Python (.py), or generate automation scripts.",
+    "File tools",
+    Terminal,
+    true,
+    true,
+    "blue",
+    "batch",
+    ".BAT / .PS1",
   ),
   tool(
     "convert-compress",

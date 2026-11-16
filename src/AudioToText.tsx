@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import {
   AudioLines,
   Check,
+  CheckCircle2,
   Copy,
   Download,
   FileAudio,
@@ -98,6 +99,8 @@ export default function AudioToText({
   const [currentTime, setCurrentTime] = useState(0)
   const [analysis, setAnalysis] = useState<AudioAnalysisResult | null>(null)
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
+  const [dropSuccess, setDropSuccess] = useState(false)
+  const dropSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const controller = useRef<AbortController | null>(null)
   const picker = useRef<HTMLInputElement>(null)
@@ -179,6 +182,10 @@ export default function AudioToText({
 
     const url = URL.createObjectURL(selected)
     setAudioUrl(url)
+
+    setDropSuccess(true)
+    if (dropSuccessTimer.current) clearTimeout(dropSuccessTimer.current)
+    dropSuccessTimer.current = setTimeout(() => setDropSuccess(false), 2500)
 
     analyzeAudioFile(selected)
       .then((res) => {
@@ -708,7 +715,7 @@ export default function AudioToText({
           <label
             className={`dropzone audio-dropzone ${
               dragging ? "is-dragging" : ""
-            }`}
+            } ${dropSuccess ? "is-success" : ""}`}
             onDragOver={(event) => {
               event.preventDefault()
               if (!busy) setDragging(true)
@@ -719,22 +726,54 @@ export default function AudioToText({
               selectFile(event.dataTransfer.files)
             }}
           >
-            <span className="audio-upload-icon">
-              <AudioLines size={29} />
-            </span>
-            <strong>
-              {file
-                ? "Drop a new recording to replace"
-                : "Drop your recording here"}
-            </strong>
-            <span>or browse audio files</span>
-            <small>
-              One recording at a time ·{" "}
-              {capabilities
-                ? size(capabilities.maxFileBytes)
-                : "25 MB local selection"}{" "}
-              maximum
-            </small>
+            {dropSuccess ? (
+              <div className="dropzone-feedback-wrapper dropzone-success-enter">
+                <div className="dropzone-success-ring-wrapper">
+                  <span className="dropzone-ring-wave" />
+                  <span className="dropzone-ring-wave ring-wave-delayed" />
+                  <div className="dropzone-success-icon-badge">
+                    <CheckCircle2 size={36} className="dropzone-check-icon" />
+                  </div>
+                </div>
+                <strong className="dropzone-feedback-title">
+                  Audio file loaded successfully!
+                </strong>
+                <span className="dropzone-feedback-subtitle">
+                  {file?.name || "Ready to transcribe"}
+                </span>
+              </div>
+            ) : dragging ? (
+              <div className="dropzone-feedback-wrapper dropzone-dragging-enter">
+                <div className="dropzone-drag-icon-badge">
+                  <AudioLines size={36} className="dropzone-drag-bounce" />
+                </div>
+                <strong className="dropzone-feedback-title">
+                  Release to drop recording
+                </strong>
+                <span className="dropzone-feedback-subtitle">
+                  We will load and prepare your audio immediately
+                </span>
+              </div>
+            ) : (
+              <>
+                <span className="audio-upload-icon">
+                  <AudioLines size={29} />
+                </span>
+                <strong>
+                  {file
+                    ? "Drop a new recording to replace"
+                    : "Drop your recording here"}
+                </strong>
+                <span>or browse audio files</span>
+                <small>
+                  One recording at a time ·{" "}
+                  {capabilities
+                    ? size(capabilities.maxFileBytes)
+                    : "25 MB local selection"}{" "}
+                  maximum
+                </small>
+              </>
+            )}
             <input
               ref={picker}
               type="file"

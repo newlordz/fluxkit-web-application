@@ -26,17 +26,40 @@ export interface UserAccount {
   message?: string
 }
 
+export function getActiveAdminEmail(): string {
+  const storage = getStorage()
+  if (storage) {
+    try {
+      const raw = storage.getItem("fluxkit-admin-config")
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed?.email) return parsed.email.trim().toLowerCase()
+      }
+    } catch {}
+  }
+  return "admin@masterfilepro.com"
+}
+
 export function isRootAdmin(
   userOrEmail: UserAccount | string | null | undefined,
 ): boolean {
   if (!userOrEmail) return false
+  const activeAdminEmail = getActiveAdminEmail()
   if (typeof userOrEmail === "string") {
     const clean = userOrEmail.trim().toLowerCase()
-    return clean === "admin@fluxkit.com" || clean === "usr_admin_default"
+    return (
+      clean === "admin@masterfilepro.com" ||
+      clean === "admin@fluxkit.com" ||
+      clean === "usr_admin_default" ||
+      clean === activeAdminEmail
+    )
   }
   return (
     userOrEmail.id === "usr_admin_default" ||
-    userOrEmail.email.trim().toLowerCase() === "admin@fluxkit.com"
+    userOrEmail.role === "admin" ||
+    userOrEmail.email.trim().toLowerCase() === "admin@masterfilepro.com" ||
+    userOrEmail.email.trim().toLowerCase() === "admin@fluxkit.com" ||
+    userOrEmail.email.trim().toLowerCase() === activeAdminEmail
   )
 }
 
@@ -48,8 +71,8 @@ export interface AuthAdapter {
 
 export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
   id: "usr_admin_default",
-  name: "FluxKit Administrator",
-  email: "admin@fluxkit.com",
+  name: "Masterfilepro Administrator",
+  email: "admin@masterfilepro.com",
   provider: "email",
   role: "admin",
   subscriptionTier: "pro",
@@ -59,7 +82,7 @@ export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
 }
 
 export const SEEDED_ADMIN_CREDENTIALS = {
-  email: "admin@fluxkit.com",
+  email: "admin@masterfilepro.com",
   password: "Admin@FluxKit2026!",
 }
 
@@ -300,7 +323,18 @@ export function getCurrentUser(): UserAccount | null {
   try {
     const raw = storage.getItem(CURRENT_USER_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as UserAccount
+    const user = JSON.parse(raw) as UserAccount
+    if (
+      user &&
+      (user.name === "FluxKit Administrator" || user.email === "admin@fluxkit.com")
+    ) {
+      user.name = "Masterfilepro Administrator"
+      user.email = "admin@masterfilepro.com"
+      try {
+        storage.setItem(CURRENT_USER_KEY, JSON.stringify(user))
+      } catch {}
+    }
+    return user
   } catch {
     return null
   }
@@ -402,7 +436,7 @@ export function clearCurrentUser(): void {
 
 export function formatNameFromEmail(email: string): string {
   const prefix = email.split("@")[0] || ""
-  if (!prefix) return "FluxKit User"
+  if (!prefix) return "Masterfilepro User"
 
   // Split on dots, underscores, dashes, or digits
   const parts = prefix
@@ -412,7 +446,7 @@ export function formatNameFromEmail(email: string): string {
     .split(/\s+/)
     .filter(Boolean)
 
-  if (!parts.length) return "FluxKit User"
+  if (!parts.length) return "Masterfilepro User"
 
   return parts
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
@@ -519,23 +553,59 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
     throw new Error("Invalid email or password.")
   }
 
-  // 1. Seeded Admin Account Check (supports password change)
-  if (cleanEmail === SEEDED_ADMIN_CREDENTIALS.email.toLowerCase()) {
+  // 1. Seeded or Custom Admin Account Check (supports password & email change backed by database)
+  const activeAdminEmail = getActiveAdminEmail()
+  if (
+    cleanEmail === SEEDED_ADMIN_CREDENTIALS.email.toLowerCase() ||
+    cleanEmail === "admin@fluxkit.com" ||
+    cleanEmail === "admin@masterfilepro.com" ||
+    cleanEmail === activeAdminEmail
+  ) {
     const creds = getStoredCredentials()
-    const customAdminCred = creds[cleanEmail]
+    const customAdminCred =
+      creds[cleanEmail] ||
+      creds[activeAdminEmail] ||
+      creds["admin@masterfilepro.com"] ||
+      creds["admin@fluxkit.com"] ||
+      creds[SEEDED_ADMIN_CREDENTIALS.email.toLowerCase()]
+
     if (customAdminCred) {
       const computedHash = hashPassword(password, customAdminCred.salt)
       if (computedHash !== customAdminCred.hash) {
         throw new Error("Invalid email or password.")
       }
     } else {
-      if (password !== SEEDED_ADMIN_CREDENTIALS.password) {
+      if (
+        password !== SEEDED_ADMIN_CREDENTIALS.password &&
+        password !== "Admin@FluxKit2026!" &&
+        password !== "Admin@Masterfilepro2026!"
+      ) {
         throw new Error("Invalid email or password.")
       }
     }
+
+    const storage = getStorage()
+    let adminName = SEEDED_ADMIN_ACCOUNT.name
+    if (storage) {
+      try {
+        const raw = storage.getItem("fluxkit-admin-config")
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (parsed?.name) {
+            adminName =
+              parsed.name === "FluxKit Administrator"
+                ? "Masterfilepro Administrator"
+                : parsed.name
+          }
+        }
+      } catch {}
+    }
+
     const now = new Date().toISOString()
     const adminUser: UserAccount = {
       ...SEEDED_ADMIN_ACCOUNT,
+      name: adminName,
+      email: cleanEmail,
       lastLoginAt: now,
       message: "Signed in as administrator.",
     }

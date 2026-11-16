@@ -1,7 +1,7 @@
 import React from "react"
 import type { LucideIcon } from "lucide-react"
 
-export type BadgeIconType = "merge" | "split" | "compress" | "word" | "excel" | "powerpoint" | "word-pdf" | "excel-pdf" | "ppt-pdf" | "edit" | "pdf-jpg" | "jpg-pdf" | "sign" | "watermark" | "rotate" | "qr" | "audio" | "text" | "lock" | "scan" | "ai"
+export type BadgeIconType = "merge" | "split" | "compress" | "word" | "excel" | "powerpoint" | "word-pdf" | "excel-pdf" | "ppt-pdf" | "edit" | "pdf-jpg" | "jpg-pdf" | "sign" | "watermark" | "rotate" | "qr" | "audio" | "text" | "lock" | "scan" | "ai" | "edi" | "csv" | "batch"
 
 interface ToolBadgeIconProps {
   type?: BadgeIconType
@@ -493,6 +493,91 @@ export default function ToolBadgeIcon({
               rx="1.5"
               fill="currentColor"
               fillOpacity="0.3"
+            />
+          </svg>
+        )
+
+      case "edi":
+        return (
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            className="badge-svg"
+            aria-hidden="true"
+          >
+            <rect
+              x="5"
+              y="4"
+              width="22"
+              height="24"
+              rx="3"
+              fill="currentColor"
+              fillOpacity="0.15"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+            <path
+              d="M10 11h12M10 16h8M10 21h12"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            <circle cx="21" cy="16" r="2.5" fill="currentColor" />
+          </svg>
+        )
+
+      case "csv":
+        return (
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            className="badge-svg"
+            aria-hidden="true"
+          >
+            <rect
+              x="5"
+              y="5"
+              width="22"
+              height="22"
+              rx="3"
+              fill="currentColor"
+              fillOpacity="0.15"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+            <path
+              d="M5 12h22M14 5v22M21 5v22"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+          </svg>
+        )
+
+      case "batch":
+        return (
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            className="badge-svg"
+            aria-hidden="true"
+          >
+            <rect
+              x="4"
+              y="5"
+              width="24"
+              height="22"
+              rx="3"
+              fill="currentColor"
+              fillOpacity="0.15"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+            <path
+              d="M9 13l4 3-4 3M16 20h7"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         )

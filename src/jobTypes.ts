@@ -16,7 +16,15 @@ export interface ToolOptions {
 export interface OutputResult {
   name: string
   blob: Blob
-  pieces?: Array<{ name: string blob: Blob pageCount?: number label?: string }>
+  pieces?: Array<{ name: string; blob: Blob; pageCount?: number; label?: string }>
+  pageCount?: number
+  breakdown?: Array<{ name: string; pageCount: number }>
+  originalSize?: number
+  compressedSize?: number
+  savedPercentage?: number
+  isAlreadyOptimal?: boolean
+  extractedText?: string
+  previewSnippet?: string
 }
 export interface ProcessingJob {
   id: string

@@ -17,6 +17,8 @@ import {
   ZoomIn,
   LayoutGrid,
   List,
+  ExternalLink,
+  Download,
 } from "lucide-react"
 import { PDFDocument } from "pdf-lib"
 import {
@@ -52,6 +54,29 @@ export interface DocumentPreviewData {
   height?: number
   isImage?: boolean
 }
+
+export function cleanReadableLines(lines: string[]): string[] {
+  if (!lines || lines.length === 0) return []
+  return lines
+    .map((l) =>
+      l
+        .replace(
+          /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF\uE000-\uF8FF\u25A0-\u25FF]/g,
+          "",
+        )
+        .trim(),
+    )
+    .filter((l) => {
+      if (l.length < 2) return false
+      const letters = l.match(/[\p{L}\p{N}]/gu) || []
+      if (letters.length < 2) return false
+      const printable = l.match(/[\p{L}\p{N}\p{P}\p{S}\p{Z}]/gu) || []
+      return printable.length / l.length >= 0.7
+    })
+}
+
+export { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
+import { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
 
 export function getFileKey(file: File, index?: number): string {
   return `${file.name}-${file.size}-${file.lastModified || index || 0}`
@@ -91,23 +116,35 @@ export async function loadFilePreview(
         height = size.height
       } catch {}
 
-      // Embedded images
+      // Try rendering real canvas snapshot via PDF.js first in browser
       let imageUrl: string | undefined = undefined
-      try {
-        const imgs = await extractEmbeddedImagesFromPdf(new Uint8Array(buf))
-        if (imgs && imgs.length > 0) {
-          imageUrl = imgs[0]
-        }
-      } catch {}
+      if (typeof window !== "undefined") {
+        try {
+          const rendered = await renderPdfPageToDataUrl(buf, 1, 1.2)
+          if (rendered) {
+            imageUrl = rendered
+          }
+        } catch {}
+      }
 
-      // Extracted text lines from page 1
+      // Embedded images fallback
+      if (!imageUrl) {
+        try {
+          const imgs = await extractEmbeddedImagesFromPdf(new Uint8Array(buf))
+          if (imgs && imgs.length > 0) {
+            imageUrl = imgs[0]
+          }
+        } catch {}
+      }
+
+      // Extracted text lines from page 1 (sanitized against corrupted font glyphs/tofu)
       let textLines: string[] = []
       let fullText: string = ""
       try {
         const pgs = await extractPDFPages(buf)
         if (pgs && pgs.length > 0) {
-          textLines = pgs[0].lines.slice(0, 8)
-          fullText = pgs[0].fullText
+          textLines = cleanReadableLines(pgs[0].lines).slice(0, 8)
+          fullText = textLines.join("\n")
         }
       } catch {}
 
@@ -131,22 +168,18 @@ export async function loadFilePreview(
         height,
       }
     } catch {
-      return { pageCount: 1, textLines: [file.name] }
+      return { pageCount: 1, textLines: [] }
     }
   }
 
   // Text or others
   try {
     const text = await file.text()
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .slice(0, 8)
+    const lines = cleanReadableLines(text.split("\n")).slice(0, 8)
     return {
       pageCount: 1,
       textLines: lines,
-      fullText: text.slice(0, 500),
+      fullText: lines.join("\n"),
     }
   } catch {
     return { pageCount: 1 }
@@ -172,15 +205,15 @@ function extColor(ext: string) {
     JPEG: "#f97316",
     PNG: "#22c55e",
     WEBP: "#06b6d4",
-    MP3: "#a855f7",
-    WAV: "#a855f7",
+    MP3: "#00C9B7",
+    WAV: "#00A899",
     DOC: "#3b82f6",
     DOCX: "#3b82f6",
     XLS: "#16a34a",
     XLSX: "#16a34a",
     ZIP: "#eab308",
   }
-  return map[ext] ?? "#6366f1"
+  return map[ext] ?? "#00C9B7"
 }
 
 function splitPointsToRanges(
@@ -245,6 +278,28 @@ function FilePreviewCard({
 }: FilePreviewCardProps) {
   const ext = fileExt(file)
   const color = extColor(ext)
+  const [localImg, setLocalImg] = useState<string | null>(
+    preview?.imageUrl || null,
+  )
+
+  useEffect(() => {
+    if (preview?.imageUrl) {
+      setLocalImg(preview.imageUrl)
+      return
+    }
+    let active = true
+    if (
+      file &&
+      (file.type === "application/pdf" || /\.pdf$/i.test(file.name))
+    ) {
+      renderPdfPageToDataUrl(file, 1, 1.2).then((img) => {
+        if (active && img) setLocalImg(img)
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [file, preview?.imageUrl])
 
   return (
     <div
@@ -314,9 +369,9 @@ function FilePreviewCard({
         onClick={() => onInspect(file, index)}
         title="Click to inspect enlarged preview"
       >
-        {preview?.imageUrl ? (
+        {localImg ? (
           <img
-            src={preview.imageUrl}
+            src={localImg}
             alt={`Preview of ${file.name}`}
             className="dpm-file-preview-canvas__img"
           />
@@ -331,14 +386,39 @@ function FilePreviewCard({
           </div>
         ) : (
           <div className="dpm-file-preview-canvas__paper">
-            <div className="dpm-file-preview-canvas__line dpm-file-preview-canvas__line--title" />
-            <div className="dpm-file-preview-canvas__line" />
-            <div className="dpm-file-preview-canvas__line" />
-            <div className="dpm-file-preview-canvas__line" />
             <div
-              className="dpm-file-preview-canvas__line"
-              style={{ width: "60%" }}
-            />
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                gap: "8px",
+                padding: "12px",
+                textAlign: "center",
+              }}
+            >
+              <FileText
+                size={30}
+                style={{ color: "var(--accent, #aa91ff)", opacity: 0.85 }}
+              />
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "var(--text)",
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {file.name}
+              </span>
+              <span style={{ fontSize: "10px", color: "var(--muted)" }}>
+                {fmtSize(file.size)}
+              </span>
+            </div>
           </div>
         )}
 
@@ -754,6 +834,46 @@ export default function DocumentPreviewModal({
     file: File
     index: number
   } | null>(null)
+  const [docInspectImg, setDocInspectImg] = useState<string | null>(null)
+  const [isDocInspectLoading, setIsDocInspectLoading] = useState(false)
+
+  useEffect(() => {
+    if (!inspectDocModal) {
+      setDocInspectImg(null)
+      setIsDocInspectLoading(false)
+      return
+    }
+    const key = getFileKey(inspectDocModal.file, inspectDocModal.index)
+    const existing = filePreviews[key]?.imageUrl
+    if (existing) {
+      setDocInspectImg(existing)
+      setIsDocInspectLoading(false)
+      return
+    }
+    let active = true
+    if (
+      inspectDocModal.file &&
+      (inspectDocModal.file.type === "application/pdf" ||
+        /\.pdf$/i.test(inspectDocModal.file.name))
+    ) {
+      setIsDocInspectLoading(true)
+      renderPdfPageToDataUrl(inspectDocModal.file, 1, 1.8)
+        .then((img) => {
+          if (active) {
+            if (img) setDocInspectImg(img)
+            setIsDocInspectLoading(false)
+          }
+        })
+        .catch(() => {
+          if (active) setIsDocInspectLoading(false)
+        })
+    } else {
+      setIsDocInspectLoading(false)
+    }
+    return () => {
+      active = false
+    }
+  }, [inspectDocModal, filePreviews])
 
   // Real Page Content & Count extraction
   const [extractedPages, setExtractedPages] = useState<ExtractedPage[]>([])
@@ -991,8 +1111,14 @@ export default function DocumentPreviewModal({
   // Inspect page modal open
   const handleInspectPage = async (num: number, data?: ExtractedPage) => {
     let pdfUrl: string | undefined = undefined
-    const imgMatch = pageImages[num - 1]
+    let imgMatch = pageImages[num - 1]
     if (!imgMatch && files[0] && files[0].type === "application/pdf") {
+      try {
+        const rendered = await renderPdfPageToDataUrl(files[0], num, 1.8)
+        if (rendered) {
+          imgMatch = rendered
+        }
+      } catch {}
       try {
         pdfUrl = await getSinglePagePdfUrl(files[0], num)
       } catch {
@@ -1380,6 +1506,24 @@ export default function DocumentPreviewModal({
             <div className="dpm-inspect-header">
               <FileText size={18} />
               <h3>Page {inspectModal.num} Preview</h3>
+              {inspectModal.pdfUrl && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    borderRadius: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  onClick={() => window.open(inspectModal.pdfUrl, "_blank")}
+                  title="Open page in a dedicated browser tab"
+                >
+                  <ExternalLink size={13} /> View PDF in Tab
+                </button>
+              )}
               <button
                 type="button"
                 className="dpm-close-btn"
@@ -1401,20 +1545,47 @@ export default function DocumentPreviewModal({
                     className="dpm-inspect-image"
                   />
                 </div>
-              ) : inspectModal.pdfUrl ? (
-                <object
-                  data={inspectModal.pdfUrl}
-                  type="application/pdf"
-                  className="dpm-inspect-iframe"
-                >
-                  <iframe
-                    src={`${inspectModal.pdfUrl}#toolbar=0&navpanes=0`}
-                    title={`Page ${inspectModal.num} PDF Preview`}
-                    className="dpm-inspect-iframe"
-                  />
-                </object>
-              ) : (
+              ) : inspectModal.text && inspectModal.text.trim() ? (
                 <pre>{inspectModal.text}</pre>
+              ) : (
+                <div
+                  style={{
+                    padding: "40px",
+                    textAlign: "center",
+                    color: "var(--muted)",
+                    width: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <FileText
+                    size={48}
+                    style={{ color: "var(--accent, #aa91ff)" }}
+                  />
+                  <p style={{ fontWeight: 600, color: "var(--text)" }}>
+                    Page {inspectModal.num} Ready
+                  </p>
+                  {inspectModal.pdfUrl && (
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{
+                        padding: "6px 14px",
+                        fontSize: "12px",
+                        borderRadius: "8px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                      onClick={() => window.open(inspectModal.pdfUrl, "_blank")}
+                    >
+                      <ExternalLink size={14} /> Open Page in Dedicated Tab
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1440,6 +1611,62 @@ export default function DocumentPreviewModal({
                   {inspectDocModal.file.name}
                 </span>
               </h3>
+              {(() => {
+                const key = getFileKey(
+                  inspectDocModal.file,
+                  inspectDocModal.index,
+                )
+                const pInfo = filePreviews[key]
+                const docUrl =
+                  pInfo?.pdfUrl || URL.createObjectURL(inspectDocModal.file)
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        borderRadius: "6px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                      onClick={() => window.open(docUrl, "_blank")}
+                      title="Open document in a dedicated browser tab (bypasses browser iframe restrictions)"
+                    >
+                      <ExternalLink size={13} /> View Full PDF
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        borderRadius: "6px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                      onClick={() => {
+                        const a = document.createElement("a")
+                        a.href = docUrl
+                        a.download = inspectDocModal.file.name
+                        a.click()
+                      }}
+                      title="Download document"
+                    >
+                      <Download size={13} /> Download
+                    </button>
+                  </div>
+                )
+              })()}
               <button
                 type="button"
                 className="dpm-close-btn"
@@ -1520,56 +1747,140 @@ export default function DocumentPreviewModal({
 
             <div className="dpm-inspect-body">
               {(() => {
+                if (isDocInspectLoading) {
+                  return (
+                    <div
+                      style={{
+                        padding: "60px 20px",
+                        textAlign: "center",
+                        color: "var(--muted)",
+                        width: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "50%",
+                          border: "3px solid rgba(170, 145, 255, 0.2)",
+                          borderTopColor: "var(--accent, #aa91ff)",
+                          animation: "spin 0.8s linear infinite",
+                        }}
+                      />
+                      <span style={{ fontSize: "13px", fontWeight: 500 }}>
+                        Rendering visual document preview...
+                      </span>
+                    </div>
+                  )
+                }
                 const key = getFileKey(
                   inspectDocModal.file,
                   inspectDocModal.index,
                 )
                 const pInfo = filePreviews[key]
-                if (pInfo?.imageUrl) {
+                const finalImg = docInspectImg || pInfo?.imageUrl
+                if (finalImg) {
                   return (
                     <div className="dpm-inspect-image-wrap">
                       <img
-                        src={pInfo.imageUrl}
+                        src={finalImg}
                         alt={`Preview of ${inspectDocModal.file.name}`}
                         className="dpm-inspect-image"
                       />
                     </div>
                   )
                 }
-                if (pInfo?.pdfUrl) {
-                  return (
-                    <object
-                      data={pInfo.pdfUrl}
-                      type="application/pdf"
-                      className="dpm-inspect-iframe"
-                    >
-                      <iframe
-                        src={`${pInfo.pdfUrl}#toolbar=0&navpanes=0`}
-                        title={`Preview ${inspectDocModal.file.name}`}
-                        className="dpm-inspect-iframe"
-                      />
-                    </object>
-                  )
-                }
-                if (pInfo?.fullText) {
+                if (pInfo?.fullText && pInfo.fullText.trim()) {
                   return <pre>{pInfo.fullText}</pre>
                 }
+                const docUrl =
+                  pInfo?.pdfUrl || URL.createObjectURL(inspectDocModal.file)
                 return (
                   <div
                     style={{
-                      padding: "40px",
+                      padding: "40px 20px",
                       textAlign: "center",
                       color: "var(--muted)",
                       width: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "14px",
                     }}
                   >
-                    <FileText size={48} style={{ margin: "0 auto 12px" }} />
-                    <p style={{ fontWeight: 600, color: "var(--text)" }}>
-                      {inspectDocModal.file.name}
-                    </p>
-                    <p style={{ fontSize: "12px" }}>
-                      Ready to merge as #{inspectDocModal.index + 1}
-                    </p>
+                    <FileText
+                      size={54}
+                      style={{ color: "var(--accent, #aa91ff)" }}
+                    />
+                    <div>
+                      <p
+                        style={{
+                          fontWeight: 700,
+                          fontSize: "15px",
+                          color: "var(--text)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {inspectDocModal.file.name}
+                      </p>
+                      <p style={{ fontSize: "12px", color: "var(--muted)" }}>
+                        {fmtSize(inspectDocModal.file.size)} ·{" "}
+                        {pInfo?.pageCount ?? 1} page
+                        {(pInfo?.pageCount ?? 1) !== 1 ? "s" : ""} · Position #
+                        {inspectDocModal.index + 1}
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="primary"
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "12px",
+                          borderRadius: "8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                        onClick={() => window.open(docUrl, "_blank")}
+                      >
+                        <ExternalLink size={14} /> Open in Dedicated Tab
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "12px",
+                          borderRadius: "8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                        onClick={() => {
+                          const a = document.createElement("a")
+                          a.href = docUrl
+                          a.download = inspectDocModal.file.name
+                          a.click()
+                        }}
+                      >
+                        <Download size={14} /> Download Document
+                      </button>
+                    </div>
                   </div>
                 )
               })()}

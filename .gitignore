@@ -22,3 +22,5 @@ logs/
 /.opencode-skills/
 
 .vercel
+data/
+*.db.json

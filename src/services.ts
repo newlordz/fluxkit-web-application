@@ -1,19 +1,48 @@
-import { PDFDocument, PDFName, StandardFonts, degrees, rgb } from "pdf-lib"
+import { PDFDocument, PDFName, PDFNumber, StandardFonts, degrees, rgb } from "pdf-lib"
 
-// Guard PDFDocument.prototype.updateInfoDict so custom Producer is preserved
+// Guard PDFDocument.prototype.updateInfoDict so custom Producer and Creator are preserved
 const pdfDocProto = PDFDocument.prototype as any
 const origUpdateInfoDict = pdfDocProto.updateInfoDict
 if (typeof origUpdateInfoDict === "function") {
   pdfDocProto.updateInfoDict = function () {
     const info = this.getInfoDict()
     const existingProducer = info.get(PDFName.of("Producer"))
+    const existingCreator = info.get(PDFName.of("Creator"))
     origUpdateInfoDict.call(this)
     if (existingProducer) {
       info.set(PDFName.of("Producer"), existingProducer)
     }
+    if (existingCreator) {
+      info.set(PDFName.of("Creator"), existingCreator)
+    }
   }
 }
 import QRCode from "qrcode"
+async function getPdfEngine(): Promise<any> {
+  try {
+    return await import("./pdfEngine")
+  } catch {
+    return null
+  }
+}
+
+function getNextAvailableApi(category: string): any {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
+    return pool?.getNextAvailableApi ? pool.getNextAvailableApi(category) : null
+  } catch {
+    return null
+  }
+}
+
+function recordApiOutcome(apiId: string, outcome: any): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
+    if (pool?.recordApiOutcome) pool.recordApiOutcome(apiId, outcome)
+  } catch {}
+}
 
 import type { OutputResult } from "./jobTypes"
 export type {
@@ -28,7 +57,7 @@ export type {
 } from "./jobTypes"
 
 export interface CompressOptions {
-  level?: "standard" | "high"
+  level?: "standard" | "high" | "extreme"
 }
 
 export interface EditPDFOptions {
@@ -124,8 +153,8 @@ export interface ExtractedPage {
   height: number
 }
 
-export const apiBaseUrl = import.meta.env
-  .VITE_API_BASE_URL as string | undefined
+export const apiBaseUrl =
+  ((import.meta as any).env?.VITE_API_BASE_URL as string | undefined) || undefined
 
 // ============================================================================
 // Encoding & Cryptographic Helpers
@@ -249,23 +278,90 @@ function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Array {
 // Core PDF Operations (Milestone 2)
 // ============================================================================
 
-export async function mergePDFs(files: File[]): Promise<OutputResult> {
+export interface MergePDFProgress {
+  current: number
+  total: number
+  currentFileName: string
+  percentage: number
+  stage: string
+}
+
+export type MergeProgressCallback = (progress: MergePDFProgress) => void
+
+export async function mergePDFs(
+  files: File[],
+  onProgress?: MergeProgressCallback,
+): Promise<OutputResult> {
   if (!files || files.length < 2) {
     throw new Error("Choose at least two PDFs to merge.")
   }
+
+  onProgress?.({
+    current: 1,
+    total: files.length,
+    currentFileName: files[0].name,
+    percentage: 12,
+    stage: `Reading & validating ${files.length} documents...`,
+  })
+
   const merged = await PDFDocument.create()
-  for (const file of files) {
-    const pdf = await PDFDocument.load(await file.arrayBuffer(), {
+  const breakdown: Array<{ name: string; pageCount: number }> = []
+
+  for (let idx = 0; idx < files.length; idx++) {
+    const file = files[idx]
+    const fileNum = idx + 1
+    const filePercent = Math.round(15 + (fileNum / files.length) * 65)
+
+    onProgress?.({
+      current: fileNum,
+      total: files.length,
+      currentFileName: file.name,
+      percentage: filePercent,
+      stage: `Extracting & stitching pages from ${file.name}...`,
+    })
+
+    const buffer = await file.arrayBuffer()
+    if (!buffer || buffer.byteLength === 0) {
+      throw new Error(`File "${file.name}" is empty (0 bytes).`)
+    }
+    const pdf = await PDFDocument.load(buffer, {
       ignoreEncryption: true,
     })
-    const pages = await merged.copyPages(pdf, pdf.getPageIndices())
+    const indices = pdf.getPageIndices()
+    if (indices.length === 0) {
+      throw new Error(`Document "${file.name}" contains no valid pages to merge.`)
+    }
+    const pages = await merged.copyPages(pdf, indices)
     pages.forEach((page) => merged.addPage(page))
+    breakdown.push({ name: file.name, pageCount: indices.length })
   }
+
+  onProgress?.({
+    current: files.length,
+    total: files.length,
+    currentFileName: "Unified Document",
+    percentage: 88,
+    stage: "Compiling unified PDF stream & metadata...",
+  })
+
+  const totalPages = merged.getPageCount()
+  const bytes = await merged.save()
+
+  onProgress?.({
+    current: files.length,
+    total: files.length,
+    currentFileName: "merged-document.pdf",
+    percentage: 100,
+    stage: `Successfully compiled ${totalPages} pages. Preparing download...`,
+  })
+
   return {
     name: "merged-document.pdf",
-    blob: new Blob([new Uint8Array(await merged.save())], {
+    blob: new Blob([new Uint8Array(bytes)], {
       type: "application/pdf",
     }),
+    pageCount: totalPages,
+    breakdown,
   }
 }
 
@@ -517,7 +613,7 @@ export async function extractEmbeddedImagesFromPdf(
           const jpegSlice = cleanBytes.subarray(start, end)
           // Filter out tiny thumbnails, icons, or false positives (< 2KB)
           if (jpegSlice.length > 2048) {
-            const blob = new Blob([jpegSlice], { type: "image/jpeg" })
+            const blob = new Blob([jpegSlice as any], { type: "image/jpeg" })
             imageUrls.push(URL.createObjectURL(blob))
           }
           i = end
@@ -554,34 +650,377 @@ export async function getSinglePagePdfUrl(
   return URL.createObjectURL(blob)
 }
 
+async function compressImageStream(
+  rawBytes: Uint8Array,
+  quality: number,
+  maxDimension: number,
+): Promise<{ bytes: Uint8Array; width: number; height: number } | null> {
+  if (typeof window === "undefined" || typeof document === "undefined") return null
+  try {
+    const isJpeg = rawBytes[0] === 0xff && rawBytes[1] === 0xd8
+    const mime = isJpeg ? "image/jpeg" : "image/png"
+    const blob = new Blob([rawBytes as any], { type: mime })
+
+    let origWidth = 0
+    let origHeight = 0
+    let drawSource: ImageBitmap | HTMLImageElement
+
+    if (typeof createImageBitmap === "function") {
+      const bitmap = await createImageBitmap(blob)
+      origWidth = bitmap.width
+      origHeight = bitmap.height
+      drawSource = bitmap
+    } else {
+      const url = URL.createObjectURL(blob)
+      const img = new Image()
+      img.src = url
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = reject
+      })
+      URL.revokeObjectURL(url)
+      origWidth = img.naturalWidth || img.width
+      origHeight = img.naturalHeight || img.height
+      drawSource = img
+    }
+
+    if (!origWidth || !origHeight) return null
+
+    let scale = 1
+    if (origWidth > maxDimension || origHeight > maxDimension) {
+      scale = Math.min(maxDimension / origWidth, maxDimension / origHeight)
+    }
+
+    const targetWidth = Math.max(1, Math.round(origWidth * scale))
+    const targetHeight = Math.max(1, Math.round(origHeight * scale))
+
+    const canvas = document.createElement("canvas")
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const ctx = canvas.getContext("2d", { alpha: false })
+    if (!ctx) return null
+
+    ctx.fillStyle = "#ffffff"
+    ctx.fillRect(0, 0, targetWidth, targetHeight)
+    ctx.drawImage(drawSource, 0, 0, targetWidth, targetHeight)
+
+    const compressedBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality)
+    })
+    if (!compressedBlob) return null
+
+    const compressedBuf = await compressedBlob.arrayBuffer()
+    const compressedBytes = new Uint8Array(compressedBuf)
+
+    if (compressedBytes.length < rawBytes.length) {
+      return {
+        bytes: compressedBytes,
+        width: targetWidth,
+        height: targetHeight,
+      }
+    }
+  } catch {
+    // Skip un-decodable streams
+  }
+  return null
+}
+
 export async function compressPDF(
   file: File,
   options?: CompressOptions,
 ): Promise<OutputResult> {
   if (!file) throw new Error("Select a PDF to compress.")
-  const pdf = await PDFDocument.load(await file.arrayBuffer(), {
-    ignoreEncryption: true,
-  })
+  const originalBytes = await file.arrayBuffer()
+  const originalSize = file.size || originalBytes.byteLength
+  const level = options?.level || "standard"
 
-  if (options?.level === "high") {
+  // 0. High-Fidelity Adobe PDF Services Cloud Engine (with automatic failover)
+  const activeApi = getNextAvailableApi("pdf-compression")
+  if (activeApi && activeApi.provider === "adobe") {
+    try {
+      let binary = ""
+      const bytes = new Uint8Array(originalBytes)
+      const len = bytes.byteLength
+      const chunkSize = 0x8000
+      for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+      }
+      const pdfBase64 = btoa(binary)
+      const compressionLevel = level === "extreme" ? "HIGH" : level === "high" ? "MEDIUM" : "LOW"
+
+      const response = await fetch("/api/adobe-pdf/compress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pdfBase64,
+          compressionLevel,
+          clientId: activeApi.apiKey,
+          clientSecret: activeApi.clientSecret,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.pdfBase64) {
+          const compressedBinary = atob(data.pdfBase64)
+          const compressedBytes = new Uint8Array(compressedBinary.length)
+          for (let i = 0; i < compressedBinary.length; i++) {
+            compressedBytes[i] = compressedBinary.charCodeAt(i)
+          }
+
+          recordApiOutcome(activeApi.id, { success: true })
+
+          const compressedSize = compressedBytes.byteLength
+          const savedBytes = Math.max(0, originalSize - compressedSize)
+          const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+          const isAlreadyOptimal = compressedSize >= originalSize
+
+          const safeName = file.name || "document.pdf"
+          return {
+            name: `compressed-${safeName}`,
+            blob: new Blob([compressedBytes], { type: "application/pdf" }),
+            originalSize,
+            compressedSize,
+            savedPercentage,
+            isAlreadyOptimal,
+          }
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        const errorMsg = errorData.error || `HTTP ${response.status}`
+        recordApiOutcome(activeApi.id, {
+          success: false,
+          statusCode: response.status,
+          errorMessage: errorMsg,
+        })
+      }
+    } catch (adobeErr) {
+      console.warn("Adobe PDF Services compression error, failing over to local engine:", adobeErr)
+      recordApiOutcome(activeApi.id, {
+        success: false,
+        errorMessage: String(adobeErr),
+      })
+    }
+  }
+
+  // 0b. iLovePDF Cloud Engine (Secondary Priority / Failover)
+  const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+  if (iloveApi && iloveApi.provider === "ilovepdf") {
+    try {
+      let binary = ""
+      const bytes = new Uint8Array(originalBytes)
+      const len = bytes.byteLength
+      const chunkSize = 0x8000
+      for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+      }
+      const pdfBase64 = btoa(binary)
+      const compressionLevel = level === "extreme" ? "extreme" : level === "high" ? "recommended" : "low"
+
+      const response = await fetch("/api/ilovepdf/compress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pdfBase64,
+          compressionLevel,
+          publicKey: iloveApi.apiKey,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.pdfBase64) {
+          const compressedBinary = atob(data.pdfBase64)
+          const compressedBytes = new Uint8Array(compressedBinary.length)
+          for (let i = 0; i < compressedBinary.length; i++) {
+            compressedBytes[i] = compressedBinary.charCodeAt(i)
+          }
+
+          recordApiOutcome(iloveApi.id, { success: true })
+
+          const compressedSize = compressedBytes.byteLength
+          const savedBytes = Math.max(0, originalSize - compressedSize)
+          const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+          const isAlreadyOptimal = compressedSize >= originalSize
+
+          const safeName = file.name || "document.pdf"
+          return {
+            name: `compressed-${safeName}`,
+            blob: new Blob([compressedBytes], { type: "application/pdf" }),
+            originalSize,
+            compressedSize,
+            savedPercentage,
+            isAlreadyOptimal,
+          }
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        const errorMsg = errorData.error || `HTTP ${response.status}`
+        recordApiOutcome(iloveApi.id, {
+          success: false,
+          statusCode: response.status,
+          errorMessage: errorMsg,
+        })
+      }
+    } catch (iloveErr) {
+      console.warn("iLovePDF compression error, failing over to local engine:", iloveErr)
+      recordApiOutcome(iloveApi.id, {
+        success: false,
+        errorMessage: String(iloveErr),
+      })
+    }
+  }
+
+  const quality = level === "extreme" ? 0.40 : level === "high" ? 0.55 : 0.70
+  const maxDim = level === "extreme" ? 850 : level === "high" ? 1150 : 1500
+
+  // 1. Direct Image Streams Compression + Structural Cleanup via pdf-lib
+  let directOptimizedBytes: Uint8Array | null = null
+  try {
+    const pdf = await PDFDocument.load(originalBytes, { ignoreEncryption: true })
+
+    try {
+      pdf.catalog.delete(PDFName.of("Metadata"))
+      pdf.catalog.delete(PDFName.of("PieceInfo"))
+    } catch {}
+
     pdf.setTitle("")
     pdf.setAuthor("")
     pdf.setSubject("")
     pdf.setKeywords([])
     pdf.setProducer("FluxKit PDF Optimizer")
     pdf.setCreator("FluxKit")
+
+    // Find and recompress all embedded images directly in the PDF document
+    const indirectObjects = pdf.context.enumerateIndirectObjects()
+    for (const [, obj] of indirectObjects) {
+      if (
+        obj &&
+        (obj as any).dict &&
+        (obj as any).dict.get(PDFName.of("Subtype"))?.toString() === "/Image"
+      ) {
+        const rawBytes =
+          typeof (obj as any).asUint8Array === "function"
+            ? (obj as any).asUint8Array()
+            : (obj as any).contents
+        if (rawBytes && rawBytes.length > 5000) {
+          const result = await compressImageStream(rawBytes, quality, maxDim)
+          if (result && result.bytes.length < rawBytes.length) {
+            ;(obj as any).contents = result.bytes
+            ;(obj as any).dict.set(PDFName.of("Length"), PDFNumber.of(result.bytes.length))
+            ;(obj as any).dict.set(PDFName.of("Width"), PDFNumber.of(result.width))
+            ;(obj as any).dict.set(PDFName.of("Height"), PDFNumber.of(result.height))
+            ;(obj as any).dict.set(PDFName.of("Filter"), PDFName.of("DCTDecode"))
+            ;(obj as any).dict.set(PDFName.of("BitsPerComponent"), PDFNumber.of(8))
+            ;(obj as any).dict.delete(PDFName.of("DecodeParms"))
+          }
+        }
+      }
+    }
+
+    const saved = await pdf.save({
+      useObjectStreams: true,
+      addDefaultPage: false,
+    })
+    directOptimizedBytes = new Uint8Array(saved)
+  } catch (err) {
+    console.warn("Direct image stream optimization warning:", err)
   }
 
-  const pdfBytes = await pdf.save({
-    useObjectStreams: true,
-    addDefaultPage: false,
-  })
-  const safeName = (file as File).name || "document.pdf"
+  // 2. Full Page Rasterization Fallback (for scanned / flat PDFs)
+  let rasterBytes: Uint8Array | null = null
+  const savingsSoFar = directOptimizedBytes
+    ? (originalSize - directOptimizedBytes.byteLength) / originalSize
+    : 0
+
+  if (savingsSoFar < 0.10) {
+    try {
+      const engine = await getPdfEngine()
+      const pdfjs = engine ? await engine.getPdfJsLibrary() : null
+      if (pdfjs && typeof document !== "undefined") {
+        const loadingTask = pdfjs.getDocument({
+          data: new Uint8Array(originalBytes),
+          isEvalSupported: false,
+          useWorkerFetch: false,
+        })
+        const pdfDoc = await loadingTask.promise
+        const totalPages = pdfDoc.numPages
+
+        if (totalPages > 0 && totalPages <= 150) {
+          const newDoc = await PDFDocument.create()
+          const rasterScale = level === "extreme" ? 0.95 : level === "high" ? 1.15 : 1.35
+          const rasterQuality = level === "extreme" ? 0.42 : level === "high" ? 0.58 : 0.72
+
+          for (let p = 1; p <= totalPages; p++) {
+            const page = await pdfDoc.getPage(p)
+            const viewport = page.getViewport({ scale: rasterScale })
+            const canvas = document.createElement("canvas")
+            canvas.width = viewport.width
+            canvas.height = viewport.height
+            const ctx = canvas.getContext("2d", { alpha: false })
+            if (ctx) {
+              ctx.fillStyle = "#ffffff"
+              ctx.fillRect(0, 0, canvas.width, canvas.height)
+              await page.render({ canvasContext: ctx, viewport }).promise
+
+              const dataUrl = canvas.toDataURL("image/jpeg", rasterQuality)
+              const base64Data = dataUrl.split(",")[1]
+              const binStr = atob(base64Data)
+              const imgBytes = new Uint8Array(binStr.length)
+              for (let i = 0; i < binStr.length; i++) {
+                imgBytes[i] = binStr.charCodeAt(i)
+              }
+
+              const embeddedImg = await newDoc.embedJpg(imgBytes)
+              const originalWidth = viewport.width / rasterScale
+              const originalHeight = viewport.height / rasterScale
+              const newPage = newDoc.addPage([originalWidth, originalHeight])
+              newPage.drawImage(embeddedImg, {
+                x: 0,
+                y: 0,
+                width: originalWidth,
+                height: originalHeight,
+              })
+            }
+          }
+
+          const rasterSaved = await newDoc.save({
+            useObjectStreams: true,
+            addDefaultPage: false,
+          })
+          rasterBytes = new Uint8Array(rasterSaved)
+        }
+      }
+    } catch (rasterErr) {
+      console.warn("Full-page raster fallback warning:", rasterErr)
+    }
+  }
+
+  // 3. Select whichever version saved the most bytes
+  let bestBytes = directOptimizedBytes || new Uint8Array(originalBytes)
+  if (rasterBytes && rasterBytes.byteLength < bestBytes.byteLength) {
+    bestBytes = rasterBytes
+  }
+
+  const isAlreadyOptimal = bestBytes.byteLength >= originalSize
+  const finalBytes =
+    isAlreadyOptimal && level !== "high" && level !== "extreme"
+      ? new Uint8Array(originalBytes)
+      : bestBytes
+  const finalSize = finalBytes.byteLength
+  const savedBytes = Math.max(0, originalSize - finalSize)
+  const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+
+  const safeName = file.name || "document.pdf"
   return {
     name: `compressed-${safeName}`,
-    blob: new Blob([new Uint8Array(pdfBytes)], {
+    blob: new Blob([finalBytes as any], {
       type: "application/pdf",
     }),
+    originalSize,
+    compressedSize: finalSize,
+    savedPercentage,
+    isAlreadyOptimal,
   }
 }
 
@@ -1106,7 +1545,7 @@ export async function unzipEntries(
           try {
             const ds = new DecompressionStream("deflate-raw")
             const writer = ds.writable.getWriter()
-            writer.write(compData).catch(() => {})
+            writer.write(compData as any).catch(() => {})
             writer.close().catch(() => {})
             const reader = ds.readable.getReader()
             const chunks: Uint8Array[] = []
@@ -1157,7 +1596,7 @@ export async function decompressStream(rawBytes: Uint8Array): Promise<string> {
       try {
         const ds = new DecompressionStream("deflate")
         const writer = ds.writable.getWriter()
-        writer.write(rawBytes).catch(() => {})
+        writer.write(rawBytes as any).catch(() => {})
         writer.close().catch(() => {})
         return await new Response(ds.readable).text()
       } catch {
@@ -1166,6 +1605,105 @@ export async function decompressStream(rawBytes: Uint8Array): Promise<string> {
     }
   }
   return new TextDecoder("latin1").decode(rawBytes)
+}
+
+export function parseToUnicodeCMap(cmapText: string): Map<number, string> {
+  const map = new Map<number, string>()
+  const bfcharRegex = /beginbfchar([\s\S]*?)endbfchar/g
+  let match: RegExpExecArray | null
+  while ((match = bfcharRegex.exec(cmapText)) !== null) {
+    const block = match[1]
+    const pairRegex = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g
+    let pm: RegExpExecArray | null
+    while ((pm = pairRegex.exec(block)) !== null) {
+      const src = parseInt(pm[1], 16)
+      const destHex = pm[2]
+      let destStr = ""
+      for (let i = 0; i < destHex.length; i += 4) {
+        destStr += String.fromCharCode(parseInt(destHex.substr(i, 4), 16))
+      }
+      map.set(src, destStr)
+    }
+  }
+
+  const bfrangeRegex = /beginbfrange([\s\S]*?)endbfrange/g
+  while ((match = bfrangeRegex.exec(cmapText)) !== null) {
+    const block = match[1]
+    const arrayFormRegex =
+      /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*\[([\s\S]*?)\]/g
+    let am: RegExpExecArray | null
+    while ((am = arrayFormRegex.exec(block)) !== null) {
+      const start = parseInt(am[1], 16)
+      const hexList = am[3].match(/<([0-9a-fA-F]+)>/g) || []
+      hexList.forEach((h, idx) => {
+        const cleanHex = h.replace(/[<>]/g, "")
+        let destStr = ""
+        for (let i = 0; i < cleanHex.length; i += 4) {
+          destStr += String.fromCharCode(parseInt(cleanHex.substr(i, 4), 16))
+        }
+        map.set(start + idx, destStr)
+      })
+    }
+
+    const directRangeRegex =
+      /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g
+    let rm: RegExpExecArray | null
+    while ((rm = directRangeRegex.exec(block)) !== null) {
+      const start = parseInt(rm[1], 16)
+      const end = parseInt(rm[2], 16)
+      const destStart = parseInt(rm[3], 16)
+      for (let c = start; c <= end; c++) {
+        map.set(c, String.fromCharCode(destStart + (c - start)))
+      }
+    }
+  }
+  return map
+}
+
+function decodeHexWithCMap(hex: string, cmap: Map<number, string>): string {
+  // 1. Try 4-char CID units (Type0 / Identity-H CID fonts like <000100020003>)
+  if (hex.length >= 4 && hex.length % 4 === 0 && cmap && cmap.size > 0) {
+    let result = ""
+    let matchedAny = false
+    for (let j = 0; j < hex.length; j += 4) {
+      const code = parseInt(hex.substring(j, j + 4), 16)
+      if (cmap.has(code)) {
+        result += cmap.get(code)
+        matchedAny = true
+      } else {
+        result += String.fromCharCode(code)
+      }
+    }
+    if (matchedAny) return result
+  }
+
+  // 2. Try 2-char byte units with CMap
+  if (hex.length % 2 === 0) {
+    if (cmap && cmap.size > 0) {
+      let result = ""
+      let hasMapped = false
+      for (let j = 0; j < hex.length; j += 2) {
+        const byteVal = parseInt(hex.substring(j, j + 2), 16)
+        if (cmap.has(byteVal)) {
+          result += cmap.get(byteVal)
+          hasMapped = true
+        }
+      }
+      if (hasMapped) return result
+    }
+
+    // 3. Fallback to standard UTF-8 / Latin-1 decoding
+    const bytes = new Uint8Array(hex.length / 2)
+    for (let j = 0; j < hex.length; j += 2) {
+      bytes[j / 2] = parseInt(hex.substring(j, j + 2), 16)
+    }
+    try {
+      return new TextDecoder("utf-8").decode(bytes)
+    } catch {
+      return new TextDecoder("latin1").decode(bytes)
+    }
+  }
+  return ""
 }
 
 export async function extractPDFPages(
@@ -1179,6 +1717,40 @@ export async function extractPDFPages(
   for (let i = 0; i < totalPages; i++) {
     const page = doc.getPage(i)
     const { width, height } = page.getSize()
+
+    // Extract CMap from page Resources & Fonts
+    const cmap = new Map<number, string>()
+    try {
+      const res = typeof page.node?.Resources === "function" ? page.node.Resources() : null
+      const fontDict = res?.lookup ? (res.lookup(PDFName.of("Font")) as any) : null
+      if (fontDict && fontDict.dict) {
+        for (const k of (fontDict.dict as Map<any, any>).keys()) {
+          const f = fontDict.lookup ? (fontDict.lookup(k) as any) : null
+          const toUnicode = f?.dict?.get?.(PDFName.of("ToUnicode"))
+          if (toUnicode) {
+            const cmapStream = doc.context.lookup(toUnicode) as {
+              getContents?: () => Uint8Array
+            } | null
+            const b = cmapStream?.getContents?.()
+            if (b && b.length > 0) {
+              let txt: string
+              try {
+                txt = await decompressStream(b)
+              } catch {
+                txt = new TextDecoder("latin1").decode(b)
+              }
+              const m = parseToUnicodeCMap(txt)
+              for (const [code, str] of m.entries()) {
+                cmap.set(code, str)
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore cmap extraction error
+    }
+
     const contents = page.node.Contents()
     if (!contents) {
       pages.push({ pageNumber: i + 1, lines: [], fullText: "", width, height })
@@ -1223,12 +1795,7 @@ export async function extractPDFPages(
 
     while ((m = opRegex.exec(fullStreamText)) !== null) {
       if (m[1]) {
-        const hex = m[1]
-        const bytes = new Uint8Array(hex.length / 2)
-        for (let j = 0; j < hex.length; j += 2) {
-          bytes[j / 2] = parseInt(hex.substring(j, j + 2), 16)
-        }
-        currentLine += new TextDecoder("utf-8").decode(bytes)
+        currentLine += decodeHexWithCMap(m[1], cmap)
         if (m[3] === "'" || m[3] === '"') {
           if (currentLine.trim()) lines.push(currentLine.trim())
           currentLine = ""
@@ -1250,12 +1817,7 @@ export async function extractPDFPages(
         let im: RegExpExecArray | null
         while ((im = innerRegex.exec(m[4])) !== null) {
           if (im[1]) {
-            const hex = im[1]
-            const bytes = new Uint8Array(hex.length / 2)
-            for (let j = 0; j < hex.length; j += 2) {
-              bytes[j / 2] = parseInt(hex.substring(j, j + 2), 16)
-            }
-            currentLine += new TextDecoder("utf-8").decode(bytes)
+            currentLine += decodeHexWithCMap(im[1], cmap)
           } else if (im[2] !== undefined) {
             currentLine += im[2]
               .replace(/\\\\/g, "\\")
@@ -1271,10 +1833,25 @@ export async function extractPDFPages(
     }
     if (currentLine.trim()) lines.push(currentLine.trim())
 
+    const cleanLines = lines
+      .map((l) =>
+        l
+          .replace(
+            /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF]/g,
+            "",
+          )
+          .trim(),
+      )
+      .filter((l) => {
+        if (l.length < 1) return false
+        const printable = l.match(/[\p{L}\p{N}\p{P}\p{S}\p{Z}]/gu) || []
+        return printable.length / l.length >= 0.6
+      })
+
     pages.push({
       pageNumber: i + 1,
-      lines,
-      fullText: lines.join("\n"),
+      lines: cleanLines,
+      fullText: cleanLines.join("\n"),
       width,
       height,
     })
@@ -1337,6 +1914,72 @@ function colIndexToName(index: number): string {
   return name
 }
 
+function extractEmbeddedPageImage(page: any): { bytes: Uint8Array; type: "jpeg" | "png" } | null {
+  try {
+    const res = typeof page.node?.Resources === "function" ? page.node.Resources() : null
+    const xObject = res?.lookup ? res.lookup(PDFName.of("XObject")) : null
+    if (!xObject || !xObject.dict) return null
+
+    let bestImage: { bytes: Uint8Array; type: "jpeg" | "png" } | null = null
+    let maxLen = 0
+
+    for (const k of xObject.dict.keys()) {
+      const obj = xObject.lookup(k)
+      const subtype = obj?.dict?.get?.(PDFName.of("Subtype"))
+      const subVal = subtype?.value?.() || subtype?.encodedName || ""
+      if (subVal === "/Image") {
+        const contents = typeof obj.getContents === "function" ? obj.getContents() : null
+        if (contents && contents.length > 5000 && contents[0] === 0xff && contents[1] === 0xd8) {
+          if (contents.length > maxLen) {
+            maxLen = contents.length
+            bestImage = { bytes: contents, type: "jpeg" }
+          }
+        }
+      }
+    }
+    return bestImage
+  } catch {
+    return null
+  }
+}
+
+function isLikelyWordHeading(line: string, lineIdx: number, pageHeadings: string[]): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+
+  // 1. PDF.js font size / weight detection
+  if (pageHeadings && pageHeadings.includes(trimmed)) return true
+
+  // 2. Structural data / URL exclusions
+  if (
+    trimmed.includes(":") ||
+    trimmed.includes("http://") ||
+    trimmed.includes("https://") ||
+    trimmed.includes("@") ||
+    trimmed.startsWith("-") ||
+    trimmed.startsWith("•") ||
+    trimmed.startsWith("*") ||
+    trimmed.startsWith("=")
+  ) {
+    return false
+  }
+
+  if (trimmed.length > 70) return false
+
+  const isAllUpper =
+    trimmed.length >= 4 &&
+    trimmed.length <= 50 &&
+    trimmed === trimmed.toUpperCase() &&
+    /[A-Z]/.test(trimmed)
+  const isNumberedSection =
+    /^(Chapter|Section|Article|Part)\s+\w+/i.test(trimmed) ||
+    /^\d+\.\s+[A-Z]/.test(trimmed)
+  const isFirstLineTitle =
+    lineIdx === 0 && trimmed.length <= 60 && !trimmed.endsWith(".")
+
+  return isAllUpper || isNumberedSection || isFirstLineTitle
+}
+
 // ----------------------------------------------------------------------------
 // 1. PDF to Word (DOCX)
 // ----------------------------------------------------------------------------
@@ -1359,17 +2002,59 @@ export async function pdfToWord(
   }
 
   const baseName = name.replace(/\.[^/.]+$/, "")
-  const pages = await extractPDFPages(bytes)
+
+  // 1. Try extracting high-fidelity text with PDF.js (decodes ToUnicode CMaps, subsetted fonts, layout)
+  let pages: Array<{
+    pageNumber: number
+    lines: string[]
+    fullText: string
+    headings?: string[]
+  }> = []
+
+  try {
+    const engine = await getPdfEngine()
+    if (engine && typeof engine.extractTextWithPdfJs === "function") {
+      const pdfJsPages = await engine.extractTextWithPdfJs(bytes)
+      if (pdfJsPages && pdfJsPages.some((p: any) => p.lines && p.lines.length > 0)) {
+        pages = pdfJsPages
+      }
+    }
+  } catch {
+    // PDF.js extraction fallback
+  }
+
+  // 2. Fall back to structural extraction if PDF.js unavailable or yields 0 lines
+  if (pages.length === 0 || !pages.some((p) => p.lines && p.lines.length > 0)) {
+    pages = await extractPDFPages(bytes)
+  }
+
+  // 3. Load pdf-lib document to access page streams and embedded high-res scan images
+  let pdfDoc: PDFDocument | null = null
+  try {
+    pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  } catch {
+    // ignore
+  }
+
   const format = options.format || "docx"
   const layout = options.layout || "standard"
 
+  let fullExtractedText = pages
+    .map((p, idx) => (pages.length > 1 ? `--- Page ${idx + 1} ---\n${p.fullText}` : p.fullText))
+    .join("\n\n")
+    .trim()
+
+  const zipEntries: Array<{ name: string; data: string | Uint8Array }> = []
+  let imageRelsXml = ""
+  let embeddedImageCount = 0
+
   if (format === "txt") {
-    const text = pages
-      .map((p, idx) => `--- Page ${idx + 1} ---\n${p.fullText}`)
-      .join("\n\n")
     return {
       name: `${baseName}-converted.txt`,
-      blob: new Blob([text], { type: "text/plain;charset=utf-8" }),
+      blob: new Blob([fullExtractedText], { type: "text/plain;charset=utf-8" }),
+      extractedText: fullExtractedText,
+      previewSnippet: fullExtractedText.slice(0, 600),
+      pageCount: pages.length,
     }
   }
 
@@ -1388,6 +2073,9 @@ export async function pdfToWord(
     return {
       name: `${baseName}-converted.doc`,
       blob: new Blob([html], { type: "application/msword" }),
+      extractedText: fullExtractedText,
+      previewSnippet: fullExtractedText.slice(0, 600),
+      pageCount: pages.length,
     }
   }
 
@@ -1397,29 +2085,66 @@ export async function pdfToWord(
     if (pageIdx > 0) {
       docBodyXml += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
     }
-    const lines =
-      page.lines.length > 0 ? page.lines : [`Page ${page.pageNumber}`]
-    lines.forEach((line, lineIdx) => {
-      const escaped = escapeXml(line)
-      if (layout === "clean") {
-        docBodyXml += `<w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
-      } else if (layout === "compact") {
-        docBodyXml += `<w:p><w:pPr><w:spacing w:after="60"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
-      } else {
-        // standard flow: headings & paragraphs
-        if (lineIdx === 0 || (line.length < 50 && !line.endsWith("."))) {
-          docBodyXml += `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:before="240" w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="32"/><w:color w:val="1E293B"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+
+    // Check if this page has an embedded full-page image (e.g. CamScanner or scanned documents)
+    let pageImg: { bytes: Uint8Array; type: "jpeg" | "png" } | null = null
+    if (pdfDoc && pageIdx < pdfDoc.getPageCount()) {
+      pageImg = extractEmbeddedPageImage(pdfDoc.getPage(pageIdx))
+    }
+
+    const lines = page.lines.length > 0 ? page.lines : [`Page ${page.pageNumber}`]
+    const pageHeadings = page.headings || []
+    const isWatermarkOnly =
+      lines.length <= 1 &&
+      (lines[0].toLowerCase().includes("camscanner") ||
+        lines[0].length < 25 ||
+        lines[0].startsWith("Page "))
+
+    // If page has a high-res image scan, embed it as full-page drawing in Word
+    if (pageImg) {
+      embeddedImageCount++
+      const imgFileName = `media/image_${pageIdx + 1}.jpeg`
+      const relId = `rIdImg${pageIdx + 1}`
+      zipEntries.push({ name: `word/${imgFileName}`, data: pageImg.bytes })
+      imageRelsXml += `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${imgFileName}"/>\n`
+      docBodyXml += `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="60" w:after="60"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="5486400" cy="7772400"/><wp:docPr id="${pageIdx + 1}" name="Page Image ${pageIdx + 1}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${pageIdx + 1}" name="Page Image ${pageIdx + 1}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="5486400" cy="7772400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+    }
+
+    // Render text paragraphs
+    if (!pageImg || !isWatermarkOnly) {
+      lines.forEach((line, lineIdx) => {
+        const trimmed = line.trim()
+        if (trimmed.length === 0) return
+        const escaped = escapeXml(trimmed)
+
+        if (layout === "clean") {
+          docBodyXml += `<w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+        } else if (layout === "compact") {
+          docBodyXml += `<w:p><w:pPr><w:spacing w:after="60"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
         } else {
-          docBodyXml += `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+          // Standard flow: calibrated headings & paragraphs
+          const isHeading = isLikelyWordHeading(trimmed, lineIdx, pageHeadings)
+          if (isHeading) {
+            docBodyXml += `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:before="240" w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="32"/><w:color w:val="1E293B"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+          } else {
+            docBodyXml += `<w:p><w:pPr><w:spacing w:after="140"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+          }
         }
-      }
-    })
+      })
+    }
   })
+
+  if (embeddedImageCount > 0 && (!fullExtractedText || fullExtractedText.length < 50)) {
+    fullExtractedText = `[Scanned Document: Embedded ${embeddedImageCount} high-resolution page scan(s) into Word document]`
+  }
 
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>`
@@ -1432,6 +2157,7 @@ export async function pdfToWord(
   const docRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  ${imageRelsXml}
 </Relationships>`
 
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1444,7 +2170,7 @@ export async function pdfToWord(
 </w:styles>`
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
   <w:body>
     ${docBodyXml}
     <w:sectPr>
@@ -1454,19 +2180,24 @@ export async function pdfToWord(
   </w:body>
 </w:document>`
 
-  const zipBytes = buildZipArchive([
+  zipEntries.push(
     { name: "[Content_Types].xml", data: contentTypesXml },
     { name: "_rels/.rels", data: relsXml },
     { name: "word/_rels/document.xml.rels", data: docRelsXml },
     { name: "word/styles.xml", data: stylesXml },
     { name: "word/document.xml", data: documentXml },
-  ])
+  )
+
+  const zipBytes = buildZipArchive(zipEntries)
 
   return {
     name: `${baseName}-converted.docx`,
-    blob: new Blob([zipBytes], {
+    blob: new Blob([zipBytes as any], {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
+    extractedText: fullExtractedText,
+    previewSnippet: fullExtractedText.slice(0, 600),
+    pageCount: pages.length,
   }
 }
 
@@ -1630,7 +2361,7 @@ ${bodyParas}        </p:txBody>
   const zipBytes = buildZipArchive(entries)
   return {
     name: `${baseName}-converted.pptx`,
-    blob: new Blob([zipBytes], {
+    blob: new Blob([zipBytes as any], {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
   }
@@ -1787,7 +2518,7 @@ export async function pdfToExcel(
 
   return {
     name: `${baseName}-converted.xlsx`,
-    blob: new Blob([zipBytes], {
+    blob: new Blob([zipBytes as any], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
   }
@@ -2648,7 +3379,7 @@ export async function pdfToJPG(
   const zipBytes = buildZipArchive(zipEntries)
   return {
     name: `${baseName}-images.zip`,
-    blob: new Blob([zipBytes], { type: "application/zip" }),
+    blob: new Blob([zipBytes as any], { type: "application/zip" }),
   }
 }
 
@@ -2798,12 +3529,48 @@ export const generateQR = (value: string) =>
   })
 
 export function download(result: OutputResult) {
+  if (!result || !result.blob) return
   const url = URL.createObjectURL(result.blob)
   const link = document.createElement("a")
+  if (link && link.style) {
+    link.style.display = "none"
+  }
   link.href = url
-  link.download = result.name
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  if (typeof link.setAttribute === "function") {
+    link.setAttribute("download", result.name || "document")
+    link.setAttribute("target", "_blank")
+    link.setAttribute("rel", "noopener noreferrer")
+  }
+  if (document.body && typeof document.body.appendChild === "function") {
+    document.body.appendChild(link)
+  }
+
+  try {
+    if (typeof link.dispatchEvent === "function") {
+      link.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        }),
+      )
+    } else if (typeof link.click === "function") {
+      link.click()
+    }
+  } catch {
+    if (typeof link.click === "function") {
+      link.click()
+    }
+  }
+
+  setTimeout(() => {
+    try {
+      if (document.body && typeof document.body.contains === "function" && document.body.contains(link)) {
+        document.body.removeChild(link)
+      }
+    } catch {}
+    URL.revokeObjectURL(url)
+  }, 3000)
 }
 
 // ============================================================================
@@ -2951,7 +3718,7 @@ async function compressDeflateRaw(
   try {
     const cs = new CompressionStream("deflate-raw")
     const writer = cs.writable.getWriter()
-    writer.write(data).catch(() => {})
+    writer.write(data as any).catch(() => {})
     writer.close().catch(() => {})
     const reader = cs.readable.getReader()
     const chunks: Uint8Array[] = []
@@ -2985,7 +3752,7 @@ async function decompressDeflateRaw(
   }
   const ds = new DecompressionStream("deflate-raw")
   const writer = ds.writable.getWriter()
-  writer.write(data).catch(() => {})
+  writer.write(data as any).catch(() => {})
   writer.close().catch(() => {})
   const reader = ds.readable.getReader()
   const chunks: Uint8Array[] = []
@@ -3415,7 +4182,7 @@ export async function extractZipArchive(
       mimeType =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-    const fileBlob = new Blob([decompressed], { type: mimeType })
+    const fileBlob = new Blob([decompressed as any], { type: mimeType })
 
     extracted.push({
       name: safeName,
@@ -3849,7 +4616,7 @@ export async function scanOCR(
   } else if (input instanceof Uint8Array || input instanceof ArrayBuffer) {
     rawBytes = toCleanUint8Array(input)
     if (rawBytes.length === 0) throw new Error("File cannot be empty.")
-    inputBlob = new Blob([rawBytes])
+    inputBlob = new Blob([rawBytes as any])
   } else {
     throw new Error("Invalid input format for OCR scanner.")
   }
@@ -3903,6 +4670,68 @@ export async function scanOCR(
         characterCount: totalChars,
         sourceType: "pdf-digital",
       }
+    }
+  }
+
+  // 1b. Cloud OCR Engine (OCR.space - 25,000 free operations/mo)
+  const ocrApi = getNextAvailableApi("ocr-text")
+  if (ocrApi && ocrApi.provider === "ocrspace") {
+    try {
+      let binary = ""
+      const len = rawBytes.byteLength
+      const chunkSize = 0x8000
+      for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, Array.from(rawBytes.subarray(i, i + chunkSize)))
+      }
+      const mime = isPdf ? "application/pdf" : "image/png"
+      const base64Image = `data:${mime};base64,${btoa(binary)}`
+
+      const ocrRes = await fetch("/api/ocr-space/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base64Image,
+          language: options.language || "eng",
+          apiKey: ocrApi.apiKey,
+        }),
+      })
+
+      if (ocrRes.ok) {
+        const data = await ocrRes.json()
+        if (data.success && data.text) {
+          recordApiOutcome(ocrApi.id, { success: true })
+          const text = (data.text || "").trim()
+          const rawLines = text.split("\n").filter((l: string) => l.trim().length > 0)
+          const lines: OCRLine[] = rawLines.map((l: string) => ({
+            text: l.trim(),
+            confidence: 0.95,
+          }))
+
+          return {
+            text,
+            confidence: 0.95,
+            lines,
+            pageCount: data.results?.length || 1,
+            language: options.language || "eng",
+            wordCount: text.split(/\s+/).filter(Boolean).length,
+            characterCount: text.length,
+            sourceType: isPdf ? "pdf-scanned" : "image-raster",
+          }
+        }
+      } else {
+        const errData = await ocrRes.json().catch(() => ({}))
+        recordApiOutcome(ocrApi.id, {
+          success: false,
+          statusCode: ocrRes.status,
+          errorMessage: errData.error || `HTTP ${ocrRes.status}`,
+        })
+      }
+    } catch (ocrErr) {
+      console.warn("OCR.space engine error, falling back to local OCR:", ocrErr)
+      recordApiOutcome(ocrApi.id, {
+        success: false,
+        errorMessage: String(ocrErr),
+      })
     }
   }
 
@@ -4525,7 +5354,7 @@ export async function splitAndCompress(
     for (let i = 0; i < splitPageBlobs.length; i++) {
       const entry = splitPageBlobs[i]
       const intermediateFile = ensureFile(
-        new Blob([entry.bytes], { type: "application/pdf" }),
+        new Blob([entry.bytes as any], { type: "application/pdf" }),
         entry.name,
       )
       const compressed = await compressPDF(intermediateFile, {
@@ -4548,7 +5377,7 @@ export async function splitAndCompress(
 
     tracker.report(10, `Packaging compressed pages into archive...`)
     const zipBytes = buildZipArchive(compressedEntries)
-    const zipBlob = new Blob([zipBytes], { type: "application/zip" })
+    const zipBlob = new Blob([zipBytes as any], { type: "application/zip" })
     tracker.report(100, `Archive packaging complete.`)
     tracker.finish()
 
@@ -6803,7 +7632,7 @@ export function askDocumentAI(
   const N = rawPassages.length
 
   // Passage lengths and term frequencies
-  const passageTokens = rawPassages.map(
+  const passageTokens: string[][] = rawPassages.map(
     (p) => p.toLowerCase().match(/\b[a-z0-9]{2,}\b/g) || [],
   )
   const avgLen =
@@ -8644,6 +9473,9 @@ export interface SessionDocument {
   blob?: Blob
   dataUrl?: string
   contentSnippet?: string
+  driveUrl?: string
+  driveFileId?: string
+  driveSyncedAt?: string
 }
 
 const inMemoryBlobCache = new Map<string, Blob>()
@@ -8863,9 +9695,9 @@ export async function dbGetAllDocuments(): Promise<SessionDocument[]> {
       const req = store.getAll()
 
       req.onsuccess = () => {
-        const results = (req.result || []) as SessionDocument & {
+        const results = (req.result || []) as (SessionDocument & {
           persistedAt?: number
-        }[]
+        })[]
         results.sort((a, b) => (b.persistedAt || 0) - (a.persistedAt || 0))
         resolve(results)
       }

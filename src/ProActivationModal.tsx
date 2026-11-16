@@ -109,7 +109,7 @@ export default function ProActivationModal({
     setErrorMessage("")
     if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
       setLoading("payment")
-      const userEmail = currentUser?.email || "customer@fluxkit.com"
+      const userEmail = currentUser?.email || "customer@masterfilepro.com"
       const subunits =
         activeGateway.currency === "GHS"
           ? 25000
@@ -208,8 +208,8 @@ export default function ProActivationModal({
               borderRadius: "16px",
               border: "none",
               background:
-                activeCurrency === "USD" ? "#6366f1" : "transparent",
-              color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+                activeCurrency === "USD" ? "#00C9B7" : "transparent",
+              color: activeCurrency === "USD" ? "#06204D" : "var(--muted)",
               cursor: "pointer",
               fontWeight: 700,
               display: "flex",
@@ -228,8 +228,8 @@ export default function ProActivationModal({
               borderRadius: "16px",
               border: "none",
               background:
-                activeCurrency === "GHS" ? "#6366f1" : "transparent",
-              color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+                activeCurrency === "GHS" ? "#00C9B7" : "transparent",
+              color: activeCurrency === "GHS" ? "#06204D" : "var(--muted)",
               cursor: "pointer",
               fontWeight: 700,
               display: "flex",
@@ -250,19 +250,19 @@ export default function ProActivationModal({
             height: "56px",
             borderRadius: "16px",
             background:
-              "linear-gradient(135deg, rgba(168,85,247,0.2), rgba(99,102,241,0.2))",
-            color: "#a855f7",
+              "linear-gradient(135deg, rgba(6,32,77,0.4), rgba(0,201,183,0.25))",
+            color: "#00C9B7",
             display: "grid",
             placeItems: "center",
             margin: "0 auto 16px",
-            border: "1px solid rgba(168,85,247,0.3)",
+            border: "1px solid rgba(0,201,183,0.35)",
           }}
         >
           <Lock size={28} />
         </div>
         <div
           className="eyebrow"
-          style={{ color: "#a855f7", letterSpacing: "1px" }}
+          style={{ color: "#00C9B7", letterSpacing: "1px" }}
         >
           PRO SUBSCRIPTION TOOL
         </div>
@@ -437,7 +437,7 @@ export default function ProActivationModal({
                     display: "flex",
                     alignItems: "center",
                     gap: "8px",
-                    color: "#a855f7",
+                    color: "#00C9B7",
                     fontWeight: 600,
                   }}
                 >

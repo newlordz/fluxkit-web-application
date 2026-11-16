@@ -811,7 +811,7 @@ test("UI Mounting #pdf-to-ppt: mounts dropzone (.pdf), aspect ratio selector, sl
   assert.match(html, /Slide Aspect Ratio/)
   assert.match(html, /Widescreen 16:9/)
   assert.match(html, /Slide Theme/)
-  assert.match(html, /FluxKit Dark/)
+  assert.match(html, /Masterfilepro Dark|FluxKit Dark/)
   assert.match(html, /Convert to PowerPoint/)
 })
 

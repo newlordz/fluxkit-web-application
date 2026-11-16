@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { tools, brand, type Tool, type Category } from "./config"
 import ToolBadgeIcon from "./ToolBadgeIcon"
+import MasterfileLogo from "./MasterfileLogo"
 import { isToolPro, getFormattedToolPrice } from "./adminService"
 import { getActiveCurrency } from "./currencyService"
 
@@ -515,6 +516,9 @@ export default function Overview({
         "pdf-to-jpg",
         "jpg-to-pdf",
         "convert",
+        "edi-convert",
+        "csv-convert",
+        "batch-convert",
         "convert-compress",
       ].includes(t.id)
     }
@@ -560,6 +564,9 @@ export default function Overview({
         "pdf-to-jpg",
         "jpg-to-pdf",
         "convert",
+        "edi-convert",
+        "csv-convert",
+        "batch-convert",
         "convert-compress",
       ].includes(t.id),
     ).length,
@@ -623,7 +630,7 @@ export default function Overview({
         <div className="hero-body">
           <div className="hero-kicker-pill">
             <span className="hero-pulse-dot" />
-            <span>Universal File & Document Workspace</span>
+            <span>Masterfilepro Universal Workspace</span>
           </div>
 
           <h1>
@@ -817,7 +824,7 @@ export default function Overview({
                 <div className="modal-header-top">
                   <span className="modal-badge">
                     <Sparkles size={12} />
-                    <span>FluxKit Smart Hub</span>
+                    <span>Masterfilepro Smart Hub</span>
                   </span>
                   <button
                     type="button"
@@ -1075,8 +1082,8 @@ export default function Overview({
                         style={
                           isToolPro(t.id)
                             ? {
-                                background: "rgba(168,85,247,0.15)",
-                                color: "#a855f7",
+                                background: "rgba(0,201,183,0.15)",
+                                color: "#00C9B7",
                                 fontWeight: 700,
                               }
                             : {

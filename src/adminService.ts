@@ -469,7 +469,10 @@ export function deleteUser(userId: string): void {
   }
   const accounts = getRegisteredAccounts()
   const filtered = accounts.filter(
-    (a) => a.id !== userId && a.email.toLowerCase() !== "admin@fluxkit.com",
+    (a) =>
+      a.id !== userId &&
+      a.email.toLowerCase() !== "admin@masterfilepro.com" &&
+      a.email.toLowerCase() !== "admin@fluxkit.com",
   )
   saveRegisteredAccounts(filtered)
 }
@@ -501,6 +504,7 @@ export function createUserByAdmin(payload: {
   const accounts = getRegisteredAccounts()
   if (
     accounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
+    cleanEmail === "admin@masterfilepro.com" ||
     cleanEmail === "admin@fluxkit.com"
   ) {
     throw new Error("An account with this email address already exists.")

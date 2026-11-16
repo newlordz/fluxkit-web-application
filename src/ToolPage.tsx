@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, type FormEvent } from "react"
 import DocumentPreviewModal from "./DocumentPreviewModal"
 import QRCodeStudioModal from "./QRCodeStudioModal"
+import MergeLoadingModal from "./MergeLoadingModal"
+import ImageShowcaseDesigner from "./ImageShowcaseDesigner"
 import {
   Activity,
   ArrowDown,
@@ -11,10 +13,12 @@ import {
   Camera,
   CameraOff,
   Check,
+  CheckCircle2,
   Circle,
   Copy,
   Database,
   Download,
+  ExternalLink,
   Eye,
   FileArchive,
   FileCheck2,
@@ -115,6 +119,7 @@ import {
   type EmailTone,
   type JobStatus,
   type OutputResult,
+  type MergePDFProgress,
   type ExtractedZipFile,
   type OCRResult,
   type PipelineMetricsResult,
@@ -142,6 +147,41 @@ import {
   type SessionDocument,
   type MeetingState,
 } from "./services"
+import {
+  parseEDI,
+  convertEDIToJSON,
+  convertEDIToCSV,
+  convertEDIToExcel,
+  convertEDIToXML,
+  convertEDIToReadableReport,
+  convertDataToEDIX12,
+  parseCSV,
+  convertCSVToJSON,
+  convertCSVToExcel,
+  convertCSVToPDF,
+  convertCSVToXML,
+  convertCSVToSQL,
+  convertCSVToMarkdown,
+  reformatCSVDelimiter,
+  analyzeBatchScript,
+  convertBatchToPowerShell,
+  convertBatchToBash,
+  convertBatchToPython,
+  generateBatchTemplate,
+} from "./dataConversionService"
+import { GoogleIcon } from "./GoogleAuth"
+import {
+  getGoogleDriveConfig,
+  saveGoogleDriveConfig,
+  connectGoogleDrive,
+  disconnectGoogleDrive,
+  uploadFileToGoogleDrive,
+  fetchDriveStorageQuota,
+  getGoogleClientId,
+  setGoogleClientId,
+  type GoogleDriveConfig,
+} from "./googleDriveService"
+import { getCurrentUser } from "./authService"
 
 const STOPWORDS = new Set([
   "a",
@@ -480,7 +520,16 @@ export default function ToolPage({
 
   // Document Preview Modal
   const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [mergeProgress, setMergeProgress] = useState<MergePDFProgress | null>(null)
   const fileDragIndexRef = useRef<number | null>(null)
+
+  // Drag & Drop Feedback State
+  const [isDropzoneDragging, setIsDropzoneDragging] = useState(false)
+  const [dropSuccessState, setDropSuccessState] = useState<{
+    count: number
+    names: string[]
+  } | null>(null)
+  const dropSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previewModalMode = ((): "merge" | "split" | "rotate" | "arrange" => {
     if (tool.id === "split-pdf" || tool.id === "split-compress") return "split"
     if (tool.id === "rotate-pdf") return "rotate"
@@ -503,6 +552,173 @@ export default function ToolPage({
   const [ocrClean, setOcrClean] = useState(true)
   const [stripMeta, setStripMeta] = useState(true)
   const [copiedText, setCopiedText] = useState(false)
+  const [downloadSuccessName, setDownloadSuccessName] = useState<string | null>(null)
+  const [isZipping, setIsZipping] = useState(false)
+
+  // Google Drive 5 TB Cloud Storage State
+  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig>(() => getGoogleDriveConfig())
+  const [isConnectingDrive, setIsConnectingDrive] = useState(false)
+  const [isSavingToDrive, setIsSavingToDrive] = useState(false)
+  const [driveSavedLink, setDriveSavedLink] = useState<string | null>(null)
+  const [driveSyncingDocId, setDriveSyncingDocId] = useState<string | null>(null)
+  const [showDriveClientModal, setShowDriveClientModal] = useState(false)
+  const [driveClientInput, setDriveClientInput] = useState(() => getGoogleClientId())
+
+  const handleConnectGoogleDrive = async () => {
+    const currentId = getGoogleClientId().trim()
+    if (!currentId) {
+      setShowDriveClientModal(true)
+      return
+    }
+    setIsConnectingDrive(true)
+    try {
+      const res = await connectGoogleDrive(currentId)
+      if (res.ok && res.config) {
+        setDriveConfig(res.config)
+        notify.success("5 TB Google Drive connected! Vault folder created in your Drive.")
+      } else if (res.needsClientId) {
+        setShowDriveClientModal(true)
+      } else {
+        notify(res.error || "Could not connect to Google Drive. Please check your credentials.", "error")
+      }
+    } catch {
+      notify("Failed to initiate Google Drive connection.", "error")
+    } finally {
+      setIsConnectingDrive(false)
+    }
+  }
+
+  const handleSaveDriveClientIdAndConnect = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const clean = driveClientInput.trim()
+    if (!clean) {
+      notify("Please enter a valid Google OAuth Client ID.", "error")
+      return
+    }
+    setGoogleClientId(clean)
+    setShowDriveClientModal(false)
+    setIsConnectingDrive(true)
+    try {
+      const res = await connectGoogleDrive(clean)
+      if (res.ok && res.config) {
+        setDriveConfig(res.config)
+        notify.success("5 TB Google Drive connected! Vault folder created in your Drive.")
+      } else {
+        notify(res.error || "Authorization was not completed. Please try again.", "error")
+      }
+    } catch {
+      notify("Failed to connect with the provided Client ID.", "error")
+    } finally {
+      setIsConnectingDrive(false)
+    }
+  }
+
+  const handleToggleDriveAutoSync = () => {
+    const updated = saveGoogleDriveConfig({ autoSync: !driveConfig.autoSync })
+    setDriveConfig(updated)
+    notify(
+      updated.autoSync
+        ? "Auto-sync enabled: all future conversions will automatically save to your 5 TB Google Drive."
+        : "Auto-sync disabled: conversions stay in local IndexedDB only.",
+      "success",
+    )
+  }
+
+  const handleSaveResultToGoogleDrive = async (res: OutputResult) => {
+    if (!res || !res.blob) return
+    setIsSavingToDrive(true)
+    try {
+      if (!driveConfig.connected) {
+        const connectRes = await connectGoogleDrive()
+        if (!connectRes.ok || !connectRes.config) {
+          notify(connectRes.error || "Please connect your Google Drive first.", "error")
+          setIsSavingToDrive(false)
+          return
+        }
+        setDriveConfig(connectRes.config)
+      }
+
+      const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
+      const userFolder = user?.email || user?.name || "Personal Conversions"
+      const uploadRes = await uploadFileToGoogleDrive(res.blob, res.name, userFolder)
+      if (uploadRes.ok && uploadRes.file) {
+        setDriveSavedLink(uploadRes.file.webViewLink || null)
+        notify.success(`"${res.name}" saved to your 5 TB Google Drive Vault!`)
+      } else {
+        notify(uploadRes.error || "Failed to upload to Google Drive.", "error")
+      }
+    } catch {
+      notify("Network error while uploading to Google Drive.", "error")
+    } finally {
+      setIsSavingToDrive(false)
+    }
+  }
+
+  const handleSyncDocumentToDrive = async (doc: SessionDocument) => {
+    if (!doc.blob) {
+      notify("No local file data available to upload.", "error")
+      return
+    }
+    setDriveSyncingDocId(doc.id)
+    try {
+      if (!driveConfig.connected) {
+        const connectRes = await connectGoogleDrive()
+        if (!connectRes.ok || !connectRes.config) {
+          notify(connectRes.error || "Please connect your Google Drive first.", "error")
+          setDriveSyncingDocId(null)
+          return
+        }
+        setDriveConfig(connectRes.config)
+      }
+
+      const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
+      const userFolder = user?.email || user?.name || "Personal Conversions"
+      const uploadRes = await uploadFileToGoogleDrive(doc.blob, doc.name, userFolder)
+      if (uploadRes.ok && uploadRes.file) {
+        const updatedDoc = {
+          ...doc,
+          driveUrl: uploadRes.file.webViewLink,
+          driveFileId: uploadRes.file.id,
+          driveSyncedAt: new Date().toISOString(),
+        }
+        if (typeof dbSaveDocument === "function") {
+          await dbSaveDocument(updatedDoc)
+        }
+        setSessionDocs((prev) =>
+          prev.map((d) => (d.id === doc.id ? updatedDoc : d)),
+        )
+        notify.success(`"${doc.name}" synced to your 5 TB Google Drive Vault!`)
+      } else {
+        notify(uploadRes.error || "Failed to sync to Google Drive.", "error")
+      }
+    } catch {
+      notify("Error uploading to Google Drive.", "error")
+    } finally {
+      setDriveSyncingDocId(null)
+    }
+  }
+
+  const handleDownload = (res: OutputResult) => {
+    download(res)
+    setDownloadSuccessName(res.name)
+    notify.success(`"${res.name}" downloaded! Check your browser's Downloads folder.`)
+    setTimeout(() => setDownloadSuccessName(null), 3500)
+  }
+
+  const handleDownloadAsZip = async (res: OutputResult) => {
+    try {
+      setIsZipping(true)
+      const zipRes = await zipFiles([{ name: res.name, data: res.blob }], {
+        archiveName: `${res.name.replace(/\.[^/.]+$/, "")}.zip`,
+      })
+      download(zipRes)
+      notify.success(`"${zipRes.name}" ZIP archive downloaded! Check your Downloads folder.`)
+    } catch (err: any) {
+      notify(err?.message || "Failed to package as ZIP.", "error")
+    } finally {
+      setIsZipping(false)
+    }
+  }
 
   // Milestone 5 AI Text Suite State
   const [summaryMode, setSummaryMode] = useState<"sentences" | "percentage">(
@@ -638,14 +854,14 @@ export default function ToolPage({
     return [
       {
         id: "sample-doc-1",
-        name: "FluxKit_Quickstart_Guide.pdf",
+        name: "Masterfilepro_Quickstart_Guide.pdf",
         size: "245.8 KB",
         rawSize: 251658,
         time: "10:00 AM",
         category: "pdf",
         toolSource: "Workspace Guide",
         contentSnippet:
-          "Welcome to FluxKit Workspace. All 37 creative and conversion tools run completely client-side in your browser.",
+          "Welcome to Masterfilepro Workspace. All creative and conversion tools run completely client-side in your browser.",
       },
       {
         id: "sample-doc-2",
@@ -990,6 +1206,15 @@ export default function ToolPage({
     if (id === "ocr") {
       return ".pdf,.jpg,.jpeg,.png,.webp,image/*,application/pdf"
     }
+    if (id === "edi-convert") {
+      return ".edi,.x12,.edi.txt,.edifact,.txt,text/plain,application/octet-stream,*/*"
+    }
+    if (id === "csv-convert") {
+      return ".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+    }
+    if (id === "batch-convert") {
+      return ".bat,.cmd,.sh,.ps1,.txt,text/plain,application/x-bat,application/x-msdos-program,*/*"
+    }
     if (id === "convert" || id === "convert-compress") {
       return ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.csv,.tsv,.txt,.jpg,.jpeg,.png,.webp,image/*,application/*,text/*"
     }
@@ -1048,6 +1273,19 @@ export default function ToolPage({
     setResultState(undefined)
     setTextOutput("")
     setStatus("idle")
+
+    if (accepted.length > 0) {
+      if (dropSuccessTimerRef.current) {
+        clearTimeout(dropSuccessTimerRef.current)
+      }
+      setDropSuccessState({
+        count: accepted.length,
+        names: accepted.map((f) => f.name),
+      })
+      dropSuccessTimerRef.current = setTimeout(() => {
+        setDropSuccessState(null)
+      }, 2500)
+    }
   }
 
   // --- Client-Side AI & NLP Engine ---
@@ -1246,7 +1484,30 @@ export default function ToolPage({
       else if (tool.id === "merge-pdf") {
         if (files.length < 2)
           throw new Error("Choose at least two PDFs to merge.")
-        setResult(await mergePDFs(files))
+        setMergeProgress({
+          current: 1,
+          total: files.length,
+          currentFileName: files[0]?.name || "Document 1",
+          percentage: 12,
+          stage: `Initializing merge engine for ${files.length} documents...`,
+        })
+        try {
+          const [mergedRes] = await Promise.all([
+            mergePDFs(files, (p) => setMergeProgress(p)),
+            new Promise((resolve) => setTimeout(resolve, 800)),
+          ])
+          setMergeProgress({
+            current: files.length,
+            total: files.length,
+            currentFileName: "Done",
+            percentage: 100,
+            stage: "All files successfully stitched!",
+          })
+          await new Promise((resolve) => setTimeout(resolve, 450))
+          setResult(mergedRes)
+        } finally {
+          setMergeProgress(null)
+        }
       } else if (tool.id === "rotate-pdf") {
         if (files.length < 1)
           throw new Error("Choose at least one PDF to rotate.")
@@ -1261,7 +1522,7 @@ export default function ToolPage({
         setResult(await splitPDF(files[0], extra))
       } else if (tool.id === "compress") {
         if (files.length < 1) throw new Error("Select a PDF to compress.")
-        const level = optionA as "standard" | "high" || "standard"
+        const level = (optionA as "standard" | "high" | "extreme") || "standard"
         setResult(await compressPDF(files[0], { level }))
       } else if (tool.id === "edit-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to annotate.")
@@ -1516,6 +1777,214 @@ export default function ToolPage({
         onComplete(conv.name)
         setStatus("completed")
         return
+      } else if (tool.id === "edi-convert") {
+        let rawEdi = ""
+        let baseName = "edi-document"
+        if (files.length > 0) {
+          rawEdi = await files[0].text()
+          baseName = files[0].name.replace(/\.[^/.]+$/, "")
+        } else if (value.trim()) {
+          rawEdi = value.trim()
+          baseName = "pasted-edi"
+        } else {
+          throw new Error("Please upload an EDI file or paste EDI content.")
+        }
+
+        const targetFormat = optionA || "json"
+        setPipelineStep({
+          current: 1,
+          total: 1,
+          label: `Converting EDI to ${targetFormat.toUpperCase()}...`,
+        })
+
+        if (targetFormat === "json") {
+          const jsonStr = convertEDIToJSON(rawEdi, true)
+          const blob = new Blob([jsonStr], { type: "application/json" })
+          const outName = `${baseName}.json`
+          setResult({ name: outName, blob, extractedText: jsonStr })
+          onComplete(outName)
+        } else if (targetFormat === "csv") {
+          const csvStr = convertEDIToCSV(rawEdi)
+          const blob = new Blob([csvStr], { type: "text/csv" })
+          const outName = `${baseName}.csv`
+          setResult({ name: outName, blob, extractedText: csvStr })
+          onComplete(outName)
+        } else if (targetFormat === "xlsx") {
+          const excelRes = await convertEDIToExcel(rawEdi, `${baseName}-edi`)
+          setResult({ name: excelRes.name, blob: excelRes.blob })
+          onComplete(excelRes.name)
+        } else if (targetFormat === "xml") {
+          const xmlStr = convertEDIToXML(rawEdi)
+          const blob = new Blob([xmlStr], { type: "application/xml" })
+          const outName = `${baseName}.xml`
+          setResult({ name: outName, blob, extractedText: xmlStr })
+          onComplete(outName)
+        } else if (targetFormat === "report") {
+          const reportStr = convertEDIToReadableReport(rawEdi)
+          const blob = new Blob([reportStr], { type: "text/plain" })
+          const outName = `${baseName}-report.txt`
+          setResult({ name: outName, blob, extractedText: reportStr })
+          onComplete(outName)
+        } else if (targetFormat === "reverse_edi") {
+          const isJson = rawEdi.trim().startsWith("{") || rawEdi.trim().startsWith("[")
+          const ediStr = convertDataToEDIX12(rawEdi, isJson ? "json" : "csv")
+          const blob = new Blob([ediStr], { type: "application/octet-stream" })
+          const outName = `${baseName}.x12.edi`
+          setResult({ name: outName, blob, extractedText: ediStr })
+          onComplete(outName)
+        }
+
+        setPipelineStep(null)
+        notify.success(`EDI conversion to ${targetFormat.toUpperCase()} completed.`)
+        setStatus("completed")
+        return
+      } else if (tool.id === "csv-convert") {
+        let rawCsv = ""
+        let baseName = "data"
+        if (files.length > 0) {
+          rawCsv = await files[0].text()
+          baseName = files[0].name.replace(/\.[^/.]+$/, "")
+        } else if (value.trim()) {
+          rawCsv = value.trim()
+          baseName = "pasted-table"
+        } else {
+          throw new Error("Please upload a CSV / TSV file or paste tabular data.")
+        }
+
+        const targetFormat = optionA || "xlsx"
+        setPipelineStep({
+          current: 1,
+          total: 1,
+          label: `Converting CSV to ${targetFormat.toUpperCase()}...`,
+        })
+
+        if (targetFormat === "xlsx") {
+          const excelRes = await convertCSVToExcel(rawCsv, `${baseName}-spreadsheet`)
+          setResult({ name: excelRes.name, blob: excelRes.blob })
+          onComplete(excelRes.name)
+        } else if (targetFormat === "json") {
+          const jsonStr = convertCSVToJSON(rawCsv, "objects")
+          const blob = new Blob([jsonStr], { type: "application/json" })
+          const outName = `${baseName}.json`
+          setResult({ name: outName, blob, extractedText: jsonStr })
+          onComplete(outName)
+        } else if (targetFormat === "pdf") {
+          const pdfRes = await convertCSVToPDF(rawCsv, `${baseName}-table`)
+          setResult({ name: pdfRes.name, blob: pdfRes.blob })
+          onComplete(pdfRes.name)
+        } else if (targetFormat === "xml") {
+          const xmlStr = convertCSVToXML(rawCsv)
+          const blob = new Blob([xmlStr], { type: "application/xml" })
+          const outName = `${baseName}.xml`
+          setResult({ name: outName, blob, extractedText: xmlStr })
+          onComplete(outName)
+        } else if (targetFormat === "sql") {
+          const sqlStr = convertCSVToSQL(rawCsv, baseName.replace(/[^a-zA-Z0-9_]/g, "_"))
+          const blob = new Blob([sqlStr], { type: "text/plain" })
+          const outName = `${baseName}.sql`
+          setResult({ name: outName, blob, extractedText: sqlStr })
+          onComplete(outName)
+        } else if (targetFormat === "markdown") {
+          const mdStr = convertCSVToMarkdown(rawCsv)
+          const blob = new Blob([mdStr], { type: "text/markdown" })
+          const outName = `${baseName}.md`
+          setResult({ name: outName, blob, extractedText: mdStr })
+          onComplete(outName)
+        } else if (targetFormat === "reformat") {
+          const targetDelim = (optionB as "," | ";" | "\t" | "|") || ";"
+          const reformatted = reformatCSVDelimiter(rawCsv, targetDelim)
+          const blob = new Blob([reformatted], { type: "text/csv" })
+          const outName = `${baseName}-reformatted.csv`
+          setResult({ name: outName, blob, extractedText: reformatted })
+          onComplete(outName)
+        }
+
+        setPipelineStep(null)
+        notify.success(`Spreadsheet converted to ${targetFormat.toUpperCase()}.`)
+        setStatus("completed")
+        return
+      } else if (tool.id === "batch-convert") {
+        let batText = ""
+        let baseName = "script"
+        const mode = optionA || "ps1"
+
+        if (mode === "template") {
+          const tType = (optionB as "backup" | "cleanup" | "launcher" | "system_info") || "backup"
+          const templateCode = generateBatchTemplate(tType)
+          const blob = new Blob([templateCode], { type: "application/x-bat" })
+          const outName = `fluxkit-${tType}.bat`
+          setResult({ name: outName, blob, extractedText: templateCode })
+          onComplete(outName)
+          notify.success(`Batch automation script created (${tType}).`)
+          setStatus("completed")
+          return
+        }
+
+        if (files.length > 0) {
+          batText = await files[0].text()
+          baseName = files[0].name.replace(/\.[^/.]+$/, "")
+        } else if (value.trim()) {
+          batText = value.trim()
+          baseName = "batch-script"
+        } else {
+          throw new Error("Please upload a .bat/.cmd file or paste batch script code.")
+        }
+
+        setPipelineStep({
+          current: 1,
+          total: 1,
+          label: `Transpiling Batch script...`,
+        })
+
+        if (mode === "ps1") {
+          const psCode = convertBatchToPowerShell(batText)
+          const blob = new Blob([psCode], { type: "text/plain" })
+          const outName = `${baseName}.ps1`
+          setResult({ name: outName, blob, extractedText: psCode })
+          onComplete(outName)
+        } else if (mode === "sh") {
+          const shCode = convertBatchToBash(batText)
+          const blob = new Blob([shCode], { type: "text/plain" })
+          const outName = `${baseName}.sh`
+          setResult({ name: outName, blob, extractedText: shCode })
+          onComplete(outName)
+        } else if (mode === "py") {
+          const pyCode = convertBatchToPython(batText)
+          const blob = new Blob([pyCode], { type: "text/plain" })
+          const outName = `${baseName}.py`
+          setResult({ name: outName, blob, extractedText: pyCode })
+          onComplete(outName)
+        } else if (mode === "analyze") {
+          const analysis = analyzeBatchScript(batText)
+          const report = [
+            `=======================================================`,
+            `FLUXKIT BATCH SCRIPT AUDIT REPORT`,
+            `=======================================================`,
+            `Total Lines    : ${analysis.lineCount}`,
+            `Total Commands : ${analysis.commandCount}`,
+            `Has Loops (for): ${analysis.hasLoops ? "YES" : "NO"}`,
+            `Has Conditionals: ${analysis.hasConditionals ? "YES" : "NO"}`,
+            `Destructive Commands Detected: ${analysis.dangerousCommands.length}`,
+            `-------------------------------------------------------`,
+            ...(analysis.dangerousCommands.length > 0
+              ? analysis.dangerousCommands.map((d) => `[!] ${d}`)
+              : [`[✓] No destructive or high-risk system commands detected.`]),
+            `-------------------------------------------------------`,
+            ...(analysis.warnings.length > 0
+              ? analysis.warnings.map((w) => `Warning: ${w}`)
+              : []),
+          ].join("\n")
+
+          const blob = new Blob([report], { type: "text/plain" })
+          const outName = `${baseName}-audit-report.txt`
+          setResult({ name: outName, blob, extractedText: report })
+          onComplete(outName)
+        }
+
+        setPipelineStep(null)
+        notify.success(`Batch script transpilation completed.`)
+        setStatus("completed")
+        return
       } else if (tool.id === "convert-compress") {
         if (files.length < 1) {
           throw new Error("Select a file to convert and compress.")
@@ -1662,11 +2131,41 @@ export default function ToolPage({
       }
 
       if (out) {
-        saveSessionDocument({
+        const saved = saveSessionDocument({
           name: out.name,
           toolSource: tool.name,
           blob: out.blob,
+          rawSize: out.blob?.size,
         })
+        if (
+          saved &&
+          typeof isDatabaseSupported === "function" &&
+          isDatabaseSupported() &&
+          typeof dbSaveDocument === "function"
+        ) {
+          dbSaveDocument(saved).catch(() => {})
+        }
+        try {
+          const driveCfg = getGoogleDriveConfig()
+          if (driveCfg.connected && driveCfg.autoSync && out.blob) {
+            const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
+            const userFolder = user?.email || user?.name || "Personal Conversions"
+            uploadFileToGoogleDrive(out.blob, out.name, userFolder).then((res) => {
+              if (res.ok && res.file) {
+                if (saved) {
+                  saved.driveUrl = res.file.webViewLink
+                  saved.driveFileId = res.file.id
+                  saved.driveSyncedAt = new Date().toISOString()
+                  if (typeof dbSaveDocument === "function") {
+                    dbSaveDocument(saved).catch(() => {})
+                  }
+                }
+                setDriveSavedLink(res.file.webViewLink || null)
+                notify("Auto-synced to your 5 TB Google Drive Vault ✓", "success")
+              }
+            })
+          }
+        } catch {}
       }
 
       setStatus("completed")
@@ -1923,7 +2422,7 @@ export default function ToolPage({
                 >
                   <Monitor size={48} className="text-indigo-400 mb-2" />
                   <div className="font-semibold text-sm">
-                    Sharing Screen: FluxKit Workspace Canvas
+                    Sharing Screen: Masterfilepro Workspace Canvas
                   </div>
                   <small style={{ color: "var(--muted)", marginTop: 4 }}>
                     Live desktop presentation feed · 1080p 60fps
@@ -1987,14 +2486,14 @@ export default function ToolPage({
                       width: 72,
                       height: 72,
                       borderRadius: "50%",
-                      background: "#312e81",
-                      border: "2px solid #6366f1",
+                      background: "#06204D",
+                      border: "2px solid #00C9B7",
                       display: "grid",
                       placeItems: "center",
-                      color: "#c7d2fe",
+                      color: "#00E5D2",
                       fontSize: "20px",
                       fontWeight: 700,
-                      boxShadow: "0 0 25px rgba(99, 102, 241, 0.4)",
+                      boxShadow: "0 0 25px rgba(0, 201, 183, 0.4)",
                       marginBottom: 10,
                     }}
                   >
@@ -2004,7 +2503,7 @@ export default function ToolPage({
                     You (Host) · HD 1080p Virtual Feed
                   </div>
                   <small style={{ color: "#94a3b8", marginTop: 2 }}>
-                    FluxKit Virtual Studio Feed · Simulated 30fps
+                    Masterfilepro Virtual Studio Feed · Simulated 30fps
                   </small>
                   {/* Active Equalizer animation when unmuted */}
                   {!micMuted && (
@@ -2738,6 +3237,363 @@ export default function ToolPage({
       ) : tool.id === "documents" ? (
         <div className="tool-layout" style={{ gridTemplateColumns: "1fr" }}>
           <div className="panel input-panel">
+            {/* 5 TB Google Drive Cloud Vault Control Card */}
+            <div
+              style={{
+                borderRadius: "12px",
+                border: "1px solid rgba(66, 133, 244, 0.35)",
+                background:
+                  "linear-gradient(135deg, rgba(66, 133, 244, 0.08) 0%, rgba(52, 168, 83, 0.05) 100%)",
+                padding: "16px 20px",
+                marginBottom: "18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "10px",
+                      background: "var(--surface)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid var(--border)",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    <GoogleIcon size={24} />
+                  </div>
+                  <div>
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <span>5 TB Google Drive Cloud Vault</span>
+                      {driveConfig.connected && (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            background: "rgba(52, 168, 83, 0.15)",
+                            color: "#34A853",
+                            fontWeight: 650,
+                          }}
+                        >
+                          Connected &amp; Active
+                        </span>
+                      )}
+                    </h3>
+                    <p
+                      style={{
+                        margin: "3px 0 0 0",
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Permanent cloud archiving &amp; instant sharing powered by your 5 TB Gemini Google Drive account
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  {driveConfig.connected ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleToggleDriveAutoSync}
+                        style={{
+                          fontSize: "12px",
+                          padding: "6px 12px",
+                          borderRadius: "8px",
+                          border: driveConfig.autoSync
+                            ? "1px solid rgba(52, 168, 83, 0.4)"
+                            : "1px solid var(--border)",
+                          background: driveConfig.autoSync
+                            ? "rgba(52, 168, 83, 0.15)"
+                            : "var(--surface)",
+                          color: driveConfig.autoSync ? "#10b981" : "var(--muted)",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          fontWeight: 600,
+                        }}
+                        title="When enabled, every converted document is automatically archived to your 5 TB Google Drive"
+                      >
+                        <Check size={13} /> {driveConfig.autoSync ? "Auto-Save Enabled" : "Auto-Save Disabled"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          disconnectGoogleDrive()
+                          setDriveConfig(getGoogleDriveConfig())
+                          notify("Google Drive disconnected.", "info")
+                        }}
+                        style={{
+                          fontSize: "12px",
+                          padding: "6px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          background: "var(--surface)",
+                          color: "var(--muted)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={handleConnectGoogleDrive}
+                        disabled={isConnectingDrive}
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "12.5px",
+                          borderRadius: "8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        <GoogleIcon size={16} />
+                        {isConnectingDrive ? "Connecting..." : "Connect 5 TB Google Drive"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => setShowDriveClientModal(true)}
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--muted)",
+                          padding: "6px 8px",
+                        }}
+                        title="Configure or change Google OAuth Client ID"
+                      >
+                        Client ID
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {driveConfig.connected && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingTop: "10px",
+                    borderTop: "1px solid rgba(66, 133, 244, 0.15)",
+                    fontSize: "12px",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "50%",
+                        background: "#10b981",
+                        display: "inline-block",
+                        boxShadow: "0 0 6px #10b981",
+                      }}
+                    />
+                    <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                      {driveConfig.userEmail || driveConfig.userName || "Connected"}
+                    </span>
+                    <span style={{ color: "var(--muted)" }}>
+                      · Dedicated Folder: <strong>{driveConfig.folderName}</strong>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ color: "var(--muted)" }}>
+                      5 TB Cloud Quota:{" "}
+                      <strong style={{ color: "#34A853" }}>
+                        {driveConfig.quota?.limitFormatted || "5.0 TB"}
+                      </strong>{" "}
+                      ({driveConfig.quota?.freeFormatted || "5.0 TB"} free)
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Google Drive Client ID Setup Modal */}
+            {showDriveClientModal && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0, 0, 0, 0.75)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: "20px",
+                }}
+                onClick={() => setShowDriveClientModal(false)}
+              >
+                <div
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "14px",
+                    maxWidth: "540px",
+                    width: "100%",
+                    padding: "24px",
+                    color: "var(--text)",
+                    boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <GoogleIcon size={24} />
+                      <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
+                        Connect 5 TB Google Drive
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowDriveClientModal(false)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                        padding: "4px",
+                      }}
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      color: "var(--muted)",
+                      lineHeight: "1.55",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    To link your <strong>5 TB Gemini Google account</strong>, provide your Google Cloud OAuth 2.0 Web Client ID. Once connected, Google will present the account picker so you choose your 5 TB account directly.
+                  </p>
+
+                  <form onSubmit={handleSaveDriveClientIdAndConnect}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      Google OAuth 2.0 Client ID
+                    </label>
+                    <input
+                      type="text"
+                      value={driveClientInput}
+                      onChange={(e) => setDriveClientInput(e.target.value)}
+                      placeholder="e.g. 1234567890-abc123xyz.apps.googleusercontent.com"
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg)",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                        marginBottom: "14px",
+                        fontFamily: "monospace",
+                      }}
+                      required
+                    />
+
+                    <div
+                      style={{
+                        background: "var(--surface-hover)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        padding: "12px 14px",
+                        fontSize: "11.5px",
+                        color: "var(--muted)",
+                        lineHeight: "1.5",
+                        marginBottom: "20px",
+                      }}
+                    >
+                      <strong style={{ color: "var(--text)", display: "block", marginBottom: "4px" }}>
+                        How to get your free Google Client ID:
+                      </strong>
+                      1. Open <strong>console.cloud.google.com</strong> &gt; APIs &amp; Services &gt; Credentials<br />
+                      2. Click <strong>Create Credentials &gt; OAuth client ID</strong> (Type: Web Application)<br />
+                      3. Under <strong>Authorized JavaScript origins</strong>, add: <code>https://fluxfix.de5.net</code><br />
+                      4. In <strong>Enabled APIs</strong>, enable <strong>Google Drive API</strong>.
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setShowDriveClientModal(false)}
+                        style={{ padding: "8px 16px", fontSize: "13px" }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="primary"
+                        style={{
+                          padding: "8px 18px",
+                          fontSize: "13px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        <GoogleIcon size={14} /> Save &amp; Connect Drive
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
             {/* Top Stats Banner */}
             <div
               style={{
@@ -3237,9 +4093,52 @@ export default function ToolPage({
                               <div
                                 style={{
                                   display: "inline-flex",
-                                  gap: "8px",
+                                  alignItems: "center",
+                                  gap: "6px",
                                 }}
                               >
+                                {doc.driveUrl ? (
+                                  <a
+                                    href={doc.driveUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-button"
+                                    style={{
+                                      padding: "5px 9px",
+                                      fontSize: "12px",
+                                      color: "#34A853",
+                                      textDecoration: "none",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      borderRadius: "6px",
+                                      background: "rgba(52, 168, 83, 0.1)",
+                                    }}
+                                    title="Open file in Google Drive"
+                                  >
+                                    <GoogleIcon size={13} /> 5TB Drive
+                                  </a>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    style={{
+                                      padding: "5px 9px",
+                                      fontSize: "12px",
+                                      color: "var(--accent)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      borderRadius: "6px",
+                                    }}
+                                    onClick={() => handleSyncDocumentToDrive(doc)}
+                                    disabled={driveSyncingDocId === doc.id}
+                                    title="Save to your 5 TB Google Drive"
+                                  >
+                                    <GoogleIcon size={13} />
+                                    {driveSyncingDocId === doc.id ? "Syncing..." : "Sync"}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="text-button"
@@ -3402,6 +4301,45 @@ export default function ToolPage({
                           <Eye size={13} /> Preview
                         </button>
                         <div style={{ display: "flex", gap: "6px" }}>
+                          {doc.driveUrl ? (
+                            <a
+                              href={doc.driveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-button"
+                              style={{
+                                fontSize: "11px",
+                                padding: "4px 7px",
+                                color: "#34A853",
+                                textDecoration: "none",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                              }}
+                              title="Open file in Google Drive"
+                            >
+                              <GoogleIcon size={12} /> 5TB Drive
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{
+                                fontSize: "11px",
+                                padding: "4px 7px",
+                                color: "var(--accent)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                              }}
+                              onClick={() => handleSyncDocumentToDrive(doc)}
+                              disabled={driveSyncingDocId === doc.id}
+                              title="Save to your 5 TB Google Drive"
+                            >
+                              <GoogleIcon size={12} />
+                              {driveSyncingDocId === doc.id ? "Syncing..." : "Sync"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="text-button"
@@ -3870,46 +4808,84 @@ export default function ToolPage({
                       setQr("")
                     }}
                   >
-                    {["URL", "Text", "WhatsApp", "Wi-Fi", "Email"].map((k) => (
+                    {[
+                      "URL",
+                      "Image / Photo Showcase",
+                      "Text",
+                      "WhatsApp",
+                      "Wi-Fi",
+                      "Email",
+                    ].map((k) => (
                       <option key={k}>{k}</option>
                     ))}
                   </select>
                 </label>
-                <label>
-                  {kind === "Wi-Fi"
-                    ? "Network name (SSID)"
-                    : kind === "WhatsApp"
-                      ? "Phone number with country code"
-                      : kind === "Email"
-                        ? "Email address"
-                        : kind === "URL"
-                          ? "Website URL"
-                          : "Your text"}
-                  <textarea
-                    required
-                    maxLength={2000}
-                    value={value}
-                    placeholder={
-                      kind === "URL"
-                        ? "https://example.com"
-                        : "Enter your content…"
-                    }
-                    onChange={(e) => setValue(e.target.value)}
-                  />
-                </label>
-                {["WhatsApp", "Wi-Fi", "Email"].includes(kind) && (
-                  <label>
-                    {kind === "Wi-Fi"
-                      ? "Wi-Fi password (WPA/WPA2)"
-                      : kind === "Email"
-                        ? "Subject (optional)"
-                        : "Message (optional)"}
-                    <input
-                      type={kind === "Wi-Fi" ? "password" : "text"}
-                      value={extra}
-                      onChange={(e) => setExtra(e.target.value)}
+
+                {kind === "Image / Photo Showcase" ? (
+                  <div style={{ marginTop: "14px" }}>
+                    <ImageShowcaseDesigner
+                      onGenerated={async ({ url }) => {
+                        setValue(url)
+                        setRawQrPayload(url)
+                        setStatus("processing")
+                        try {
+                          if (typeof generateQR === "function") {
+                            const qrImg = await generateQR(url)
+                            setQr(qrImg)
+                            setStatus("completed")
+                            notify(
+                              "Image Showcase QR Code generated! Anyone who scans it will see your custom landing page.",
+                              "success",
+                            )
+                          }
+                        } catch (err: any) {
+                          setError(
+                            err?.message || "Failed to generate QR code.",
+                          )
+                          setStatus("idle")
+                        }
+                      }}
                     />
-                  </label>
+                  </div>
+                ) : (
+                  <>
+                    <label>
+                      {kind === "Wi-Fi"
+                        ? "Network name (SSID)"
+                        : kind === "WhatsApp"
+                          ? "Phone number with country code"
+                          : kind === "Email"
+                            ? "Email address"
+                            : kind === "URL"
+                              ? "Website URL"
+                              : "Your text"}
+                      <textarea
+                        required
+                        maxLength={2000}
+                        value={value}
+                        placeholder={
+                          kind === "URL"
+                            ? "https://example.com"
+                            : "Enter your content…"
+                        }
+                        onChange={(e) => setValue(e.target.value)}
+                      />
+                    </label>
+                    {["WhatsApp", "Wi-Fi", "Email"].includes(kind) && (
+                      <label>
+                        {kind === "Wi-Fi"
+                          ? "Wi-Fi password (WPA/WPA2)"
+                          : kind === "Email"
+                            ? "Subject (optional)"
+                            : "Message (optional)"}
+                        <input
+                          type={kind === "Wi-Fi" ? "password" : "text"}
+                          value={extra}
+                          onChange={(e) => setExtra(e.target.value)}
+                        />
+                      </label>
+                    )}
+                  </>
                 )}
               </>
             ) : tool.category === "AI text tools" ? (
@@ -4493,19 +5469,76 @@ export default function ToolPage({
               /* 4. File Tools Dropzone & Options */
               <>
                 <label
-                  className="dropzone"
-                  onDragOver={(e) => e.preventDefault()}
+                  className={[
+                    "dropzone",
+                    isDropzoneDragging ? "is-dragging" : "",
+                    dropSuccessState ? "is-success" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsDropzoneDragging(true)
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsDropzoneDragging(true)
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+                    setIsDropzoneDragging(false)
+                  }}
                   onDrop={(e) => {
                     e.preventDefault()
+                    e.stopPropagation()
+                    setIsDropzoneDragging(false)
                     addFiles(e.dataTransfer.files)
                   }}
                 >
-                  <Upload size={30} />
-                  <strong>Drop your files here</strong>
-                  <span>or click to browse files</span>
-                  <small>
-                    Up to 25 MB each · Private in-browser processing
-                  </small>
+                  {dropSuccessState ? (
+                    <div className="dropzone-feedback-wrapper dropzone-success-enter">
+                      <div className="dropzone-success-ring-wrapper">
+                        <span className="dropzone-ring-wave" />
+                        <span className="dropzone-ring-wave ring-wave-delayed" />
+                        <div className="dropzone-success-icon-badge">
+                          <CheckCircle2 size={36} className="dropzone-check-icon" />
+                        </div>
+                      </div>
+                      <strong className="dropzone-feedback-title">
+                        {dropSuccessState.count === 1
+                          ? `"${dropSuccessState.names[0]}" loaded successfully!`
+                          : `${dropSuccessState.count} files loaded successfully!`}
+                      </strong>
+                      <span className="dropzone-feedback-subtitle">
+                        Ready to process · Drop more or configure settings below
+                      </span>
+                    </div>
+                  ) : isDropzoneDragging ? (
+                    <div className="dropzone-feedback-wrapper dropzone-dragging-enter">
+                      <div className="dropzone-drag-icon-badge">
+                        <Upload size={36} className="dropzone-drag-bounce" />
+                      </div>
+                      <strong className="dropzone-feedback-title">
+                        Release to drop your files here
+                      </strong>
+                      <span className="dropzone-feedback-subtitle">
+                        Processing happens privately in your browser
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={30} />
+                      <strong>Drop your files here</strong>
+                      <span>or click to browse files</span>
+                      <small>
+                        Up to 25 MB each · Private in-browser processing
+                      </small>
+                    </>
+                  )}
                   <input
                     type="file"
                     multiple={
@@ -4526,7 +5559,7 @@ export default function ToolPage({
                   <div className="file-list">
                     {files.map((file, i) => (
                       <div
-                        className="file-row"
+                        className="file-row file-row-animated"
                         key={`${file.name}-${i}`}
                         draggable={files.length > 1}
                         onDragStart={(e) => {
@@ -4738,6 +5771,9 @@ export default function ToolPage({
                       </option>
                       <option value="high">
                         High Compression (Maximum Stream + Metadata Strip)
+                      </option>
+                      <option value="extreme">
+                        Extreme Compression (Maximum Downsampling & Metadata Strip)
                       </option>
                     </select>
                   </label>
@@ -5131,7 +6167,7 @@ export default function ToolPage({
                         onChange={(e) => setOptionB(e.target.value)}
                       >
                         <option value="fluxkit-dark">
-                          FluxKit Dark (#0b0f19)
+                          Masterfilepro Dark (#0b0f19)
                         </option>
                         <option value="minimal-white">
                           Minimal Clean White (#ffffff)
@@ -5660,6 +6696,212 @@ export default function ToolPage({
                   </>
                 )}
 
+                {tool.id === "edi-convert" && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <label>
+                      Export Format
+                      <select
+                        value={optionA || "json"}
+                        onChange={(e) => setOptionA(e.target.value)}
+                      >
+                        <option value="json">Structured JSON (.json)</option>
+                        <option value="csv">Tabular CSV / Spreadsheet (.csv)</option>
+                        <option value="xlsx">Excel Workbook (.xlsx)</option>
+                        <option value="xml">Standard XML (.xml)</option>
+                        <option value="report">Human-Readable Business Report (.txt)</option>
+                        <option value="reverse_edi">Reverse: JSON/CSV to EDI X12 (.edi)</option>
+                      </select>
+                    </label>
+
+                    {files.length === 0 && (
+                      <label>
+                        Or Paste Raw EDI / JSON Content Directly
+                        <textarea
+                          rows={4}
+                          placeholder="Paste ISA*00*... or JSON content here..."
+                          value={value}
+                          onChange={(e) => setValue(e.target.value)}
+                          style={{ fontFamily: "monospace", fontSize: "12px" }}
+                        />
+                      </label>
+                    )}
+
+                    {files.length === 0 && !value && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        onClick={() => {
+                          setValue(
+                            [
+                              `ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~`,
+                              `GS*PO*FLUXKIT*ACME*20260101*1200*1*X*004010~`,
+                              `ST*850*0001~`,
+                              `BEG*00*NE*PO-984321**20260101~`,
+                              `CUR*BY*USD~`,
+                              `N1*BY*ACME SUPPLY CORP*92*123456789~`,
+                              `N3*1200 COMMERCE BLVD~`,
+                              `N4*AUSTIN*TX*78701*US~`,
+                              `PO1*1*50*EA*19.99*PE*CB*ITEM-409~`,
+                              `PID*F****INDUSTRIAL LOGISTICS CONTAINER~`,
+                              `CTT*1~`,
+                              `SE*11*0001~`,
+                              `GE*1*1~`,
+                              `IEA*1*000000001~`,
+                            ].join("\n")
+                          )
+                        }}
+                      >
+                        + Insert Sample EDI 850 Purchase Order
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {tool.id === "csv-convert" && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: optionA === "reformat" ? "1.2fr 1fr" : "1fr", gap: "12px" }}>
+                      <label>
+                        Target Format
+                        <select
+                          value={optionA || "xlsx"}
+                          onChange={(e) => setOptionA(e.target.value)}
+                        >
+                          <option value="xlsx">Excel Spreadsheet (.xlsx)</option>
+                          <option value="json">JSON Objects (.json)</option>
+                          <option value="pdf">Printable PDF Table (.pdf)</option>
+                          <option value="xml">XML Schema (.xml)</option>
+                          <option value="sql">SQL CREATE & INSERT Statements (.sql)</option>
+                          <option value="markdown">Markdown Table (.md)</option>
+                          <option value="reformat">Reformat Delimiter (;, \t, |)</option>
+                        </select>
+                      </label>
+
+                      {optionA === "reformat" && (
+                        <label>
+                          Target Delimiter
+                          <select
+                            value={optionB || ";"}
+                            onChange={(e) => setOptionB(e.target.value)}
+                          >
+                            <option value=";">Semicolon (;)</option>
+                            <option value="	">Tab (\t - TSV)</option>
+                            <option value="|">Pipe (|)</option>
+                            <option value=",">Comma (,)</option>
+                          </select>
+                        </label>
+                      )}
+                    </div>
+
+                    {files.length === 0 && (
+                      <label>
+                        Or Paste CSV / Tabular Data Directly
+                        <textarea
+                          rows={4}
+                          placeholder="ID,Product,Category,Price,Stock&#10;1,Ultra Widget,Hardware,29.99,150&#10;2,Pro Connector,Cables,12.50,420"
+                          value={value}
+                          onChange={(e) => setValue(e.target.value)}
+                          style={{ fontFamily: "monospace", fontSize: "12px" }}
+                        />
+                      </label>
+                    )}
+
+                    {files.length === 0 && !value && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        onClick={() => {
+                          setValue(
+                            [
+                              `ID,Product Name,Category,Unit Price,In Stock,Status`,
+                              `101,FluxKit Enterprise Hub,Software,499.00,85,Active`,
+                              `102,Industrial Cable Harness,Hardware,45.50,320,Shipped`,
+                              `103,Optic Data Gateway,Networking,1250.00,12,In Stock`,
+                              `104,Precision Sensor Pack,Sensors,89.90,140,Active`,
+                            ].join("\n")
+                          )
+                        }}
+                      >
+                        + Insert Sample CSV Data
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {tool.id === "batch-convert" && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: optionA === "template" ? "1.2fr 1fr" : "1fr", gap: "12px" }}>
+                      <label>
+                        Conversion Mode / Target
+                        <select
+                          value={optionA || "ps1"}
+                          onChange={(e) => setOptionA(e.target.value)}
+                        >
+                          <option value="ps1">Transpile to PowerShell (.ps1)</option>
+                          <option value="sh">Transpile to POSIX Bash (.sh)</option>
+                          <option value="py">Transpile to Python (.py)</option>
+                          <option value="analyze">Security & Syntax Audit</option>
+                          <option value="template">Generate Standard Batch (.bat) Template</option>
+                        </select>
+                      </label>
+
+                      {optionA === "template" && (
+                        <label>
+                          Automation Template
+                          <select
+                            value={optionB || "backup"}
+                            onChange={(e) => setOptionB(e.target.value)}
+                          >
+                            <option value="backup">Automated Directory Backup</option>
+                            <option value="cleanup">Temp Files & Cache Cleanup</option>
+                            <option value="launcher">Project Environment Launcher</option>
+                            <option value="system_info">System Diagnostics & Info</option>
+                          </select>
+                        </label>
+                      )}
+                    </div>
+
+                    {optionA !== "template" && files.length === 0 && (
+                      <label>
+                        Or Paste Batch Script (.bat/.cmd) Code
+                        <textarea
+                          rows={4}
+                          placeholder="@echo off&#10;set BACKUP_DIR=C:\Backups&#10;if not exist %BACKUP_DIR% mkdir %BACKUP_DIR%&#10;pause"
+                          value={value}
+                          onChange={(e) => setValue(e.target.value)}
+                          style={{ fontFamily: "monospace", fontSize: "12px" }}
+                        />
+                      </label>
+                    )}
+
+                    {optionA !== "template" && files.length === 0 && !value && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        onClick={() => {
+                          setValue(
+                            [
+                              `@echo off`,
+                              `:: Automated Deployment & Backup Script`,
+                              `setlocal enabledelayedexpansion`,
+                              `set "TARGET_DIR=C:\\Deployments\\FluxKit"`,
+                              `echo Initializing deployment sequence...`,
+                              `if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"`,
+                              `copy /y "build\\*.*" "%TARGET_DIR%"`,
+                              `echo Deployment successful!`,
+                              `pause`,
+                            ].join("\n")
+                          )
+                        }}
+                      >
+                        + Insert Sample Windows Batch Script
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {tool.id === "convert-compress" && (
                   <div
                     style={{
@@ -5821,131 +7063,143 @@ export default function ToolPage({
               </div>
             )}
 
-            <button
-              className="primary"
-              disabled={status === "processing"}
-              style={{ marginTop: "18px", width: "100%" }}
-            >
-              {status === "processing" ? (
-                <LoaderCircle className="spin" size={17} />
-              ) : (
-                <tool.icon size={17} />
-              )}{" "}
-              {status === "processing"
-                ? pipelineStep
-                  ? pipelineStep.label
-                  : "Processing…"
-                : tool.id === "qr"
-                  ? "Generate QR Code"
-                  : tool.id === "merge-pdf"
-                    ? "Merge PDFs"
-                    : tool.id === "rotate-pdf"
-                      ? "Rotate PDF"
-                      : tool.id === "split-pdf"
-                        ? "Split PDF"
-                        : tool.id === "compress"
-                          ? "Compress PDF"
-                          : tool.id === "edit-pdf"
-                            ? "Apply Annotation"
-                            : tool.id === "watermark"
-                              ? "Add Watermark"
-                              : tool.id === "sign-pdf"
-                                ? "Stamp Signature on PDF"
-                                : tool.id === "password"
-                                  ? optionA === "unlock"
-                                    ? "Unlock Document"
-                                    : "Secure Document"
-                                  : tool.id === "text-pdf"
-                                    ? "Generate PDF"
-                                    : tool.id === "pdf-to-word"
-                                      ? "Convert to Word"
-                                      : tool.id === "pdf-to-ppt"
-                                        ? "Convert to PowerPoint"
-                                        : tool.id === "pdf-to-excel"
-                                          ? "Convert to Excel"
-                                          : tool.id === "word-to-pdf" ||
-                                              tool.id === "ppt-to-pdf" ||
-                                              tool.id === "excel-to-pdf" ||
-                                              tool.id === "jpg-to-pdf"
-                                            ? "Convert to PDF"
-                                            : tool.id === "pdf-to-jpg"
-                                              ? "Convert to JPG"
-                                              : tool.id === "zip"
-                                                ? zipMode === "extract"
-                                                  ? "Extract ZIP Files"
-                                                  : "Create ZIP Archive"
-                                                : tool.id === "ocr"
-                                                  ? "Scan & Extract Text"
-                                                  : tool.id === "convert"
-                                                    ? "Convert File"
-                                                    : tool.id ===
-                                                        "convert-compress"
-                                                      ? "Convert & Compress"
-                                                      : tool.id ===
-                                                          "merge-compress"
-                                                        ? "Merge & Compress PDFs"
-                                                        : tool.id ===
-                                                            "split-compress"
-                                                          ? "Split & Compress PDF"
-                                                          : tool.id ===
-                                                              "summarize"
-                                                            ? "Summarize Document"
-                                                            : tool.id ===
-                                                                "rewrite"
-                                                              ? "Rewrite Content"
+            {!(tool.id === "qr" && kind === "Image / Photo Showcase") && (
+              <>
+                <button
+                  className="primary"
+                  disabled={status === "processing"}
+                  style={{ marginTop: "18px", width: "100%" }}
+                >
+                  {status === "processing" ? (
+                    <LoaderCircle className="spin" size={17} />
+                  ) : (
+                    <tool.icon size={17} />
+                  )}{" "}
+                  {status === "processing"
+                    ? pipelineStep
+                      ? pipelineStep.label
+                      : "Processing…"
+                    : tool.id === "qr"
+                      ? "Generate QR Code"
+                      : tool.id === "merge-pdf"
+                        ? "Merge PDFs"
+                        : tool.id === "rotate-pdf"
+                          ? "Rotate PDF"
+                          : tool.id === "split-pdf"
+                            ? "Split PDF"
+                            : tool.id === "compress"
+                              ? "Compress PDF"
+                              : tool.id === "edit-pdf"
+                                ? "Apply Annotation"
+                                : tool.id === "watermark"
+                                  ? "Add Watermark"
+                                  : tool.id === "sign-pdf"
+                                    ? "Stamp Signature on PDF"
+                                    : tool.id === "password"
+                                      ? optionA === "unlock"
+                                        ? "Unlock Document"
+                                        : "Secure Document"
+                                      : tool.id === "text-pdf"
+                                        ? "Generate PDF"
+                                        : tool.id === "pdf-to-word"
+                                          ? "Convert to Word"
+                                          : tool.id === "pdf-to-ppt"
+                                            ? "Convert to PowerPoint"
+                                            : tool.id === "pdf-to-excel"
+                                              ? "Convert to Excel"
+                                              : tool.id === "word-to-pdf" ||
+                                                  tool.id === "ppt-to-pdf" ||
+                                                  tool.id === "excel-to-pdf" ||
+                                                  tool.id === "jpg-to-pdf"
+                                                ? "Convert to PDF"
+                                                : tool.id === "pdf-to-jpg"
+                                                  ? "Convert to JPG"
+                                                  : tool.id === "zip"
+                                                    ? zipMode === "extract"
+                                                      ? "Extract ZIP Files"
+                                                      : "Create ZIP Archive"
+                                                    : tool.id === "ocr"
+                                                      ? "Scan & Extract Text"
+                                                      : tool.id === "convert"
+                                                        ? "Convert File"
+                                                        : tool.id === "edi-convert"
+                                                          ? "Convert EDI Data"
+                                                          : tool.id === "csv-convert"
+                                                            ? "Convert Spreadsheet / CSV"
+                                                            : tool.id === "batch-convert"
+                                                              ? optionA === "template"
+                                                                ? "Generate Batch (.bat) Script"
+                                                                : "Transpile Batch Script"
                                                               : tool.id ===
-                                                                  "translate"
-                                                                ? "Translate Text"
+                                                            "convert-compress"
+                                                          ? "Convert & Compress"
+                                                          : tool.id ===
+                                                              "merge-compress"
+                                                            ? "Merge & Compress PDFs"
+                                                            : tool.id ===
+                                                                "split-compress"
+                                                              ? "Split & Compress PDF"
+                                                              : tool.id ===
+                                                                  "summarize"
+                                                                ? "Summarize Document"
                                                                 : tool.id ===
-                                                                    "ask"
-                                                                  ? "Ask Document AI"
+                                                                    "rewrite"
+                                                                  ? "Rewrite Content"
                                                                   : tool.id ===
-                                                                      "keywords"
-                                                                    ? "Extract Keywords"
+                                                                      "translate"
+                                                                    ? "Translate Text"
                                                                     : tool.id ===
-                                                                        "sentiment"
-                                                                      ? "Analyze Sentiment"
+                                                                        "ask"
+                                                                      ? "Ask Document AI"
                                                                       : tool.id ===
-                                                                          "compare"
-                                                                        ? "Compare Texts"
+                                                                          "keywords"
+                                                                        ? "Extract Keywords"
                                                                         : tool.id ===
-                                                                            "email"
-                                                                          ? "Generate Email"
-                                                                          : `Run ${tool.name}`}
-            </button>
+                                                                            "sentiment"
+                                                                          ? "Analyze Sentiment"
+                                                                          : tool.id ===
+                                                                              "compare"
+                                                                            ? "Compare Texts"
+                                                                            : tool.id ===
+                                                                                "email"
+                                                                              ? "Generate Email"
+                                                                              : `Run ${tool.name}`}
+                </button>
 
-            {tool.id === "qr" && (
-              <button
-                type="button"
-                className="text-button"
-                style={{
-                  marginTop: "10px",
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "7px",
-                  fontSize: "13px",
-                  padding: "9px 12px",
-                  border: "1px dashed var(--border)",
-                  borderRadius: "8px",
-                  color: "var(--accent)",
-                  background: "var(--surface-hover)",
-                }}
-                onClick={() => {
-                  let content = value.trim() || "https://fluxkit.app"
-                  if (
-                    kind === "URL" &&
-                    !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
-                  ) {
-                    content = `https://${content}`
-                  }
-                  setRawQrPayload(content)
-                  setShowQRStudio(true)
-                }}
-              >
-                <Sparkles size={15} /> Customize Design &amp; Colors (QR Studio)
-              </button>
+                {tool.id === "qr" && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    style={{
+                      marginTop: "10px",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "7px",
+                      fontSize: "13px",
+                      padding: "9px 12px",
+                      border: "1px dashed var(--border)",
+                      borderRadius: "8px",
+                      color: "var(--accent)",
+                      background: "var(--surface-hover)",
+                    }}
+                    onClick={() => {
+                      let content = value.trim() || "https://masterfilepro.com"
+                      if (
+                        kind === "URL" &&
+                        !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
+                      ) {
+                        content = `https://${content}`
+                      }
+                      setRawQrPayload(content)
+                      setShowQRStudio(true)
+                    }}
+                  >
+                    <Sparkles size={15} /> Customize Design &amp; Colors (QR Studio)
+                  </button>
+                )}
+              </>
             )}
 
             <div className="local-note">
@@ -6533,16 +7787,30 @@ export default function ToolPage({
                     width: "100%",
                   }}
                 >
-                  <a className="primary" href={qr} download="fluxkit-qr.png">
+                  <a className="primary" href={qr} download="masterfilepro-qr.png">
                     <Download size={16} /> Download PNG
                   </a>
+                  {rawQrPayload && rawQrPayload.includes("#showcase") && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                      onClick={() => window.open(rawQrPayload, "_blank")}
+                    >
+                      <Eye size={16} /> Open Mobile Showcase View
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="primary"
                     style={{
-                      background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                      background: "linear-gradient(135deg, #06204D, #00C9B7)",
                       borderColor: "transparent",
-                      boxShadow: "0 4px 14px rgba(79, 70, 229, 0.3)",
+                      boxShadow: "0 4px 14px rgba(0, 201, 183, 0.3)",
                       display: "inline-flex",
                       alignItems: "center",
                       gap: "8px",
@@ -6550,7 +7818,7 @@ export default function ToolPage({
                     }}
                     onClick={() => {
                       let content =
-                        rawQrPayload || value.trim() || "https://fluxkit.app"
+                        rawQrPayload || value.trim() || "https://masterfilepro.com"
                       if (
                         kind === "URL" &&
                         !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
@@ -6692,10 +7960,38 @@ export default function ToolPage({
                 </div>
               </div>
             ) : result ? (
-              <div className="result-ready">
-                <FileText size={48} />
-                <h3>Your file is ready</h3>
-                <p>{result.name}</p>
+              <div className="result-ready result-ready-celebrate">
+                {/* Concentric expanding celebration wave rings & badge */}
+                <div className="result-celebrate-hero">
+                  <span className="result-wave-ring ring-1" />
+                  <span className="result-wave-ring ring-2" />
+                  <span className="result-wave-ring ring-3" />
+                  <div className="result-celebrate-badge">
+                    <CheckCircle2 size={38} className="result-celebrate-check" />
+                    <Sparkles size={16} className="result-sparkle-star s1" />
+                    <Sparkles size={14} className="result-sparkle-star s2" />
+                  </div>
+                </div>
+
+                <div className="result-celebrate-text">
+                  <span className="result-celebrate-eyebrow">
+                    <span className="celebrate-status-dot" /> Completed Successfully
+                  </span>
+                  <h3 className="result-celebrate-heading">
+                    {tool.id === "compress"
+                      ? result.savedPercentage && result.savedPercentage > 0
+                        ? "Document Optimized & Compressed!"
+                        : "Optimization Complete"
+                      : "Your Document is Ready!"}
+                  </h3>
+                  <div className="result-file-meta-pill">
+                    <FileText size={14} />
+                    <span className="result-filename" title={result.name}>{result.name}</span>
+                    <span className="result-filesize">
+                      {(result.blob.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                </div>
 
                 {result.pieces && result.pieces.length > 1 && (
                   <div
@@ -6862,31 +8158,371 @@ export default function ToolPage({
                     </div>
                   </div>
                 ) : tool.id === "compress" && files[0] ? (
-                  <div
-                    style={{
-                      marginBottom: "12px",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      background: "rgba(16, 185, 129, 0.1)",
-                      border: "1px solid rgba(16, 185, 129, 0.25)",
-                      fontSize: "12px",
-                      color: "#10b981",
-                      textAlign: "center",
-                    }}
-                  >
-                    <strong>Optimization complete:</strong>{" "}
-                    {(files[0].size / 1024).toFixed(1)} KB &rarr;{" "}
-                    {(result.blob.size / 1024).toFixed(1)} KB (
-                    {Math.max(
-                      0,
-                      Math.round((1 - result.blob.size / files[0].size) * 100),
+                  <div className="compress-results-card">
+                    {result.savedPercentage && result.savedPercentage > 0 ? (
+                      <>
+                        <div className="compress-metrics-header">
+                          <strong className="compress-success-tag">
+                            🎉 {result.savedPercentage}% Space Saved
+                          </strong>
+                          <span className="compress-saved-kb">
+                            {((files[0].size - result.blob.size) / 1024).toFixed(1)} KB smaller
+                          </span>
+                        </div>
+                        <div className="compress-reduction-bar-row">
+                          <div className="compress-size-pill original">
+                            <small>Original</small>
+                            <strong>{(files[0].size / 1024).toFixed(1)} KB</strong>
+                          </div>
+                          <div className="compress-reduction-arrow">
+                            <span>&rarr;</span>
+                          </div>
+                          <div className="compress-size-pill final">
+                            <small>Compressed</small>
+                            <strong>{(result.blob.size / 1024).toFixed(1)} KB</strong>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="compress-already-optimal">
+                        <Check size={18} className="compress-optimal-icon" />
+                        <div>
+                          <strong>Maximum Compression Reached</strong>
+                          <p>
+                            This PDF is already fully compacted at {(files[0].size / 1024).toFixed(1)} KB (0% further reduction possible without quality degradation).
+                          </p>
+                        </div>
+                      </div>
                     )}
-                    % space saved)
                   </div>
                 ) : null}
-                <button className="primary" onClick={() => download(result)}>
-                  <Download size={16} /> Download File
-                </button>
+                {tool.id === "merge-pdf" && result.breakdown && (
+                  <div
+                    style={{
+                      width: "100%",
+                      margin: "12px 0",
+                      padding: "10px 12px",
+                      background: "rgba(99, 102, 241, 0.08)",
+                      border: "1px solid rgba(99, 102, 241, 0.2)",
+                      borderRadius: "8px",
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <strong style={{ fontSize: "12px", color: "var(--accent)" }}>
+                        Merged {result.pageCount ?? 0} Pages from {result.breakdown.length} Documents
+                      </strong>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {result.breakdown.map((item, bIdx) => (
+                        <div key={bIdx} style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", color: "var(--muted)" }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
+                            #{bIdx + 1} {item.name}
+                          </span>
+                          <span>{item.pageCount} page{item.pageCount !== 1 ? "s" : ""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF to Word Extracted Text Preview card */}
+                {tool.id === "pdf-to-word" && (result.extractedText || result.previewSnippet) && (
+                  <div
+                    className="word-preview-box"
+                    style={{
+                      margin: "16px 0",
+                      padding: "16px",
+                      borderRadius: "12px",
+                      background: "var(--card-bg, rgba(255, 255, 255, 0.7))",
+                      border: "1px solid var(--border)",
+                      textAlign: "left",
+                      width: "100%",
+                      maxWidth: "540px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "10px",
+                        paddingBottom: "8px",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <FileText size={16} className="text-primary" />
+                        <span style={{ fontWeight: 600, fontSize: "13px" }}>
+                          Word Content Preview
+                        </span>
+                        {result.pageCount && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              background: "rgba(99, 102, 241, 0.1)",
+                              color: "var(--primary)",
+                            }}
+                          >
+                            {result.pageCount} Page{result.pageCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontSize: "12px",
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          border: "1px solid var(--border)",
+                          background: "var(--surface)",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => {
+                          if (result.extractedText) {
+                            navigator.clipboard.writeText(result.extractedText)
+                            notify("Document text copied to clipboard!", "success")
+                          }
+                        }}
+                      >
+                        <Copy size={13} /> Copy Text
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        maxHeight: "180px",
+                        overflowY: "auto",
+                        fontSize: "13px",
+                        lineHeight: "1.6",
+                        color: "var(--foreground)",
+                        whiteSpace: "pre-wrap",
+                        padding: "8px 12px",
+                        background: "var(--surface)",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {result.extractedText || result.previewSnippet}
+                    </div>
+                  </div>
+                )}
+
+                {/* Converted Data & Script Preview card for EDI, CSV, and Batch tools */}
+                {(tool.id === "edi-convert" || tool.id === "csv-convert" || tool.id === "batch-convert") &&
+                  result.extractedText && (
+                    <div
+                      className="code-preview-box"
+                      style={{
+                        margin: "16px 0",
+                        padding: "16px",
+                        borderRadius: "12px",
+                        background: "var(--card-bg, rgba(255, 255, 255, 0.7))",
+                        border: "1px solid var(--border)",
+                        textAlign: "left",
+                        width: "100%",
+                        maxWidth: "540px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "10px",
+                          paddingBottom: "8px",
+                          borderBottom: "1px solid var(--border)",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <FileText size={16} style={{ color: "var(--accent)" }} />
+                          <span style={{ fontWeight: 600, fontSize: "13px" }}>
+                            {tool.id === "edi-convert"
+                              ? "EDI Converted Output Preview"
+                              : tool.id === "csv-convert"
+                                ? "Spreadsheet Converted Preview"
+                                : "Transpiled Batch Script Preview"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            fontSize: "12px",
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            border: "1px solid var(--border)",
+                            background: "var(--surface)",
+                            cursor: "pointer",
+                          }}
+                          onClick={() => {
+                            if (result.extractedText) {
+                              navigator.clipboard.writeText(result.extractedText)
+                              notify("Converted output copied to clipboard!", "success")
+                            }
+                          }}
+                        >
+                          <Copy size={13} /> Copy Output
+                        </button>
+                      </div>
+                      <pre
+                        style={{
+                          maxHeight: "220px",
+                          overflowY: "auto",
+                          fontSize: "12px",
+                          lineHeight: "1.5",
+                          color: "var(--text)",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
+                          padding: "10px 12px",
+                          background: "var(--surface)",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          fontFamily: "monospace",
+                          margin: 0,
+                        }}
+                      >
+                        {result.extractedText}
+                      </pre>
+                    </div>
+                  )}
+
+                <div className="result-action-buttons" style={{ flexWrap: "wrap", gap: "8px" }}>
+                  <button
+                    className="primary result-download-button"
+                    onClick={() => handleDownload(result)}
+                    style={{ minWidth: "160px" }}
+                  >
+                    {downloadSuccessName === result.name ? (
+                      <>
+                        <Check size={16} /> Saved to Downloads!
+                      </>
+                    ) : (
+                      <>
+                        <Download size={16} /> Download {result.name.endsWith(".pdf") ? "PDF" : "File"}
+                      </>
+                    )}
+                  </button>
+
+                  {result.pieces && result.pieces.length > 1 && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      title="Package and download as a compressed .zip archive"
+                      disabled={isZipping}
+                      onClick={() => handleDownloadAsZip(result)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "12px 16px",
+                        borderRadius: "10px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        color: "var(--text)",
+                        fontSize: "13.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      <FileArchive size={16} style={{ color: "var(--accent)" }} />
+                      {isZipping ? "Packaging ZIP..." : "Download as ZIP (.zip)"}
+                    </button>
+                  )}
+
+                  {tool.id === "pdf-to-word" && result.extractedText ? (
+                    <button
+                      type="button"
+                      className="secondary result-preview-button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(result.extractedText || "")
+                        notify("Full document text copied to clipboard!", "success")
+                      }}
+                    >
+                      <Copy size={16} /> Copy Text
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="secondary result-preview-button"
+                      onClick={() => {
+                        const u = URL.createObjectURL(result.blob)
+                        window.open(u, "_blank")
+                        setTimeout(() => URL.revokeObjectURL(u), 60000)
+                      }}
+                    >
+                      <Eye size={16} /> View in Browser
+                    </button>
+                  )}
+
+                  {/* 5 TB Google Drive Cloud Vault Action */}
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleSaveResultToGoogleDrive(result)}
+                    disabled={isSavingToDrive}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "7px",
+                      padding: "12px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid rgba(66, 133, 244, 0.4)",
+                      background: "rgba(66, 133, 244, 0.08)",
+                      color: "var(--text)",
+                      fontSize: "13.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                    title="Save converted file directly to your 5 TB Google Drive"
+                  >
+                    <GoogleIcon size={16} />
+                    {isSavingToDrive ? (
+                      "Saving to 5TB Drive..."
+                    ) : driveSavedLink ? (
+                      <>
+                        <Check size={15} style={{ color: "#34A853" }} /> Saved to 5TB Drive!
+                      </>
+                    ) : (
+                      "Save to 5TB Google Drive"
+                    )}
+                  </button>
+
+                  {driveSavedLink && (
+                    <a
+                      href={driveSavedLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="secondary"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "12px 14px",
+                        borderRadius: "10px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        color: "var(--accent)",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <ExternalLink size={14} /> Open in Google Drive
+                    </a>
+                  )}
+                </div>
               </div>
             ) : tool.id === "documents" && sessionDocs.length > 0 ? (
               <div className="result-ready" style={{ width: "100%" }}>
@@ -6971,6 +8607,11 @@ export default function ToolPage({
             notify("Customized QR code updated successfully!", "success")
           }}
         />
+      )}
+
+      {/* Nice Merge Loading Screen / Modal */}
+      {mergeProgress && (
+        <MergeLoadingModal files={files} progress={mergeProgress} />
       )}
     </div>
   )

@@ -48,13 +48,13 @@ interface CustomLogo {
 }
 
 const COLOR_PRESETS = [
+  { name: "Masterfilepro Navy", color: "#06204D" },
+  { name: "Masterfilepro Teal", color: "#00C9B7" },
   { name: "Midnight Black", color: "#0f172a" },
-  { name: "Electric Indigo", color: "#4f46e5" },
   { name: "Royal Blue", color: "#2563eb" },
   { name: "Emerald", color: "#059669" },
   { name: "Crimson Rose", color: "#e11d48" },
   { name: "Sunset Orange", color: "#ea580c" },
-  { name: "Amethyst Violet", color: "#7c3aed" },
   { name: "Cyber Cyan", color: "#0891b2" },
 ]
 
@@ -91,11 +91,11 @@ export default function QRCodeStudioModal({
   // Color options
   const [colorMode, setColorMode] = useState<ColorMode>("solid")
   const [fgColor, setFgColor] = useState("#0f172a")
-  const [fgColor2, setFgColor2] = useState("#4f46e5")
+  const [fgColor2, setFgColor2] = useState("#00C9B7")
   const [bgColor, setBgColor] = useState("#ffffff")
   const [isTransparent, setIsTransparent] = useState(false)
   const [customEyeColor, setCustomEyeColor] = useState(false)
-  const [eyeColor, setEyeColor] = useState("#4f46e5")
+  const [eyeColor, setEyeColor] = useState("#06204D")
 
   // Shapes & patterns
   const [dotStyle, setDotStyle] = useState<DotStyle>("rounded")
@@ -687,7 +687,7 @@ export default function QRCodeStudioModal({
     if (!currentDataUrl) return
     const a = document.createElement("a")
     a.href = currentDataUrl
-    a.download = `fluxkit-qr-${Date.now()}.png`
+    a.download = `masterfilepro-qr-${Date.now()}.png`
     a.click()
   }
 
@@ -707,7 +707,7 @@ export default function QRCodeStudioModal({
       const jpegUrl = canvas.toDataURL("image/jpeg", 0.95)
       const a = document.createElement("a")
       a.href = jpegUrl
-      a.download = `fluxkit-qr-${Date.now()}.jpg`
+      a.download = `masterfilepro-qr-${Date.now()}.jpg`
       a.click()
     }
     img.src = currentDataUrl
@@ -754,7 +754,7 @@ export default function QRCodeStudioModal({
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `fluxkit-qr-${Date.now()}.svg`
+      a.download = `masterfilepro-qr-${Date.now()}.svg`
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 5000)
     } catch (err) {
@@ -791,7 +791,7 @@ export default function QRCodeStudioModal({
   function handleReset() {
     setColorMode("solid")
     setFgColor("#0f172a")
-    setFgColor2("#4f46e5")
+    setFgColor2("#00C9B7")
     setBgColor("#ffffff")
     setIsTransparent(false)
     setCustomEyeColor(false)
@@ -859,11 +859,11 @@ export default function QRCodeStudioModal({
                 width: "40px",
                 height: "40px",
                 borderRadius: "10px",
-                background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                background: "linear-gradient(135deg, #06204D, #00C9B7)",
                 color: "#ffffff",
                 display: "grid",
                 placeItems: "center",
-                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)",
+                boxShadow: "0 4px 12px rgba(0, 201, 183, 0.3)",
               }}
             >
               <QrCode size={22} />

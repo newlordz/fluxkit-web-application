@@ -42,7 +42,10 @@ function loadServices() {
   const mod = { exports: {} }
   compiledWrapper(
     mod.exports,
-    (id) => (id === "./jobTypes" ? {} : require(id)),
+    (id) =>
+      id === "./jobTypes" || id === "./apiPoolService"
+        ? { getNextAvailableApi: () => null, recordApiOutcome: () => {} }
+        : require(id),
     mod,
     filePath,
     path.dirname(filePath),

@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react"
 import { brand } from "./config"
+import MasterfileLogo from "./MasterfileLogo"
 import {
   authConnected,
   isConnected,
@@ -218,14 +219,8 @@ export default function AuthPage({
   return (
     <div className="auth-layout page-enter">
       <aside className="auth-story">
-        <a className="brand auth-brand" href="#overview">
-          <span className="brand-mark">
-            <Zap size={25} fill="currentColor" />
-          </span>
-          <span>
-            {brand.name}
-            <span className="brand-period">.</span>
-          </span>
+        <a className="brand auth-brand" href="#overview" style={{ textDecoration: "none" }}>
+          <MasterfileLogo variant="full" size="lg" height={40} theme="dark" />
         </a>
         <div className="auth-story-content">
           <div className="eyebrow">

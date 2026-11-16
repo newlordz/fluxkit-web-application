@@ -25,7 +25,32 @@ import {
   Coins,
   ArrowRightLeft,
   TrendingUp,
+  Database,
+  Save,
+  Server,
+  Cpu,
+  ArrowUp,
+  ArrowDown,
+  Activity,
+  Zap,
+  Sparkles,
+  Layers,
 } from "lucide-react"
+import {
+  getCloudApis,
+  saveCloudApis,
+  moveApiPriority,
+  testApiHealth,
+  syncCloudApisWithServer,
+  type CloudApiConfig,
+  type ApiHealthResult,
+} from "./apiPoolService"
+import {
+  getAdminConfig,
+  updateAdminSettings,
+  initializeDatabaseSync,
+  type DatabaseStatus,
+} from "./adminDbService"
 import type { UserAccount } from "./authService"
 import {
   getAllToolTiers,
@@ -73,7 +98,7 @@ import { tools } from "./config"
 export interface AdminPanelProps {
   currentUser: UserAccount | null
   navigate: (id: string) => void
-  initialTab?: "tiers" | "users" | "pages" | "integrations"
+  initialTab?: "tiers" | "users" | "pages" | "integrations" | "apis" | "settings"
 }
 
 export default function AdminPanel({
@@ -121,7 +146,7 @@ export default function AdminPanel({
         >
           Administrator privileges are required to view the management console.
           Please sign in with an authorized administrator account
-          (`admin@fluxkit.com`).
+          (`admin@masterfilepro.com`).
         </p>
         <button className="primary" onClick={() => navigate("sign-in")}>
           Sign in as Admin
@@ -131,9 +156,85 @@ export default function AdminPanel({
   }
 
   const [activeTab, setActiveTab] =
-    useState<"tiers" | "users" | "pages" | "integrations">(
+    useState<"tiers" | "users" | "pages" | "integrations" | "apis" | "settings">(
       initialTab || "tiers",
     )
+
+  // Cloud API & Priority State
+  const [cloudApis, setCloudApis] = useState<CloudApiConfig[]>(() => getCloudApis())
+  const [testingApiId, setTestingApiId] = useState<string | null>(null)
+  const [apiHealthResults, setApiHealthResults] = useState<Record<string, ApiHealthResult>>({})
+  const [showApiSecrets, setShowApiSecrets] = useState<Record<string, boolean>>({})
+  const [editingApiId, setEditingApiId] = useState<string | null>(null)
+  const [editApiKeyInput, setEditApiKeyInput] = useState("")
+  const [editApiSecretInput, setEditApiSecretInput] = useState("")
+  const [editApiQuotaInput, setEditApiQuotaInput] = useState<number>(500)
+  const [isAddingCustomApi, setIsAddingCustomApi] = useState(false)
+  const [newApiName, setNewApiName] = useState("")
+  const [newApiEndpoint, setNewApiEndpoint] = useState("")
+  const [newApiKey, setNewApiKey] = useState("")
+  const [newApiSecret, setNewApiSecret] = useState("")
+  const [newApiQuota, setNewApiQuota] = useState(1000)
+  const [newApiCategory, setNewApiCategory] = useState<"pdf-compression" | "ocr-text">("pdf-compression")
+  const [apiCategoryFilter, setApiCategoryFilter] = useState<string>("all")
+
+  useEffect(() => {
+    syncCloudApisWithServer().then((apis) => {
+      setCloudApis(apis)
+    })
+  }, [])
+
+  const handleSetExactPriority = async (apiId: string, targetPriority: number, category?: string) => {
+    const all = getCloudApis()
+    const targetApi = all.find((a) => a.id === apiId)
+    if (!targetApi) return
+    const cat = category || targetApi.category
+    const catList = all.filter((a) => a.category === cat).sort((a, b) => a.priority - b.priority)
+
+    const currentIndex = catList.findIndex((a) => a.id === apiId)
+    if (currentIndex === -1) return
+    const targetIndex = Math.max(0, Math.min(catList.length - 1, targetPriority - 1))
+    if (currentIndex === targetIndex) return
+
+    // Move item in category list
+    const [moved] = catList.splice(currentIndex, 1)
+    catList.splice(targetIndex, 0, moved)
+
+    // Reassign sequential priorities within category
+    catList.forEach((item, idx) => {
+      item.priority = idx + 1
+      const orig = all.find((a) => a.id === item.id)
+      if (orig) orig.priority = idx + 1
+    })
+
+    setCloudApis([...all])
+    await saveCloudApis(all)
+    showToast(`Set ${targetApi.name} to Priority #${targetPriority}`)
+  }
+
+  // Database-Backed Admin Settings State
+  const [, setAdminConfig] = useState(() => getAdminConfig())
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null)
+  const [adminNameInput, setAdminNameInput] = useState(() => getAdminConfig().name)
+  const [adminEmailInput, setAdminEmailInput] = useState(() => getAdminConfig().email)
+  const [adminPassInput, setAdminPassInput] = useState("")
+  const [adminConfirmPassInput, setAdminConfirmPassInput] = useState("")
+  const [adminShowPassText, setAdminShowPassText] = useState(false)
+  const [adminSaving, setAdminSaving] = useState(false)
+  const [adminSaveStatus, setAdminSaveStatus] = useState<{
+    type: "success" | "error"
+    msg: string
+  } | null>(null)
+
+  useEffect(() => {
+    initializeDatabaseSync().then((s) => {
+      setDbStatus(s)
+      const cfg = getAdminConfig()
+      setAdminConfig(cfg)
+      setAdminNameInput(cfg.name)
+      setAdminEmailInput(cfg.email)
+    })
+  }, [])
   const [toolTiers, setToolTiers] =
     useState<Record<string, "standard" | "pro">>(getAllToolTiers)
   const [toolPrices, setToolPrices] =
@@ -442,7 +543,7 @@ export default function AdminPanel({
       title: "Plans & Tool Pricing",
       navTitle: "Pricing",
       description:
-        "Complete list of FluxKit subscription tiers and per-tool prices.",
+        "Complete list of Masterfilepro subscription tiers and per-tool prices.",
       content: lines.join("\n"),
       showInNav: true,
       status: "published",
@@ -726,7 +827,7 @@ export default function AdminPanel({
         }}
       >
         <div>
-          <div className="eyebrow" style={{ color: "#a855f7" }}>
+          <div className="eyebrow" style={{ color: "#00C9B7" }}>
             CONTROL PANEL
           </div>
           <h1 style={{ fontSize: "28px", marginTop: "4px" }}>
@@ -743,8 +844,8 @@ export default function AdminPanel({
               fontSize: "11px",
               padding: "4px 8px",
               borderRadius: "4px",
-              background: "rgba(168,85,247,0.15)",
-              color: "#a855f7",
+              background: "rgba(0,201,183,0.15)",
+              color: "#00C9B7",
               fontWeight: 600,
             }}
           >
@@ -786,7 +887,7 @@ export default function AdminPanel({
           className={activeTab === "tiers" ? "selected" : ""}
           style={{
             padding: "10px 16px",
-            borderBottom: activeTab === "tiers" ? "2px solid #a855f7" : "none",
+            borderBottom: activeTab === "tiers" ? "2px solid #00C9B7" : "none",
             color: activeTab === "tiers" ? "var(--text)" : "var(--muted)",
             fontWeight: 600,
             fontSize: "13px",
@@ -802,7 +903,7 @@ export default function AdminPanel({
           className={activeTab === "users" ? "selected" : ""}
           style={{
             padding: "10px 16px",
-            borderBottom: activeTab === "users" ? "2px solid #a855f7" : "none",
+            borderBottom: activeTab === "users" ? "2px solid #00C9B7" : "none",
             color: activeTab === "users" ? "var(--text)" : "var(--muted)",
             fontWeight: 600,
             fontSize: "13px",
@@ -818,7 +919,7 @@ export default function AdminPanel({
           className={activeTab === "pages" ? "selected" : ""}
           style={{
             padding: "10px 16px",
-            borderBottom: activeTab === "pages" ? "2px solid #a855f7" : "none",
+            borderBottom: activeTab === "pages" ? "2px solid #00C9B7" : "none",
             color: activeTab === "pages" ? "var(--text)" : "var(--muted)",
             fontWeight: 600,
             fontSize: "13px",
@@ -835,7 +936,7 @@ export default function AdminPanel({
           style={{
             padding: "10px 16px",
             borderBottom:
-              activeTab === "integrations" ? "2px solid #a855f7" : "none",
+              activeTab === "integrations" ? "2px solid #00C9B7" : "none",
             color:
               activeTab === "integrations" ? "var(--text)" : "var(--muted)",
             fontWeight: 600,
@@ -846,8 +947,43 @@ export default function AdminPanel({
           }}
           onClick={() => setActiveTab("integrations")}
         >
-          <CreditCard size={16} /> Payment & APIs (
-          {gateways.filter((g) => g.enabled).length} Active)
+          <CreditCard size={16} /> Payment Gateways ({gateways.filter((g) => g.enabled).length} Active)
+        </button>
+        <button
+          className={activeTab === "apis" ? "selected" : ""}
+          style={{
+            padding: "10px 16px",
+            borderBottom:
+              activeTab === "apis" ? "2px solid #00C9B7" : "none",
+            color:
+              activeTab === "apis" ? "var(--text)" : "var(--muted)",
+            fontWeight: 600,
+            fontSize: "13px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+          onClick={() => setActiveTab("apis")}
+        >
+          <Cpu size={16} /> PDF & Cloud APIs (Priorities)
+        </button>
+        <button
+          className={activeTab === "settings" ? "selected" : ""}
+          style={{
+            padding: "10px 16px",
+            borderBottom:
+              activeTab === "settings" ? "2px solid #00C9B7" : "none",
+            color:
+              activeTab === "settings" ? "var(--text)" : "var(--muted)",
+            fontWeight: 600,
+            fontSize: "13px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+          onClick={() => setActiveTab("settings")}
+        >
+          <Database size={16} /> Admin Settings & Database
         </button>
       </div>
 
@@ -892,7 +1028,7 @@ export default function AdminPanel({
                 PRO / PAID TOOLS
               </span>
               <span
-                style={{ fontSize: "20px", fontWeight: 700, color: "#a855f7" }}
+                style={{ fontSize: "20px", fontWeight: 700, color: "#00C9B7" }}
               >
                 {proCount}
               </span>
@@ -972,7 +1108,7 @@ export default function AdminPanel({
                     color: "var(--text)",
                   }}
                 >
-                  <Coins size={16} style={{ color: "#6366f1" }} />
+                  <Coins size={16} style={{ color: "#00C9B7" }} />
                   <span>Currency &amp; Backend Conversion Station</span>
                   <span
                     style={{
@@ -1021,7 +1157,7 @@ export default function AdminPanel({
                     border: "none",
                     background:
                       activeCurrency === "USD"
-                        ? "#6366f1"
+                        ? "#00C9B7"
                         : "transparent",
                     color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
                     cursor: "pointer",
@@ -1044,7 +1180,7 @@ export default function AdminPanel({
                     border: "none",
                     background:
                       activeCurrency === "GHS"
-                        ? "#6366f1"
+                        ? "#00C9B7"
                         : "transparent",
                     color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
                     cursor: "pointer",
@@ -1183,7 +1319,7 @@ export default function AdminPanel({
                 <ArrowRightLeft
                   size={12}
                   style={{
-                    color: calcLoading ? "#6366f1" : "var(--muted)",
+                    color: calcLoading ? "#00C9B7" : "var(--muted)",
                   }}
                 />
                 <div
@@ -1448,9 +1584,9 @@ export default function AdminPanel({
                             fontSize: "11px",
                             fontWeight: 600,
                             background: isPro
-                              ? "rgba(168,85,247,0.15)"
+                              ? "rgba(0,201,183,0.15)"
                               : "rgba(59,130,246,0.15)",
-                            color: isPro ? "#a855f7" : "#3b82f6",
+                            color: isPro ? "#00C9B7" : "#3b82f6",
                           }}
                         >
                           {isPro ? <Lock size={12} /> : <Unlock size={12} />}
@@ -1560,8 +1696,8 @@ export default function AdminPanel({
                                 fontSize: "10px",
                                 padding: "2px 6px",
                                 borderRadius: "3px",
-                                background: "rgba(168,85,247,0.15)",
-                                color: "#a855f7",
+                                background: "rgba(0,201,183,0.15)",
+                                color: "#00C9B7",
                                 fontWeight: 600,
                               }}
                             >
@@ -1580,8 +1716,8 @@ export default function AdminPanel({
                             border: "1px solid var(--border)",
                             background: isPro
                               ? "rgba(59,130,246,0.1)"
-                              : "rgba(168,85,247,0.1)",
-                            color: isPro ? "#3b82f6" : "#a855f7",
+                              : "rgba(0,201,183,0.1)",
+                            color: isPro ? "#3b82f6" : "#00C9B7",
                           }}
                           onClick={() => handleTierToggle(t.id)}
                         >
@@ -1805,13 +1941,13 @@ export default function AdminPanel({
                                   u.role === "admin"
                                     ? "rgba(234,179,8,0.15)"
                                     : u.role === "sub-admin"
-                                      ? "rgba(168,85,247,0.15)"
+                                      ? "rgba(0,201,183,0.15)"
                                       : "var(--surface)",
                                 color:
                                   u.role === "admin"
                                     ? "#eab308"
                                     : u.role === "sub-admin"
-                                      ? "#a855f7"
+                                      ? "#00C9B7"
                                       : "var(--text)",
                                 fontWeight: 600,
                                 cursor: "pointer",
@@ -2014,7 +2150,7 @@ export default function AdminPanel({
                       gap: "8px",
                     }}
                   >
-                    <Plus size={18} color="#a855f7" /> Add New User
+                    <Plus size={18} color="#00C9B7" /> Add New User
                   </h3>
                   <button
                     onClick={() => setShowAddUserModal(false)}
@@ -2094,7 +2230,7 @@ export default function AdminPanel({
                     <input
                       type="email"
                       required
-                      placeholder="user@fluxkit.com"
+                      placeholder="user@masterfilepro.com"
                       value={newUserForm.email}
                       onChange={(e) =>
                         setNewUserForm({
@@ -2528,7 +2664,7 @@ export default function AdminPanel({
                       >
                         <span>/{p.slug}</span>
                         {p.showInNav && (
-                          <span style={{ color: "#a855f7" }}>• In Sidebar</span>
+                          <span style={{ color: "#00C9B7" }}>• In Sidebar</span>
                         )}
                         <span>• {p.status}</span>
                       </div>
@@ -2855,6 +2991,54 @@ export default function AdminPanel({
       {/* TAB 4: PAYMENT & API INTEGRATIONS */}
       {activeTab === "integrations" && (
         <div className="page-enter">
+          {/* Quick-switch Banner to PDF & Cloud APIs */}
+          <div
+            style={{
+              padding: "14px 18px",
+              background:
+                "linear-gradient(90deg, rgba(0,201,183,0.12) 0%, rgba(59,130,246,0.12) 100%)",
+              border: "1px solid rgba(0,201,183,0.35)",
+              borderRadius: "10px",
+              marginBottom: "20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <Cpu size={22} color="#00C9B7" />
+              <div>
+                <strong style={{ fontSize: "14px", display: "block" }}>
+                  Looking for PDF Cloud APIs & Priority Failover?
+                </strong>
+                <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  Configure Adobe Acrobat, iLovePDF, OCR.space, and local engine priority rankings, quotas, and automatic failover.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("apis")}
+              style={{
+                fontSize: "12px",
+                padding: "8px 14px",
+                borderRadius: "6px",
+                background: "#00C9B7",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <Cpu size={14} /> Open PDF API Priorities & Failover →
+            </button>
+          </div>
+
           {/* Header Overview Banner */}
           <div
             style={{
@@ -2881,7 +3065,7 @@ export default function AdminPanel({
                   marginBottom: "4px",
                 }}
               >
-                <CreditCard size={20} color="#a855f7" />
+                <CreditCard size={20} color="#00C9B7" />
                 <span>Payment Gateways & API Integration</span>
               </div>
               <p
@@ -2899,6 +3083,7 @@ export default function AdminPanel({
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span
+                className="primary-gateway-indicator"
                 style={{
                   fontSize: "12px",
                   padding: "6px 12px",
@@ -2938,7 +3123,7 @@ export default function AdminPanel({
                   style={{
                     background: "var(--surface)",
                     border: isPrimary
-                      ? "2px solid #a855f7"
+                      ? "2px solid #00C9B7"
                       : "1px solid var(--border)",
                     borderRadius: "12px",
                     padding: "24px",
@@ -2977,15 +3162,15 @@ export default function AdminPanel({
                                   ? "rgba(99,102,241,0.15)"
                                   : gw.id === "flutterwave"
                                     ? "rgba(245,158,11,0.15)"
-                                    : "rgba(168,85,247,0.15)",
+                                    : "rgba(0,201,183,0.15)",
                             color:
                               gw.id === "paystack"
                                 ? "#0ea5e9"
                                 : gw.id === "stripe"
-                                  ? "#6366f1"
+                                  ? "#00C9B7"
                                   : gw.id === "flutterwave"
                                     ? "#f59e0b"
-                                    : "#a855f7",
+                                    : "#00C9B7",
                             display: "grid",
                             placeItems: "center",
                           }}
@@ -3015,8 +3200,8 @@ export default function AdminPanel({
                                   fontSize: "10px",
                                   padding: "2px 6px",
                                   borderRadius: "4px",
-                                  background: "rgba(168,85,247,0.2)",
-                                  color: "#a855f7",
+                                  background: "rgba(0,201,183,0.2)",
+                                  color: "#00C9B7",
                                   fontWeight: 700,
                                 }}
                               >
@@ -3417,7 +3602,7 @@ export default function AdminPanel({
                       <span
                         style={{
                           fontSize: "11px",
-                          color: "#a855f7",
+                          color: "#00C9B7",
                           fontWeight: 600,
                         }}
                       >
@@ -3474,6 +3659,1810 @@ export default function AdminPanel({
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB: PDF & CLOUD APIS & FAILOVER PRIORITY POOL
+          ========================================================================= */}
+      {activeTab === "apis" && (
+        <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Header Overview Banner */}
+          <div
+            style={{
+              padding: "20px 24px",
+              borderRadius: "12px",
+              background:
+                "linear-gradient(135deg, rgba(0, 201, 183, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)",
+              border: "1px solid rgba(0, 201, 183, 0.25)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  fontSize: "17px",
+                  fontWeight: 600,
+                  marginBottom: "4px",
+                }}
+              >
+                <Cpu size={22} color="#00C9B7" />
+                <span>PDF Cloud Engines & Failover Priority Pool</span>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "3px 8px",
+                    borderRadius: "12px",
+                    background: "rgba(16, 185, 129, 0.15)",
+                    color: "#10b981",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <Activity size={12} /> Auto-Failover Active
+                </span>
+              </div>
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "var(--muted)",
+                  margin: 0,
+                  maxWidth: "680px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Configure cloud APIs (Adobe Acrobat, iLovePDF, OCR.space) and rank their execution priorities.
+                The system uses Priority #1 first. When monthly credits finish or rate limits occur, it seamlessly
+                transitions down the pipeline to Priority #2 and in-browser WebAssembly with zero downtime.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <a
+                href="https://free-apis.github.io/#/browse"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  fontSize: "12px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  textDecoration: "none",
+                  fontWeight: 500,
+                }}
+              >
+                <ExternalLink size={13} /> Free APIs Directory
+              </a>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const updated = cloudApis.map((a) => ({
+                    ...a,
+                    usedThisMonth: 0,
+                    status: "active" as const,
+                    lastError: undefined,
+                  }))
+                  setCloudApis(updated)
+                  await saveCloudApis(updated)
+                  showToast("All API credit counters reset to 0.")
+                }}
+                style={{
+                  fontSize: "12px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <RefreshCw size={13} /> Reset All Credits
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAddingCustomApi(!isAddingCustomApi)}
+                className="primary"
+                style={{
+                  fontSize: "12px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <Plus size={14} /> Add Free / Custom API
+              </button>
+            </div>
+          </div>
+
+          {/* Add Custom API Pop-up Modal */}
+          {isAddingCustomApi && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 99999,
+                display: "grid",
+                placeItems: "center",
+                padding: "20px",
+                background: "rgba(0, 0, 0, 0.75)",
+                backdropFilter: "blur(8px)",
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setIsAddingCustomApi(false)
+              }}
+            >
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid rgba(0, 201, 183, 0.45)",
+                  borderRadius: "14px",
+                  maxWidth: "660px",
+                  width: "100%",
+                  maxHeight: "90vh",
+                  display: "flex",
+                  flexDirection: "column",
+                  boxShadow:
+                    "0 24px 70px rgba(0, 0, 0, 0.75), 0 0 40px rgba(0, 201, 183, 0.2)",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+              >
+                {/* Header (Pinned) */}
+                <div
+                  style={{
+                    padding: "16px 20px 12px",
+                    borderBottom: "1px solid var(--border)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div
+                      style={{
+                        width: "30px",
+                        height: "30px",
+                        borderRadius: "8px",
+                        background: "rgba(0, 201, 183, 0.15)",
+                        display: "grid",
+                        placeItems: "center",
+                        color: "#00C9B7",
+                      }}
+                    >
+                      <Plus size={17} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
+                        Connect a Free API
+                      </h3>
+                      <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                        From <a href="https://free-apis.github.io/#/browse" target="_blank" rel="noreferrer" style={{ color: "#00C9B7", textDecoration: "underline" }}>Free-APIs Catalog</a> or your custom endpoint
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCustomApi(false)}
+                    style={{
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid var(--border)",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "6px",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    <XCircle size={16} />
+                  </button>
+                </div>
+
+                {/* Quick-fill Presets */}
+                <div style={{ marginBottom: "12px" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                    Quick Auto-Fill Presets:
+                  </span>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {[
+                      { name: "CloudConvert", cat: "pdf-compression", quota: 750, url: "https://api.cloudconvert.com/v2" },
+                      { name: "PDF.co", cat: "pdf-compression", quota: 300, url: "https://api.pdf.co/v1" },
+                      { name: "ConvertAPI", cat: "pdf-compression", quota: 250, url: "https://v2.convertapi.com" },
+                      { name: "TinyPNG", cat: "image-tools", quota: 500, url: "https://api.tinify.com/shrink" },
+                      { name: "Groq Whisper", cat: "audio-speech", quota: 14400, url: "https://api.groq.com/openai/v1/audio/transcriptions" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setNewApiName(preset.name)
+                          setNewApiCategory(preset.cat as any)
+                          setNewApiQuota(preset.quota)
+                          setNewApiEndpoint(preset.url)
+                        }}
+                        style={{
+                          fontSize: "11px",
+                          padding: "3px 9px",
+                          borderRadius: "12px",
+                          background: newApiName === preset.name ? "rgba(0,201,183,0.2)" : "rgba(255,255,255,0.06)",
+                          border: newApiName === preset.name ? "1px solid #00C9B7" : "1px solid var(--border)",
+                          color: newApiName === preset.name ? "#00C9B7" : "var(--text)",
+                          cursor: "pointer",
+                          fontWeight: 500,
+                        }}
+                      >
+                        + {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (!newApiName.trim()) {
+                      showToast("Please enter an API provider name.")
+                      return
+                    }
+                    const newId = `custom-${Date.now()}`
+                    const existingCat = cloudApis.filter((a) => a.category === newApiCategory)
+                    const newPriority = existingCat.length + 1
+
+                    const newApi: CloudApiConfig = {
+                      id: newId,
+                      name: newApiName.trim(),
+                      provider: "custom",
+                      category: newApiCategory,
+                      priority: newPriority,
+                      enabled: true,
+                      description: "User-configured cloud API connected to Masterfilepro priority pool.",
+                      endpoint: newApiEndpoint.trim() || undefined,
+                      apiKey: newApiKey.trim() || undefined,
+                      clientSecret: newApiSecret.trim() || undefined,
+                      monthlyQuota: Number(newApiQuota) || 1000,
+                      usedThisMonth: 0,
+                      status: "active",
+                      isFreeTier: true,
+                    }
+
+                    const updated = [...cloudApis, newApi]
+                    setCloudApis(updated)
+                    await saveCloudApis(updated)
+                    setIsAddingCustomApi(false)
+                    setNewApiName("")
+                    setNewApiEndpoint("")
+                    setNewApiKey("")
+                    setNewApiSecret("")
+                    showToast(`Connected "${newApi.name}" at Priority #${newPriority}!`)
+                  }}
+                  style={{
+                    padding: "16px 20px",
+                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                    flex: 1,
+                  }}
+                >
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        API Provider Name *
+                      </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. CloudConvert, PDF.co"
+                      value={newApiName}
+                      onChange={(e) => setNewApiName(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      Service Category
+                    </label>
+                    <select
+                      value={newApiCategory}
+                      onChange={(e) => setNewApiCategory(e.target.value as any)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <option value="pdf-compression">PDF Compression & Optimization</option>
+                      <option value="ocr-text">OCR & Document Text Extraction</option>
+                      <option value="image-tools">Image Optimization & Compression</option>
+                      <option value="audio-speech">Audio Transcription & Speech</option>
+                      <option value="ai-text">AI Summarization & Translation</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      Endpoint URL / Base URL
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://api.service.com/v1"
+                      value={newApiEndpoint}
+                      onChange={(e) => setNewApiEndpoint(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      Monthly Free Quota (Calls)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newApiQuota}
+                      onChange={(e) => setNewApiQuota(Number(e.target.value))}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      API Key / Client ID / Public Key
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Paste your free API key here"
+                      value={newApiKey}
+                      onChange={(e) => setNewApiKey(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      Secret Key / Client Secret (Optional)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Optional secret or token"
+                      value={newApiSecret}
+                      onChange={(e) => setNewApiSecret(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "12px",
+                      }}
+                    />
+                  </div>
+
+                  </div>
+
+                  {/* Pinned Sticky Footer Actions */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "10px",
+                      marginTop: "auto",
+                      borderTop: "1px solid var(--border)",
+                      paddingTop: "12px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingCustomApi(false)}
+                      style={{
+                        padding: "7px 16px",
+                        borderRadius: "6px",
+                        background: "transparent",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontWeight: 500,
+                        fontSize: "12px",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="primary"
+                      style={{
+                        padding: "7px 18px",
+                        borderRadius: "6px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontSize: "12px",
+                      }}
+                    >
+                      <Check size={14} /> Add to Priority Pool
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Compact Interactive Failover Execution Pipeline */}
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "10px",
+              padding: "12px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Layers size={15} color="#00C9B7" />
+                <strong style={{ fontSize: "13px" }}>Failover Execution Order</strong>
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  (Click dropdown or ◀ ▶ to change priorities)
+                </span>
+              </div>
+              <span style={{ fontSize: "11px", color: "#10b981", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <Activity size={12} /> Auto-Failover Active
+              </span>
+            </div>
+
+            {/* Single horizontal compact row */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                overflowX: "auto",
+                padding: "4px 2px",
+                scrollbarWidth: "thin",
+              }}
+            >
+              {cloudApis
+                .filter((a) => a.category === "pdf-compression" && a.enabled)
+                .sort((a, b) => a.priority - b.priority)
+                .map((api, idx, arr) => {
+                  const isPrimary = api.priority === 1
+                  const isExhausted =
+                    api.status === "exhausted" ||
+                    (api.monthlyQuota && api.usedThisMonth >= api.monthlyQuota)
+
+                  return (
+                    <React.Fragment key={api.id}>
+                      <div
+                        className={`api-pipeline-node ${isPrimary ? "is-primary" : ""}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "6px 12px",
+                          borderRadius: "8px",
+                          background: isPrimary
+                            ? "linear-gradient(135deg, rgba(0,201,183,0.18) 0%, rgba(59,130,246,0.12) 100%)"
+                            : "var(--bg)",
+                          border: isPrimary ? "1.5px solid #00C9B7" : "1px solid var(--border)",
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {/* Interactive Priority Selector Dropdown */}
+                        <select
+                          className="api-priority-select"
+                          value={api.priority}
+                          onChange={(e) =>
+                            handleSetExactPriority(api.id, Number(e.target.value), "pdf-compression")
+                          }
+                          title="Click to set priority"
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            background: isPrimary ? "#00C9B7" : "var(--surface)",
+                            color: isPrimary ? "#ffffff" : "var(--text)",
+                            border: isPrimary ? "1px solid #00C9B7" : "1px solid var(--border)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {arr.map((_, i) => (
+                            <option
+                              key={i + 1}
+                              value={i + 1}
+                              style={{
+                                background: "var(--surface)",
+                                color: "var(--text)",
+                              }}
+                            >
+                              Priority #{i + 1}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Quick Reorder Arrows */}
+                        <div style={{ display: "inline-flex", gap: "2px" }}>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => moveApiPriority(api.id, "up", "pdf-compression").then(setCloudApis)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: idx === 0 ? "var(--muted)" : "var(--text)",
+                              opacity: idx === 0 ? 0.35 : 1,
+                              cursor: idx === 0 ? "default" : "pointer",
+                              padding: "0 2px",
+                              fontSize: "10px",
+                              lineHeight: 1,
+                            }}
+                            title="Move earlier (higher priority)"
+                          >
+                            ◀
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === arr.length - 1}
+                            onClick={() => moveApiPriority(api.id, "down", "pdf-compression").then(setCloudApis)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: idx === arr.length - 1 ? "var(--muted)" : "var(--text)",
+                              opacity: idx === arr.length - 1 ? 0.35 : 1,
+                              cursor: idx === arr.length - 1 ? "default" : "pointer",
+                              padding: "0 2px",
+                              fontSize: "10px",
+                              lineHeight: 1,
+                            }}
+                            title="Move later (lower priority)"
+                          >
+                            ▶
+                          </button>
+                        </div>
+
+                        {/* Name & remaining free calls */}
+                        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                          <span style={{ fontSize: "12px", fontWeight: 600 }}>{api.name}</span>
+                          <span style={{ fontSize: "10px", color: isExhausted ? "#f59e0b" : "var(--muted)" }}>
+                            {api.provider === "local"
+                              ? "Unlimited (Local)"
+                              : `${Math.max(0, api.monthlyQuota - api.usedThisMonth)} calls left`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {idx < arr.length - 1 && (
+                        <span style={{ color: "#00C9B7", opacity: 0.6, fontSize: "12px", flexShrink: 0 }}>
+                          ➔
+                        </span>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+            </div>
+          </div>
+
+          {/* Quick Reference: Verified Free API Accounts & Dashboard URLs Vault */}
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              padding: "18px 22px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Key size={16} color="#00C9B7" />
+                <strong style={{ fontSize: "14px" }}>Verified Free API Key Dashboards & Direct Links</strong>
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                Click any dashboard link to view, copy, or refresh your free keys anytime.
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: "10px",
+              }}
+            >
+              {cloudApis.map((api) => {
+                const hasKey = !!api.apiKey || api.provider === "local"
+                return (
+                  <div
+                    key={api.id}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "8px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
+                      <strong style={{ fontSize: "12px", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                        {api.name}
+                      </strong>
+                      <span style={{ fontSize: "11px", color: hasKey ? "#10b981" : "var(--muted)" }}>
+                        {api.provider === "local"
+                          ? "In-Browser (No Key Needed)"
+                          : hasKey
+                            ? "✓ Active Key Installed"
+                            : "Click link to get free key"}
+                      </span>
+                    </div>
+
+                    {api.dashboardUrl ? (
+                      <a
+                        href={api.dashboardUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          background: "rgba(0,201,183,0.12)",
+                          color: "#00C9B7",
+                          border: "1px solid rgba(0,201,183,0.3)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          textDecoration: "none",
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Dashboard <ExternalLink size={11} />
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: "10px", color: "var(--muted)" }}>Internal</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              flexWrap: "wrap",
+              borderBottom: "1px solid var(--border)",
+              paddingBottom: "12px",
+            }}
+          >
+            {[
+              { id: "all", label: `All Free APIs (${cloudApis.length})` },
+              { id: "pdf-compression", label: `PDF Optimization (${cloudApis.filter((a) => a.category === "pdf-compression").length})` },
+              { id: "ocr-text", label: `OCR & Extraction (${cloudApis.filter((a) => a.category === "ocr-text").length})` },
+              { id: "image-tools", label: `Image Compression (${cloudApis.filter((a) => a.category === "image-tools").length})` },
+              { id: "audio-speech", label: `Audio Transcription (${cloudApis.filter((a) => a.category === "audio-speech").length})` },
+              { id: "ai-text", label: `AI & Translation (${cloudApis.filter((a) => a.category === "ai-text").length})` },
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setApiCategoryFilter(cat.id)}
+                style={{
+                  fontSize: "12px",
+                  padding: "6px 14px",
+                  borderRadius: "20px",
+                  border: apiCategoryFilter === cat.id ? "1px solid #00C9B7" : "1px solid var(--border)",
+                  background: apiCategoryFilter === cat.id ? "rgba(0,201,183,0.15)" : "var(--surface)",
+                  color: apiCategoryFilter === cat.id ? "#00C9B7" : "var(--muted)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Section: API List based on Category Filter */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>
+                  {apiCategoryFilter === "all"
+                    ? "All Configured Processing APIs & Failover Pool"
+                    : apiCategoryFilter === "pdf-compression"
+                      ? "PDF Compression & Optimization APIs (Priority Pipeline)"
+                      : apiCategoryFilter === "ocr-text"
+                        ? "OCR & Document Text Extraction APIs"
+                        : apiCategoryFilter === "image-tools"
+                          ? "Image Compression & Optimization APIs"
+                          : apiCategoryFilter === "audio-speech"
+                            ? "Audio Transcription & Speech APIs"
+                            : "AI Summarization & Translation APIs"}
+                </h3>
+                <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0 0" }}>
+                  Use <strong>Move Up (▲)</strong> and <strong>Move Down (▼)</strong> to change which provider processes requests first.
+                </p>
+              </div>
+            </div>
+
+            {/* 2-Column Responsive Card Grid: Equal Stable Columns */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+                gap: "16px",
+                alignItems: "start",
+              }}
+            >
+              {cloudApis
+                .filter((a) => apiCategoryFilter === "all" || a.category === apiCategoryFilter)
+                .sort((a, b) => a.priority - b.priority)
+                .map((api, index, filteredList) => {
+                  const isFirst = index === 0
+                  const isLast = index === filteredList.length - 1
+                  const isTesting = testingApiId === api.id
+                  const health = apiHealthResults[api.id]
+                  const showSecret = !!showApiSecrets[api.id]
+                  const isEditing = editingApiId === api.id
+                  const isExhausted = api.monthlyQuota && api.usedThisMonth >= api.monthlyQuota
+                  const quotaPercent = api.monthlyQuota
+                    ? Math.min(100, Math.round((api.usedThisMonth / api.monthlyQuota) * 100))
+                    : 0
+
+                  return (
+                    <div
+                      key={api.id}
+                      style={{
+                        background: "var(--surface)",
+                        border: api.priority === 1 ? "1.5px solid #00C9B7" : "1px solid var(--border)",
+                        borderRadius: "12px",
+                        padding: "16px 18px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        minWidth: 0,
+                        alignSelf: "start",
+                        boxShadow: api.priority === 1 ? "0 4px 20px rgba(0,201,183,0.08)" : "none",
+                      }}
+                    >
+                      {/* Top Bar: Priority Rank + Reorder + Name + Dashboard Link + Enable Switch */}
+                      <div>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: "8px",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            {/* Priority Dropdown & Badge */}
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                padding: "3px 6px",
+                                borderRadius: "6px",
+                                background:
+                                  api.priority === 1
+                                    ? "linear-gradient(135deg, rgba(0,201,183,0.25) 0%, rgba(124,58,237,0.2) 100%)"
+                                    : "rgba(255,255,255,0.06)",
+                                border: api.priority === 1 ? "1px solid #00C9B7" : "1px solid var(--border)",
+                              }}
+                            >
+                              <Zap size={12} color="#00C9B7" />
+                              <select
+                                value={api.priority}
+                                onChange={(e) =>
+                                  handleSetExactPriority(api.id, Number(e.target.value), api.category)
+                                }
+                                title="Set priority order"
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "transparent",
+                                  color: api.priority === 1 ? "#00E5D2" : "var(--text)",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  outline: "none",
+                                  padding: 0,
+                                }}
+                              >
+                                {filteredList.map((_, i) => (
+                                  <option
+                                    key={i + 1}
+                                    value={i + 1}
+                                    style={{
+                                      background: "var(--surface)",
+                                      color: "var(--text)",
+                                    }}
+                                  >
+                                    #{i + 1} {i === 0 ? "• Primary" : i === 1 ? "• 2nd Failover" : "• Backup"}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Reorder Up/Down Buttons */}
+                            <div style={{ display: "inline-flex", gap: "2px" }}>
+                              <button
+                                type="button"
+                                title="Move priority up"
+                                disabled={isFirst}
+                                onClick={async () => {
+                                  const updated = await moveApiPriority(api.id, "up", api.category)
+                                  setCloudApis(updated)
+                                  showToast(`Moved ${api.name} up to Priority #${api.priority - 1}`)
+                                }}
+                                style={{
+                                  padding: "3px 6px",
+                                  borderRadius: "4px",
+                                  background: "var(--bg)",
+                                  border: "1px solid var(--border)",
+                                  color: isFirst ? "var(--muted)" : "var(--text)",
+                                  cursor: isFirst ? "not-allowed" : "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                <ArrowUp size={11} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Move priority down"
+                                disabled={isLast}
+                                onClick={async () => {
+                                  const updated = await moveApiPriority(api.id, "down", api.category)
+                                  setCloudApis(updated)
+                                  showToast(`Moved ${api.name} down to Priority #${api.priority + 1}`)
+                                }}
+                                style={{
+                                  padding: "3px 6px",
+                                  borderRadius: "4px",
+                                  background: "var(--bg)",
+                                  border: "1px solid var(--border)",
+                                  color: isLast ? "var(--muted)" : "var(--text)",
+                                  cursor: isLast ? "not-allowed" : "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                <ArrowDown size={11} />
+                              </button>
+                            </div>
+
+                            <strong style={{ fontSize: "14px", marginLeft: "2px" }}>{api.name}</strong>
+
+                            {/* Dashboard Link Badge */}
+                            {api.dashboardUrl && (
+                              <a
+                                href={api.dashboardUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  background: "rgba(0,201,183,0.12)",
+                                  color: "#00C9B7",
+                                  border: "1px solid rgba(0,201,183,0.25)",
+                                  textDecoration: "none",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Dashboard ↗
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Enable/Disable Toggle */}
+                          <label
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              fontSize: "11px",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={api.enabled}
+                              onChange={async () => {
+                                const updated = cloudApis.map((a) =>
+                                  a.id === api.id ? { ...a, enabled: !a.enabled } : a,
+                                )
+                                setCloudApis(updated)
+                                await saveCloudApis(updated)
+                                showToast(`${api.name} is now ${!api.enabled ? "Enabled" : "Disabled"}.`)
+                              }}
+                            />
+                            <span style={{ fontWeight: 600, color: api.enabled ? "#10b981" : "var(--muted)" }}>
+                              {api.enabled ? "Enabled" : "Off"}
+                            </span>
+                          </label>
+                        </div>
+
+                        {/* Description */}
+                        <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, lineHeight: 1.4 }}>
+                          {api.description}
+                        </p>
+                      </div>
+
+                      {/* Middle: Quota Progress Bar (for cloud APIs) */}
+                      {api.provider !== "local" ? (
+                        <div
+                          style={{
+                            background: "var(--bg)",
+                            padding: "8px 12px",
+                            borderRadius: "6px",
+                            border: "1px solid var(--border)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "6px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                            <span>
+                              <strong>Usage:</strong> {api.usedThisMonth} of {api.monthlyQuota} free calls used
+                            </span>
+                            <span style={{ fontWeight: 600, color: isExhausted ? "#f59e0b" : "#10b981" }}>
+                              {isExhausted ? "Exhausted (Failing over)" : `${100 - quotaPercent}% remaining`}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              height: "4px",
+                              width: "100%",
+                              background: "rgba(255,255,255,0.08)",
+                              borderRadius: "4px",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${quotaPercent}%`,
+                                background: isExhausted
+                                  ? "#f59e0b"
+                                  : "linear-gradient(90deg, #10b981 0%, #3b82f6 100%)",
+                                borderRadius: "4px",
+                                transition: "width 0.3s ease",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            background: "rgba(16,185,129,0.08)",
+                            border: "1px solid rgba(16,185,129,0.2)",
+                            padding: "8px 12px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            color: "#10b981",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Unlimited In-Browser Processing (Private & Zero-Cost)</span>
+                        </div>
+                      )}
+
+                      {/* Credentials Box */}
+                      {api.provider !== "local" && (
+                        <div
+                          style={{
+                            padding: "8px 12px",
+                            background: "rgba(0,0,0,0.15)",
+                            borderRadius: "6px",
+                            border: "1px solid var(--border)",
+                            fontSize: "11px",
+                          }}
+                        >
+                          {isEditing ? (
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                              <div>
+                                <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
+                                  {api.provider === "adobe" ? "Client ID" : "API Key"}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editApiKeyInput}
+                                  onChange={(e) => setEditApiKeyInput(e.target.value)}
+                                  style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                />
+                              </div>
+                              {api.clientSecret !== undefined && (
+                                <div>
+                                  <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
+                                    Client Secret
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editApiSecretInput}
+                                    onChange={(e) => setEditApiSecretInput(e.target.value)}
+                                    style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                  />
+                                </div>
+                              )}
+                              <div style={{ gridColumn: "1 / -1" }}>
+                                <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
+                                  Monthly Quota (Calls)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={editApiQuotaInput}
+                                  onChange={(e) => setEditApiQuotaInput(Number(e.target.value))}
+                                  style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                <div>
+                                  <span style={{ color: "var(--muted)" }}>{api.provider === "adobe" ? "ID: " : "Key: "}</span>
+                                  <code style={{ fontSize: "11px", color: "#00C9B7" }}>
+                                    {showSecret ? api.apiKey : (api.apiKey ? `${api.apiKey.substring(0, 8)}••••` : "Not set")}
+                                  </code>
+                                </div>
+                                {api.clientSecret && (
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>Secret: </span>
+                                    <code style={{ fontSize: "11px", color: "#3b82f6" }}>
+                                      {showSecret ? api.clientSecret : "••••••••"}
+                                    </code>
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowApiSecrets((prev) => ({ ...prev, [api.id]: !prev[api.id] }))}
+                                style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px" }}
+                              >
+                                {showSecret ? <EyeOff size={11} /> : <Eye size={11} />}
+                                {showSecret ? "Hide" : "Reveal"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Live Health Status (if tested) */}
+                      {health && (
+                        <div
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            background: health.ok ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                            color: health.ok ? "#10b981" : "#ef4444",
+                            border: `1px solid ${health.ok ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`,
+                          }}
+                        >
+                          {health.ok ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+                          <span>{health.message}</span>
+                        </div>
+                      )}
+
+                      {/* Bottom Footer Actions */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          borderTop: "1px solid var(--border)",
+                          paddingTop: "10px",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                className="primary"
+                                onClick={async () => {
+                                  const updated = cloudApis.map((a) => {
+                                    if (a.id === api.id) {
+                                      return {
+                                        ...a,
+                                        apiKey: editApiKeyInput.trim(),
+                                        clientSecret: editApiSecretInput.trim() || undefined,
+                                        monthlyQuota: editApiQuotaInput,
+                                      }
+                                    }
+                                    return a
+                                  })
+                                  setCloudApis(updated)
+                                  await saveCloudApis(updated)
+                                  setEditingApiId(null)
+                                  showToast(`${api.name} configuration saved.`)
+                                }}
+                                style={{ fontSize: "11px", padding: "5px 10px", borderRadius: "4px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                              >
+                                <Save size={11} /> Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingApiId(null)}
+                                style={{ fontSize: "11px", padding: "5px 10px", borderRadius: "4px", background: "transparent", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer" }}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            api.provider !== "local" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingApiId(api.id)
+                                  setEditApiKeyInput(api.apiKey || "")
+                                  setEditApiSecretInput(api.clientSecret || "")
+                                  setEditApiQuotaInput(api.monthlyQuota || 500)
+                                }}
+                                style={{
+                                  fontSize: "11px",
+                                  padding: "5px 10px",
+                                  borderRadius: "4px",
+                                  background: "var(--bg)",
+                                  border: "1px solid var(--border)",
+                                  color: "var(--text)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <Edit2 size={11} /> Edit
+                              </button>
+                            )
+                          )}
+
+                          {api.provider !== "local" && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const updated = cloudApis.map((a) =>
+                                  a.id === api.id ? { ...a, usedThisMonth: 0, status: "active" as const } : a,
+                                )
+                                setCloudApis(updated)
+                                await saveCloudApis(updated)
+                                showToast(`Reset usage for ${api.name}.`)
+                              }}
+                              style={{
+                                fontSize: "10px",
+                                padding: "5px 8px",
+                                borderRadius: "4px",
+                                background: "transparent",
+                                border: "1px solid var(--border)",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Test Connection Button */}
+                        <button
+                          type="button"
+                          disabled={isTesting}
+                          onClick={async () => {
+                            setTestingApiId(api.id)
+                            try {
+                              const res = await testApiHealth(api)
+                              setApiHealthResults((prev) => ({ ...prev, [api.id]: res }))
+                              showToast(res.ok ? `${api.name}: ${res.message}` : `Test failed: ${res.message}`)
+                            } catch (err: any) {
+                              showToast(`Error: ${err.message}`)
+                            } finally {
+                              setTestingApiId(null)
+                            }
+                          }}
+                          style={{
+                            fontSize: "11px",
+                            padding: "5px 10px",
+                            borderRadius: "4px",
+                            background: "var(--bg)",
+                            border: "1px solid var(--border)",
+                            color: "var(--text)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            cursor: isTesting ? "wait" : "pointer",
+                          }}
+                        >
+                          <RefreshCw size={11} className={isTesting ? "spin" : ""} />
+                          {isTesting ? "Pinging..." : "Test Ping"}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 5: ADMIN SETTINGS & DATABASE ENGINE
+          ========================================================================= */}
+      {activeTab === "settings" && (
+        <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Header Overview Banner */}
+          <div
+            style={{
+              padding: "20px 24px",
+              borderRadius: "12px",
+              background:
+                "linear-gradient(135deg, rgba(0, 201, 183, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)",
+              border: "1px solid rgba(0, 201, 183, 0.25)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "#00E5D2",
+                  marginBottom: "4px",
+                }}
+              >
+                <Database size={13} /> Database-Backed Administration
+              </div>
+              <h2 style={{ margin: "2px 0 6px 0", fontSize: "20px", color: "var(--text)" }}>
+                Administrator Security & Database Settings
+              </h2>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)", maxWidth: "680px" }}>
+                Update your administrator email, name, or password at any time. All configuration
+                changes are backed by the server disk database (<code>data/fluxkit-db.json</code>)
+                and mirrored to browser IndexedDB for offline resilience.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 16px",
+                borderRadius: "20px",
+                background: "rgba(16, 185, 129, 0.12)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                color: "#10b981",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <span
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: "#10b981",
+                  boxShadow: "0 0 8px #10b981",
+                }}
+              />
+              Database Status: Healthy & Synced
+            </div>
+          </div>
+
+          {/* Database Diagnostics & Storage Card */}
+          <div
+            style={{
+              padding: "20px 24px",
+              borderRadius: "12px",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <h3 style={{ fontSize: "15px", margin: "0 0 14px 0", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Server size={16} color="#3b82f6" /> Database Engine & Persistence Layer
+            </h3>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "16px",
+                marginBottom: "16px",
+              }}
+            >
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                  Primary Database Engine
+                </span>
+                <strong style={{ fontSize: "13px", color: "var(--text)", marginTop: "4px", display: "block" }}>
+                  {dbStatus?.engine || "Server Disk Database (JSON/IndexedDB)"}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                  Database File Location
+                </span>
+                <strong style={{ fontSize: "12px", color: "#00C9B7", fontFamily: "monospace", marginTop: "4px", display: "block" }}>
+                  data/fluxkit-db.json
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                  Total Persisted Users
+                </span>
+                <strong style={{ fontSize: "13px", color: "var(--text)", marginTop: "4px", display: "block" }}>
+                  {userList.length} Registered Accounts
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                  Client IndexedDB Engine
+                </span>
+                <strong style={{ fontSize: "13px", color: "#10b981", marginTop: "4px", display: "block" }}>
+                  IndexedDB Active (fluxkit_admin_db)
+                </strong>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const status = await initializeDatabaseSync()
+                    setDbStatus(status)
+                    showToast("Database synchronization verified successfully.")
+                  } catch (err: any) {
+                    showToast("Failed to verify database: " + err.message)
+                  }
+                }}
+                style={{
+                  fontSize: "12px",
+                  padding: "7px 14px",
+                  borderRadius: "6px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <RefreshCw size={13} /> Test Database Connection
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const backup = {
+                    admin: getAdminConfig(),
+                    users: userList,
+                    exportedAt: new Date().toISOString(),
+                    engine: "Masterfilepro Database",
+                  }
+                  const blob = new Blob([JSON.stringify(backup, null, 2)], {
+                    type: "application/json",
+                  })
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = `masterfilepro-database-backup-${Date.now()}.json`
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                  URL.revokeObjectURL(url)
+                  showToast("Database backup downloaded successfully.")
+                }}
+                style={{
+                  fontSize: "12px",
+                  padding: "7px 14px",
+                  borderRadius: "6px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <Database size={13} /> Export Database Backup (.json)
+              </button>
+            </div>
+          </div>
+
+          {/* Edit Admin Credentials Form */}
+          <div
+            style={{
+              padding: "24px",
+              borderRadius: "12px",
+              background: "var(--surface)",
+              border: "1px solid rgba(0, 201, 183, 0.35)",
+            }}
+          >
+            <h3 style={{ fontSize: "16px", margin: "0 0 4px 0", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Lock size={16} color="#00C9B7" /> Change Administrator Credentials (At Any Time)
+            </h3>
+            <p style={{ fontSize: "12.5px", color: "var(--muted)", margin: "0 0 20px 0" }}>
+              Enter your updated details below. Once saved, you can immediately sign in with the new email and password.
+            </p>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                setAdminSaving(true)
+                setAdminSaveStatus(null)
+
+                try {
+                  if (adminPassInput && adminPassInput !== adminConfirmPassInput) {
+                    throw new Error("New password and confirmation do not match.")
+                  }
+                  if (adminPassInput && adminPassInput.length < 8) {
+                    throw new Error("New password must be at least 8 characters long.")
+                  }
+
+                  const res = await updateAdminSettings({
+                    newName: adminNameInput,
+                    newEmail: adminEmailInput,
+                    newPassword: adminPassInput || undefined,
+                    overrideAuthCheck: true,
+                  })
+
+                  setAdminConfig(getAdminConfig())
+                  setAdminSaveStatus({ type: "success", msg: res.message })
+                  showToast(res.message)
+                  setAdminPassInput("")
+                  setAdminConfirmPassInput("")
+                } catch (err: any) {
+                  setAdminSaveStatus({
+                    type: "error",
+                    msg: err.message || "Failed to update administrator settings.",
+                  })
+                  showToast(err.message || "Failed to update administrator settings.")
+                } finally {
+                  setAdminSaving(false)
+                }
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "700px" }}
+            >
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                    Administrator Display Name
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={adminNameInput}
+                    onChange={(e) => setAdminNameInput(e.target.value)}
+                    placeholder="e.g. Masterfilepro Administrator"
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      fontSize: "13px",
+                      borderRadius: "6px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                    Administrator Email Address
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    value={adminEmailInput}
+                    onChange={(e) => setAdminEmailInput(e.target.value)}
+                    placeholder="e.g. admin@masterfilepro.com"
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      fontSize: "13px",
+                      borderRadius: "6px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                    New Password (optional)
+                  </label>
+                  <input
+                    type={adminShowPassText ? "text" : "password"}
+                    value={adminPassInput}
+                    onChange={(e) => setAdminPassInput(e.target.value)}
+                    placeholder="Leave blank to keep current password"
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      fontSize: "13px",
+                      borderRadius: "6px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                    Confirm New Password
+                  </label>
+                  <input
+                    type={adminShowPassText ? "text" : "password"}
+                    value={adminConfirmPassInput}
+                    onChange={(e) => setAdminConfirmPassInput(e.target.value)}
+                    placeholder="Re-type new password"
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      fontSize: "13px",
+                      borderRadius: "6px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setAdminShowPassText(!adminShowPassText)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--muted)",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: 0,
+                  }}
+                >
+                  {adminShowPassText ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {adminShowPassText ? "Hide Passwords" : "Show Passwords"}
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={adminSaving}
+                  className="primary"
+                  style={{
+                    padding: "9px 20px",
+                    fontSize: "13px",
+                    borderRadius: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <Save size={14} />
+                  {adminSaving ? "Saving to Database..." : "Save Changes to Database"}
+                </button>
+              </div>
+
+              {adminSaveStatus && (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "6px",
+                    fontSize: "12.5px",
+                    background:
+                      adminSaveStatus.type === "success"
+                        ? "rgba(16, 185, 129, 0.12)"
+                        : "rgba(239, 68, 68, 0.12)",
+                    border: `1px solid ${
+                      adminSaveStatus.type === "success"
+                        ? "rgba(16, 185, 129, 0.3)"
+                        : "rgba(239, 68, 68, 0.3)"
+                    }`,
+                    color: adminSaveStatus.type === "success" ? "#10b981" : "#ef4444",
+                  }}
+                >
+                  {adminSaveStatus.msg}
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* Emergency Factory Reset Card */}
+          <div
+            style={{
+              padding: "16px 20px",
+              borderRadius: "10px",
+              background: "rgba(245, 158, 11, 0.05)",
+              border: "1px solid rgba(245, 158, 11, 0.2)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <strong style={{ fontSize: "13px", color: "#fbbf24", display: "block" }}>
+                Emergency Factory Reset
+              </strong>
+              <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                Reset administrator credentials to the factory default (<code>admin@masterfilepro.com</code> / <code>Admin@Masterfilepro2026!</code>).
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  window.confirm(
+                    "Are you sure you want to reset administrator credentials to factory defaults (admin@masterfilepro.com)?",
+                  )
+                ) {
+                  try {
+                    await updateAdminSettings({
+                      newName: "Masterfilepro Administrator",
+                      newEmail: "admin@masterfilepro.com",
+                      newPassword: "Admin@FluxKit2026!",
+                      overrideAuthCheck: true,
+                    })
+                    setAdminConfig(getAdminConfig())
+                    setAdminNameInput("Masterfilepro Administrator")
+                    setAdminEmailInput("admin@masterfilepro.com")
+                    showToast("Administrator credentials reset to default.")
+                  } catch (err: any) {
+                    showToast(err.message || "Failed to reset.")
+                  }
+                }
+              }}
+              style={{
+                fontSize: "12px",
+                padding: "6px 14px",
+                borderRadius: "6px",
+                background: "var(--bg)",
+                border: "1px solid rgba(245, 158, 11, 0.4)",
+                color: "#fbbf24",
+                cursor: "pointer",
+              }}
+            >
+              Reset to Factory Default
+            </button>
           </div>
         </div>
       )}
