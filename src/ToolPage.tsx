@@ -2,7 +2,10 @@ import { useState, useRef, useEffect, type FormEvent } from "react"
 import DocumentPreviewModal from "./DocumentPreviewModal"
 import QRCodeStudioModal from "./QRCodeStudioModal"
 import MergeLoadingModal from "./MergeLoadingModal"
-import ImageShowcaseDesigner from "./ImageShowcaseDesigner"
+import ImageShowcaseDesigner, {
+  ShowcaseMobileMockup,
+  type ShowcaseMobileMockupProps,
+} from "./ImageShowcaseDesigner"
 import {
   Activity,
   ArrowDown,
@@ -50,6 +53,7 @@ import {
   Send,
   Share2,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Square,
   Stamp,
@@ -169,18 +173,6 @@ import {
   convertBatchToPython,
   generateBatchTemplate,
 } from "./dataConversionService"
-import { GoogleIcon } from "./GoogleAuth"
-import {
-  getGoogleDriveConfig,
-  saveGoogleDriveConfig,
-  connectGoogleDrive,
-  disconnectGoogleDrive,
-  uploadFileToGoogleDrive,
-  fetchDriveStorageQuota,
-  getGoogleClientId,
-  setGoogleClientId,
-  type GoogleDriveConfig,
-} from "./googleDriveService"
 import { getCurrentUser } from "./authService"
 
 const STOPWORDS = new Set([
@@ -513,6 +505,20 @@ export default function ToolPage({
   const [kind, setKind] = useState("URL")
   const [value, setValue] = useState("")
   const [extra, setExtra] = useState("")
+  const [showcasePreviewData, setShowcasePreviewData] =
+    useState<ShowcaseMobileMockupProps>({
+      theme: "glassmorphism",
+      title: "",
+      description: "",
+      badgeText: "",
+      imageDataUrl: "",
+      downloadAllowed: true,
+      ctaEnabled: false,
+      ctaLabel: "Visit Website",
+    })
+  const [showcaseResultTab, setShowcaseResultTab] = useState<"qr" | "preview">(
+    "qr",
+  )
   const [title, setTitle] = useState("")
   const [textOutput, setTextOutput] = useState("")
   const [optionA, setOptionA] = useState("")
@@ -555,36 +561,8 @@ export default function ToolPage({
   const [downloadSuccessName, setDownloadSuccessName] = useState<string | null>(null)
   const [isZipping, setIsZipping] = useState(false)
 
-  // Google Drive & In-Browser Storage Vault State
-  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig>(() => getGoogleDriveConfig())
-  const [isConnectingDrive, setIsConnectingDrive] = useState(false)
-  const [isSavingToDrive, setIsSavingToDrive] = useState(false)
-  const [driveSavedLink, setDriveSavedLink] = useState<string | null>(null)
-  const [driveSyncingDocId, setDriveSyncingDocId] = useState<string | null>(null)
-  const [showDriveClientModal, setShowDriveClientModal] = useState(false)
-  const [driveClientInput, setDriveClientInput] = useState(() => getGoogleClientId())
-  const [storagePreference, setStoragePreference] = useState<"browser" | "drive">(() => {
-    if (typeof localStorage !== "undefined") {
-      try {
-        const pref = localStorage.getItem("fluxkit_storage_preference")
-        if (pref === "drive") return "drive"
-      } catch {}
-    }
-    return "browser"
-  })
+  // In-Browser Storage Vault State
   const [isSavedInVault, setIsSavedInVault] = useState(false)
-  const [showGoogleDriveAdvanced, setShowGoogleDriveAdvanced] = useState(false)
-
-  const handleSelectBrowserVault = () => {
-    setStoragePreference("browser")
-    if (typeof localStorage !== "undefined") {
-      try {
-        localStorage.setItem("fluxkit_storage_preference", "browser")
-      } catch {}
-    }
-    setShowDriveClientModal(false)
-    notify.success("In-Browser Private Vault is active! Zero setup required. Your files stay offline on your device.")
-  }
 
   const handleSaveResultToBrowserVault = (res: OutputResult) => {
     if (!res || !res.blob) return
@@ -607,140 +585,6 @@ export default function ToolPage({
       setSessionDocs(getSessionDocuments())
     }
     notify.success(`"${res.name}" saved to your In-Browser Vault! Stored safely inside your browser.`)
-  }
-
-  const handleConnectGoogleDrive = async () => {
-    const currentId = getGoogleClientId().trim()
-    if (!currentId) {
-      setShowDriveClientModal(true)
-      return
-    }
-    setIsConnectingDrive(true)
-    try {
-      const res = await connectGoogleDrive(currentId)
-      if (res.ok && res.config) {
-        setDriveConfig(res.config)
-        notify.success("5 TB Google Drive connected! Vault folder created in your Drive.")
-      } else if (res.needsClientId) {
-        setShowDriveClientModal(true)
-      } else {
-        notify(res.error || "Could not connect to Google Drive. Please check your credentials.", "error")
-      }
-    } catch {
-      notify("Failed to initiate Google Drive connection.", "error")
-    } finally {
-      setIsConnectingDrive(false)
-    }
-  }
-
-  const handleSaveDriveClientIdAndConnect = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const clean = driveClientInput.trim()
-    if (!clean) {
-      notify("Please enter a valid Google OAuth Client ID.", "error")
-      return
-    }
-    setGoogleClientId(clean)
-    setShowDriveClientModal(false)
-    setIsConnectingDrive(true)
-    try {
-      const res = await connectGoogleDrive(clean)
-      if (res.ok && res.config) {
-        setDriveConfig(res.config)
-        notify.success("5 TB Google Drive connected! Vault folder created in your Drive.")
-      } else {
-        notify(res.error || "Authorization was not completed. Please try again.", "error")
-      }
-    } catch {
-      notify("Failed to connect with the provided Client ID.", "error")
-    } finally {
-      setIsConnectingDrive(false)
-    }
-  }
-
-  const handleToggleDriveAutoSync = () => {
-    const updated = saveGoogleDriveConfig({ autoSync: !driveConfig.autoSync })
-    setDriveConfig(updated)
-    notify(
-      updated.autoSync
-        ? "Auto-sync enabled: all future conversions will automatically save to your 5 TB Google Drive."
-        : "Auto-sync disabled: conversions stay in local IndexedDB only.",
-      "success",
-    )
-  }
-
-  const handleSaveResultToGoogleDrive = async (res: OutputResult) => {
-    if (!res || !res.blob) return
-    setIsSavingToDrive(true)
-    try {
-      if (!driveConfig.connected) {
-        const connectRes = await connectGoogleDrive()
-        if (!connectRes.ok || !connectRes.config) {
-          notify(connectRes.error || "Please connect your Google Drive first.", "error")
-          setIsSavingToDrive(false)
-          return
-        }
-        setDriveConfig(connectRes.config)
-      }
-
-      const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
-      const userFolder = user?.email || user?.name || "Personal Conversions"
-      const uploadRes = await uploadFileToGoogleDrive(res.blob, res.name, userFolder)
-      if (uploadRes.ok && uploadRes.file) {
-        setDriveSavedLink(uploadRes.file.webViewLink || null)
-        notify.success(`"${res.name}" saved to your 5 TB Google Drive Vault!`)
-      } else {
-        notify(uploadRes.error || "Failed to upload to Google Drive.", "error")
-      }
-    } catch {
-      notify("Network error while uploading to Google Drive.", "error")
-    } finally {
-      setIsSavingToDrive(false)
-    }
-  }
-
-  const handleSyncDocumentToDrive = async (doc: SessionDocument) => {
-    if (!doc.blob) {
-      notify("No local file data available to upload.", "error")
-      return
-    }
-    setDriveSyncingDocId(doc.id)
-    try {
-      if (!driveConfig.connected) {
-        const connectRes = await connectGoogleDrive()
-        if (!connectRes.ok || !connectRes.config) {
-          notify(connectRes.error || "Please connect your Google Drive first.", "error")
-          setDriveSyncingDocId(null)
-          return
-        }
-        setDriveConfig(connectRes.config)
-      }
-
-      const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
-      const userFolder = user?.email || user?.name || "Personal Conversions"
-      const uploadRes = await uploadFileToGoogleDrive(doc.blob, doc.name, userFolder)
-      if (uploadRes.ok && uploadRes.file) {
-        const updatedDoc = {
-          ...doc,
-          driveUrl: uploadRes.file.webViewLink,
-          driveFileId: uploadRes.file.id,
-          driveSyncedAt: new Date().toISOString(),
-        }
-        if (typeof dbSaveDocument === "function") {
-          await dbSaveDocument(updatedDoc)
-        }
-        setSessionDocs((prev) =>
-          prev.map((d) => (d.id === doc.id ? updatedDoc : d)),
-        )
-        notify.success(`"${doc.name}" synced to your 5 TB Google Drive Vault!`)
-      } else {
-        notify(uploadRes.error || "Failed to sync to Google Drive.", "error")
-      }
-    } catch {
-      notify("Error uploading to Google Drive.", "error")
-    } finally {
-      setDriveSyncingDocId(null)
-    }
   }
 
   const handleDownload = (res: OutputResult) => {
@@ -2191,27 +2035,6 @@ export default function ToolPage({
         ) {
           dbSaveDocument(saved).catch(() => {})
         }
-        try {
-          const driveCfg = getGoogleDriveConfig()
-          if (driveCfg.connected && driveCfg.autoSync && out.blob) {
-            const user = typeof getCurrentUser === "function" ? getCurrentUser() : null
-            const userFolder = user?.email || user?.name || "Personal Conversions"
-            uploadFileToGoogleDrive(out.blob, out.name, userFolder).then((res) => {
-              if (res.ok && res.file) {
-                if (saved) {
-                  saved.driveUrl = res.file.webViewLink
-                  saved.driveFileId = res.file.id
-                  saved.driveSyncedAt = new Date().toISOString()
-                  if (typeof dbSaveDocument === "function") {
-                    dbSaveDocument(saved).catch(() => {})
-                  }
-                }
-                setDriveSavedLink(res.file.webViewLink || null)
-                notify("Auto-synced to your 5 TB Google Drive Vault ✓", "success")
-              }
-            })
-          }
-        } catch {}
       }
 
       setStatus("completed")
@@ -3283,16 +3106,13 @@ export default function ToolPage({
       ) : tool.id === "documents" ? (
         <div className="tool-layout" style={{ gridTemplateColumns: "1fr" }}>
           <div className="panel input-panel">
-            {/* Storage Vault Control Card */}
+            {/* In-Browser Storage Vault Card */}
             <div
               style={{
                 borderRadius: "12px",
-                border: driveConfig.connected
-                  ? "1px solid rgba(66, 133, 244, 0.35)"
-                  : "1px solid rgba(16, 185, 129, 0.35)",
-                background: driveConfig.connected
-                  ? "linear-gradient(135deg, rgba(66, 133, 244, 0.08) 0%, rgba(52, 168, 83, 0.05) 100%)"
-                  : "linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)",
+                border: "1px solid rgba(16, 185, 129, 0.35)",
+                background:
+                  "linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)",
                 padding: "16px 20px",
                 marginBottom: "18px",
                 display: "flex",
@@ -3323,11 +3143,7 @@ export default function ToolPage({
                       boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
                     }}
                   >
-                    {driveConfig.connected ? (
-                      <GoogleIcon size={24} />
-                    ) : (
-                      <Database size={22} style={{ color: "#10b981" }} />
-                    )}
+                    <Database size={22} style={{ color: "#10b981" }} />
                   </div>
                   <div>
                     <h3
@@ -3342,29 +3158,19 @@ export default function ToolPage({
                         flexWrap: "wrap",
                       }}
                     >
-                      <span>
-                        {driveConfig.connected
-                          ? "5 TB Google Drive Cloud Vault"
-                          : "In-Browser Private Vault"}
-                      </span>
+                      <span>In-Browser Private Vault</span>
                       <span
                         style={{
                           fontSize: "11px",
                           padding: "2px 8px",
                           borderRadius: "10px",
-                          background: driveConfig.connected
-                            ? "rgba(52, 168, 83, 0.15)"
-                            : "rgba(16, 185, 129, 0.15)",
-                          color: driveConfig.connected ? "#34A853" : "#10b981",
+                          background: "rgba(16, 185, 129, 0.15)",
+                          color: "#10b981",
                           fontWeight: 650,
-                          border: driveConfig.connected
-                            ? "1px solid rgba(52, 168, 83, 0.3)"
-                            : "1px solid rgba(16, 185, 129, 0.3)",
+                          border: "1px solid rgba(16, 185, 129, 0.3)",
                         }}
                       >
-                        {driveConfig.connected
-                          ? "Cloud Synced & Active"
-                          : "Active · 100% Private (No Setup)"}
+                        Active · 100% Private (No Setup)
                       </span>
                     </h3>
                     <p
@@ -3374,119 +3180,25 @@ export default function ToolPage({
                         color: "var(--muted)",
                       }}
                     >
-                      {driveConfig.connected
-                        ? "Permanent cloud archiving & instant sharing powered by your 5 TB Gemini Google Drive account"
-                        : "All files and conversions are stored safely inside this browser's persistent IndexedDB database. 100% private and offline."}
+                      All files and conversions are stored safely inside this browser&apos;s persistent IndexedDB database. 100% private, offline, and zero setup.
                     </p>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  {driveConfig.connected ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={handleToggleDriveAutoSync}
-                        style={{
-                          fontSize: "12px",
-                          padding: "6px 12px",
-                          borderRadius: "8px",
-                          border: driveConfig.autoSync
-                            ? "1px solid rgba(52, 168, 83, 0.4)"
-                            : "1px solid var(--border)",
-                          background: driveConfig.autoSync
-                            ? "rgba(52, 168, 83, 0.15)"
-                            : "var(--surface)",
-                          color: driveConfig.autoSync ? "#10b981" : "var(--muted)",
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "5px",
-                          fontWeight: 600,
-                        }}
-                        title="When enabled, every converted document is automatically archived to your 5 TB Google Drive"
-                      >
-                        <Check size={13} /> {driveConfig.autoSync ? "Auto-Save Enabled" : "Auto-Save Disabled"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          disconnectGoogleDrive()
-                          setDriveConfig(getGoogleDriveConfig())
-                          notify("Google Drive disconnected. Falling back to In-Browser Vault.", "info")
-                        }}
-                        style={{
-                          fontSize: "12px",
-                          padding: "6px 12px",
-                          borderRadius: "8px",
-                          border: "1px solid var(--border)",
-                          background: "var(--surface)",
-                          color: "var(--muted)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Disconnect
-                      </button>
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => setShowDriveClientModal(true)}
-                        style={{
-                          padding: "8px 14px",
-                          fontSize: "12.5px",
-                          borderRadius: "8px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          fontWeight: 600,
-                        }}
-                      >
-                        <Database size={15} style={{ color: "#10b981" }} />
-                        Vault Settings
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setShowGoogleDriveAdvanced(true)
-                          setShowDriveClientModal(true)
-                        }}
-                        style={{
-                          padding: "8px 14px",
-                          fontSize: "12.5px",
-                          borderRadius: "8px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          fontWeight: 500,
-                        }}
-                        title="Optionally link your 5 TB Google Drive for cloud backup"
-                      >
-                        <GoogleIcon size={15} />
-                        Cloud Backup (Optional)
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {driveConfig.connected && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingTop: "10px",
-                    borderTop: "1px solid rgba(66, 133, 244, 0.15)",
-                    fontSize: "12px",
-                    flexWrap: "wrap",
-                    gap: "8px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "var(--surface)",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
                     <span
                       style={{
                         width: "8px",
@@ -3497,342 +3209,11 @@ export default function ToolPage({
                         boxShadow: "0 0 6px #10b981",
                       }}
                     />
-                    <span style={{ color: "var(--text)", fontWeight: 600 }}>
-                      {driveConfig.userEmail || driveConfig.userName || "Connected"}
-                    </span>
-                    <span style={{ color: "var(--muted)" }}>
-                      · Dedicated Folder: <strong>{driveConfig.folderName}</strong>
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ color: "var(--muted)" }}>
-                      5 TB Cloud Quota:{" "}
-                      <strong style={{ color: "#34A853" }}>
-                        {driveConfig.quota?.limitFormatted || "5.0 TB"}
-                      </strong>{" "}
-                      ({driveConfig.quota?.freeFormatted || "5.0 TB"} free)
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Storage & Vault Settings Modal */}
-            {showDriveClientModal && (
-              <div
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  background: "rgba(0, 0, 0, 0.75)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  zIndex: 9999,
-                  padding: "20px",
-                  backdropFilter: "blur(4px)",
-                }}
-                onClick={() => setShowDriveClientModal(false)}
-              >
-                <div
-                  style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "16px",
-                    maxWidth: "560px",
-                    width: "100%",
-                    padding: "24px",
-                    color: "var(--text)",
-                    boxShadow: "0 20px 45px rgba(0,0,0,0.5)",
-                    maxHeight: "90vh",
-                    overflowY: "auto",
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <Database size={24} style={{ color: "#10b981" }} />
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
-                          Document Storage Vault
-                        </h3>
-                        <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "var(--muted)" }}>
-                          Choose how your files are saved and preserved
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowDriveClientModal(false)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "var(--muted)",
-                        cursor: "pointer",
-                        padding: "6px",
-                        borderRadius: "6px",
-                      }}
-                    >
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  {/* Option 1: In-Browser Private Vault (Recommended) */}
-                  <div
-                    style={{
-                      border: "2px solid #10b981",
-                      borderRadius: "12px",
-                      padding: "16px 18px",
-                      background: "rgba(16, 185, 129, 0.06)",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "8px",
-                        flexWrap: "wrap",
-                        gap: "8px",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span
-                          style={{
-                            width: "9px",
-                            height: "9px",
-                            borderRadius: "50%",
-                            background: "#10b981",
-                            display: "inline-block",
-                            boxShadow: "0 0 8px #10b981",
-                          }}
-                        />
-                        <strong style={{ fontSize: "14.5px", color: "var(--text)" }}>
-                          Option 1: In-Browser Private Vault
-                        </strong>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: "10px",
-                          background: "#10b981",
-                          color: "#ffffff",
-                          letterSpacing: "0.4px",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Recommended · Zero Setup
-                      </span>
-                    </div>
-
-                    <p
-                      style={{
-                        fontSize: "12.5px",
-                        color: "var(--muted)",
-                        lineHeight: "1.5",
-                        margin: "0 0 12px 0",
-                      }}
-                    >
-                      No Google Cloud setup or API keys needed. Converted files are saved directly in this browser&apos;s private IndexedDB database. 100% offline, zero latency, and files never leave your device.
-                    </p>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        flexWrap: "wrap",
-                        gap: "10px",
-                        paddingTop: "6px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          fontSize: "11.5px",
-                          color: "#10b981",
-                          fontWeight: 500,
-                        }}
-                      >
-                        <span>✓ Ready immediately</span>
-                        <span>✓ 100% Private</span>
-                        <span>✓ Works offline</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={handleSelectBrowserVault}
-                        style={{
-                          background: "#059669",
-                          borderColor: "#059669",
-                          padding: "8px 16px",
-                          fontSize: "13px",
-                          fontWeight: 600,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <Check size={14} /> Use In-Browser Vault (Instant)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Option 2: 5 TB Google Drive (Optional Advanced Cloud Backup) */}
-                  <div
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: "12px",
-                      padding: "16px 18px",
-                      background: "var(--surface-hover)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => setShowGoogleDriveAdvanced((prev) => !prev)}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <GoogleIcon size={20} />
-                        <div>
-                          <strong style={{ fontSize: "14px", color: "var(--text)", display: "block" }}>
-                            Option 2: 5 TB Google Drive Cloud Vault
-                          </strong>
-                          <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
-                            Optional cloud backup across devices (Requires Google Cloud Console setup)
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "var(--accent)",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          padding: "4px 8px",
-                        }}
-                      >
-                        {showGoogleDriveAdvanced ? "Hide Setup ▲" : "Configure OAuth ▼"}
-                      </button>
-                    </div>
-
-                    {showGoogleDriveAdvanced && (
-                      <form
-                        onSubmit={handleSaveDriveClientIdAndConnect}
-                        style={{
-                          marginTop: "14px",
-                          paddingTop: "14px",
-                          borderTop: "1px solid var(--border)",
-                        }}
-                      >
-                        <p
-                          style={{
-                            fontSize: "12px",
-                            color: "var(--muted)",
-                            lineHeight: "1.5",
-                            marginBottom: "12px",
-                          }}
-                        >
-                          To link your <strong>5 TB Google Drive account</strong>, provide your Google Cloud OAuth 2.0 Web Client ID:
-                        </p>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            color: "var(--text)",
-                            marginBottom: "6px",
-                          }}
-                        >
-                          Google OAuth 2.0 Client ID
-                        </label>
-                        <input
-                          type="text"
-                          value={driveClientInput}
-                          onChange={(e) => setDriveClientInput(e.target.value)}
-                          placeholder="e.g. 1234567890-abc123xyz.apps.googleusercontent.com"
-                          style={{
-                            width: "100%",
-                            padding: "9px 12px",
-                            borderRadius: "8px",
-                            border: "1px solid var(--border)",
-                            background: "var(--bg)",
-                            color: "var(--text)",
-                            fontSize: "12.5px",
-                            marginBottom: "12px",
-                            fontFamily: "monospace",
-                          }}
-                        />
-
-                        <div
-                          style={{
-                            background: "var(--surface)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "8px",
-                            padding: "10px 12px",
-                            fontSize: "11px",
-                            color: "var(--muted)",
-                            lineHeight: "1.45",
-                            marginBottom: "16px",
-                          }}
-                        >
-                          <strong style={{ color: "var(--text)", display: "block", marginBottom: "4px" }}>
-                            Setup Steps:
-                          </strong>
-                          1. Open <strong>console.cloud.google.com</strong> &gt; APIs &amp; Services &gt; Credentials<br />
-                          2. Click <strong>Create Credentials &gt; OAuth client ID</strong> (Type: Web Application)<br />
-                          3. Under <strong>Authorized JavaScript origins</strong>, add your current domain (e.g. <code>{typeof window !== "undefined" ? window.location.origin : "https://fluxfix.de5.net"}</code>)<br />
-                          4. In <strong>Enabled APIs</strong>, enable <strong>Google Drive API</strong>.
-                        </div>
-
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => setShowGoogleDriveAdvanced(false)}
-                            style={{ padding: "7px 14px", fontSize: "12px" }}
-                          >
-                            Close Setup
-                          </button>
-                          <button
-                            type="submit"
-                            className="primary"
-                            style={{
-                              padding: "7px 16px",
-                              fontSize: "12px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            <GoogleIcon size={14} /> Save &amp; Connect Google Drive
-                          </button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
+                    IndexedDB Local Storage Active
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Top Stats Banner */}
             <div
@@ -4337,48 +3718,6 @@ export default function ToolPage({
                                   gap: "6px",
                                 }}
                               >
-                                {doc.driveUrl ? (
-                                  <a
-                                    href={doc.driveUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-button"
-                                    style={{
-                                      padding: "5px 9px",
-                                      fontSize: "12px",
-                                      color: "#34A853",
-                                      textDecoration: "none",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      borderRadius: "6px",
-                                      background: "rgba(52, 168, 83, 0.1)",
-                                    }}
-                                    title="Open file in Google Drive"
-                                  >
-                                    <GoogleIcon size={13} /> 5TB Drive
-                                  </a>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="text-button"
-                                    style={{
-                                      padding: "5px 9px",
-                                      fontSize: "12px",
-                                      color: "var(--accent)",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      borderRadius: "6px",
-                                    }}
-                                    onClick={() => handleSyncDocumentToDrive(doc)}
-                                    disabled={driveSyncingDocId === doc.id}
-                                    title="Save to your 5 TB Google Drive"
-                                  >
-                                    <GoogleIcon size={13} />
-                                    {driveSyncingDocId === doc.id ? "Syncing..." : "Sync"}
-                                  </button>
-                                )}
                                 <button
                                   type="button"
                                   className="text-button"
@@ -4541,45 +3880,6 @@ export default function ToolPage({
                           <Eye size={13} /> Preview
                         </button>
                         <div style={{ display: "flex", gap: "6px" }}>
-                          {doc.driveUrl ? (
-                            <a
-                              href={doc.driveUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-button"
-                              style={{
-                                fontSize: "11px",
-                                padding: "4px 7px",
-                                color: "#34A853",
-                                textDecoration: "none",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "3px",
-                              }}
-                              title="Open file in Google Drive"
-                            >
-                              <GoogleIcon size={12} /> 5TB Drive
-                            </a>
-                          ) : (
-                            <button
-                              type="button"
-                              className="text-button"
-                              style={{
-                                fontSize: "11px",
-                                padding: "4px 7px",
-                                color: "var(--accent)",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "3px",
-                              }}
-                              onClick={() => handleSyncDocumentToDrive(doc)}
-                              disabled={driveSyncingDocId === doc.id}
-                              title="Save to your 5 TB Google Drive"
-                            >
-                              <GoogleIcon size={12} />
-                              {driveSyncingDocId === doc.id ? "Syncing..." : "Sync"}
-                            </button>
-                          )}
                           <button
                             type="button"
                             className="text-button"
@@ -5064,10 +4364,12 @@ export default function ToolPage({
                 {kind === "Image / Photo Showcase" ? (
                   <div style={{ marginTop: "14px" }}>
                     <ImageShowcaseDesigner
+                      onPreviewChange={setShowcasePreviewData}
                       onGenerated={async ({ url }) => {
                         setValue(url)
                         setRawQrPayload(url)
                         setStatus("processing")
+                        setShowcaseResultTab("qr")
                         try {
                           if (typeof generateQR === "function") {
                             const qrImg = await generateQR(url)
@@ -8016,62 +7318,153 @@ export default function ToolPage({
                   width: "100%",
                 }}
               >
-                <img className="qr-result" src={qr} alt="Generated QR code" />
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "10px",
-                    justifyContent: "center",
-                    marginTop: "16px",
-                    width: "100%",
-                  }}
-                >
-                  <a className="primary" href={qr} download="masterfilepro-qr.png">
-                    <Download size={16} /> Download PNG
-                  </a>
-                  {rawQrPayload && rawQrPayload.includes("#showcase") && (
-                    <button
-                      type="button"
-                      className="secondary"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                      onClick={() => window.open(rawQrPayload, "_blank")}
-                    >
-                      <Eye size={16} /> Open Mobile Showcase View
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="primary"
+                {tool.id === "qr" && kind === "Image / Photo Showcase" && (
+                  <div
                     style={{
-                      background: "linear-gradient(135deg, #06204D, #00C9B7)",
-                      borderColor: "transparent",
-                      boxShadow: "0 4px 14px rgba(0, 201, 183, 0.3)",
-                      display: "inline-flex",
+                      display: "flex",
                       alignItems: "center",
-                      gap: "8px",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => {
-                      let content =
-                        rawQrPayload || value.trim() || "https://masterfilepro.com"
-                      if (
-                        kind === "URL" &&
-                        !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
-                      ) {
-                        content = `https://${content}`
-                      }
-                      setRawQrPayload(content)
-                      setShowQRStudio(true)
+                      gap: "6px",
+                      marginBottom: "16px",
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      padding: "4px",
+                      borderRadius: "10px",
                     }}
                   >
-                    <Sparkles size={16} /> Customize QR Code
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowcaseResultTab("qr")}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        background:
+                          showcaseResultTab === "qr"
+                            ? "var(--accent)"
+                            : "transparent",
+                        color:
+                          showcaseResultTab === "qr"
+                            ? "#ffffff"
+                            : "var(--muted)",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <QrCode size={14} /> Generated QR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowcaseResultTab("preview")}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        background:
+                          showcaseResultTab === "preview"
+                            ? "var(--accent)"
+                            : "transparent",
+                        color:
+                          showcaseResultTab === "preview"
+                            ? "#ffffff"
+                            : "var(--muted)",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <Smartphone size={14} /> Mobile Landing Page
+                    </button>
+                  </div>
+                )}
+
+                {tool.id === "qr" &&
+                kind === "Image / Photo Showcase" &&
+                showcaseResultTab === "preview" ? (
+                  <div className="w-full flex flex-col items-center">
+                    <ShowcaseMobileMockup {...showcasePreviewData} />
+                    <div style={{ marginTop: "14px" }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "12px",
+                        }}
+                        onClick={() => setShowcaseResultTab("qr")}
+                      >
+                        <QrCode size={14} /> Back to QR Code
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <img className="qr-result" src={qr} alt="Generated QR code" />
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "10px",
+                        justifyContent: "center",
+                        marginTop: "16px",
+                        width: "100%",
+                      }}
+                    >
+                      <a className="primary" href={qr} download="masterfilepro-qr.png">
+                        <Download size={16} /> Download PNG
+                      </a>
+                      {rawQrPayload && rawQrPayload.includes("#showcase") && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                          onClick={() => window.open(rawQrPayload, "_blank")}
+                        >
+                          <Eye size={16} /> Open Mobile Showcase View
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="primary"
+                        style={{
+                          background: "linear-gradient(135deg, #06204D, #00C9B7)",
+                          borderColor: "transparent",
+                          boxShadow: "0 4px 14px rgba(0, 201, 183, 0.3)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => {
+                          let content =
+                            rawQrPayload || value.trim() || "https://masterfilepro.com"
+                          if (
+                            kind === "URL" &&
+                            !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
+                          ) {
+                            content = `https://${content}`
+                          }
+                          setRawQrPayload(content)
+                          setShowQRStudio(true)
+                        }}
+                      >
+                        <Sparkles size={16} /> Customize QR Code
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : tool.id === "ocr" && (ocrResult || (result && textOutput)) ? (
               <div
@@ -8757,64 +8150,6 @@ export default function ToolPage({
                       <FileArchive size={14} /> View in Documents
                     </button>
                   )}
-
-                  {/* 5 TB Google Drive Cloud Vault Action */}
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => handleSaveResultToGoogleDrive(result)}
-                    disabled={isSavingToDrive}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "7px",
-                      padding: "12px 16px",
-                      borderRadius: "10px",
-                      border: "1px solid rgba(66, 133, 244, 0.4)",
-                      background: "rgba(66, 133, 244, 0.08)",
-                      color: "var(--text)",
-                      fontSize: "13.5px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                    title="Save converted file directly to your 5 TB Google Drive"
-                  >
-                    <GoogleIcon size={16} />
-                    {isSavingToDrive ? (
-                      "Saving to 5TB Drive..."
-                    ) : driveSavedLink ? (
-                      <>
-                        <Check size={15} style={{ color: "#34A853" }} /> Saved to 5TB Drive!
-                      </>
-                    ) : (
-                      "Save to 5TB Google Drive"
-                    )}
-                  </button>
-
-                  {driveSavedLink && (
-                    <a
-                      href={driveSavedLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="secondary"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "12px 14px",
-                        borderRadius: "10px",
-                        border: "1px solid var(--border)",
-                        background: "var(--surface)",
-                        color: "var(--accent)",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        textDecoration: "none",
-                      }}
-                    >
-                      <ExternalLink size={14} /> Open in Google Drive
-                    </a>
-                  )}
                 </div>
               </div>
             ) : tool.id === "documents" && sessionDocs.length > 0 ? (
@@ -8836,6 +8171,54 @@ export default function ToolPage({
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : tool.id === "qr" && kind === "Image / Photo Showcase" ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  padding: "6px 0",
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "320px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: "12px",
+                    padding: "0 4px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      color: "var(--muted)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <Smartphone size={14} style={{ color: "var(--accent)" }} /> Scanner Mobile Live Preview
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                    }}
+                  >
+                    Updates in real-time
+                  </span>
+                </div>
+                <ShowcaseMobileMockup {...showcasePreviewData} />
               </div>
             ) : (
               <div className="empty-result">

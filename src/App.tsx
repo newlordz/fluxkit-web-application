@@ -75,6 +75,7 @@ import {
 import AdminPanel from "./AdminPanel"
 import ProActivationModal from "./ProActivationModal"
 import ImageShowcaseViewer from "./ImageShowcaseViewer"
+import VisitorPassStudio from "./VisitorPassStudio"
 import { GoogleIcon } from "./GoogleAuth"
 
 function stored(key: string, fallback: string) {
@@ -1689,6 +1690,33 @@ export default function App() {
                   setActivity((a) => [
                     {
                       name: "Audio to Text",
+                      time: new Date().toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                    },
+                    ...a,
+                  ])
+                }
+              />
+            )
+          ) : page === "visitor-pass" ? (
+            !canUserAccessTool("visitor-pass", currentUser) ? (
+              <ProActivationModal
+                tool={tools.find((t) => t.id === "visitor-pass")!}
+                currentUser={currentUser}
+                onActivated={(upgraded) => {
+                  setCurrentUser(upgraded)
+                }}
+                onNavigate={navigate}
+              />
+            ) : (
+              <VisitorPassStudio
+                navigate={navigate}
+                onComplete={() =>
+                  setActivity((a) => [
+                    {
+                      name: "Visitor Pass & Badges",
                       time: new Date().toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",

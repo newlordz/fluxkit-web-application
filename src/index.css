@@ -6,6 +6,7 @@
 @import './overview.css';
 @import './document-preview-modal.css';
 @import './merge-loading-modal.css';
+@import './visitor-pass.css';
 
 @theme { --color-brand: #00C9B7; }
 :root { font-family: 'DM Sans', sans-serif; color: #F0F4F8; background: #080E1A; font-synthesis: none; --bg: #080E1A; --surface: #0E1726; --surface-hover: #152238; --border: #1E2F4D; --muted: #8294AC; --text: #F0F4F8; --accent: #00C9B7; --accent-hover: #00E5D2; --sidebar: #060A14; --subtle: #0A1324; --accent-rgb: 0,201,183; --brand-navy: #06204D; --brand-teal: #00C9B7; color-scheme: dark; }

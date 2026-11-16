@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import {
   Upload,
   Image as ImageIcon,
@@ -23,12 +23,153 @@ import {
   type ShowcaseTheme,
 } from "./imageShowcaseService"
 
+export interface ShowcaseMobileMockupProps {
+  theme?: ShowcaseTheme
+  imageDataUrl?: string
+  title?: string
+  description?: string
+  badgeText?: string
+  ctaEnabled?: boolean
+  ctaLabel?: string
+  ctaUrl?: string
+  downloadAllowed?: boolean
+}
+
+export function ShowcaseMobileMockup({
+  theme = "glassmorphism",
+  imageDataUrl = "",
+  title = "",
+  description = "",
+  badgeText = "",
+  ctaEnabled = false,
+  ctaLabel = "Visit Website",
+  downloadAllowed = true,
+}: ShowcaseMobileMockupProps) {
+  return (
+    <div className="w-full max-w-[320px] aspect-[9/18.5] bg-slate-900 rounded-[44px] p-3 shadow-2xl ring-1 ring-white/10 relative overflow-hidden flex flex-col mx-auto select-none">
+      {/* Phone Speaker & Camera Island */}
+      <div className="w-24 h-4 bg-black rounded-full mx-auto mb-2 shrink-0 flex items-center justify-end px-2">
+        <div className="w-2 h-2 rounded-full bg-slate-800" />
+      </div>
+
+      {/* Simulated Mobile Viewport */}
+      <div
+        className={`flex-1 rounded-[32px] overflow-y-auto overflow-x-hidden p-3 flex flex-col justify-between text-center select-none ${
+          theme === "polaroid"
+            ? "bg-[#eae6df] text-slate-900"
+            : theme === "obsidian"
+              ? "bg-slate-950 text-white"
+              : theme === "editorial"
+                ? "bg-white text-neutral-900"
+                : theme === "vibrant"
+                  ? "bg-gradient-to-br from-orange-950 via-slate-950 to-pink-950 text-white"
+                  : theme === "billboard"
+                    ? "bg-black text-white"
+                    : "bg-gradient-to-b from-slate-900 via-slate-950 to-indigo-950 text-white"
+        }`}
+      >
+        {/* Header inside phone */}
+        <div className="flex items-center justify-between pt-1 pb-2">
+          <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 font-bold tracking-tight">
+            Masterfile<span className="text-teal-400">pro</span>
+          </span>
+          {badgeText && (
+            <span className="text-[8px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              {badgeText}
+            </span>
+          )}
+        </div>
+
+        {/* Main content inside phone */}
+        <div className="flex-1 flex flex-col items-center justify-center my-1">
+          {/* Framed Image */}
+          <div
+            className={`w-full max-w-[240px] transition-all ${
+              theme === "polaroid"
+                ? "bg-white p-2 pb-5 rounded-sm shadow-md rotate-[-1deg]"
+                : theme === "obsidian"
+                  ? "rounded-xl overflow-hidden ring-1 ring-white/10 shadow-lg bg-slate-900"
+                  : theme === "editorial"
+                    ? "rounded-none border border-neutral-300 p-1 bg-neutral-50 shadow-sm"
+                    : theme === "vibrant"
+                      ? "rounded-xl overflow-hidden ring-2 ring-orange-500/30 shadow-lg bg-slate-900"
+                      : theme === "billboard"
+                        ? "rounded-2xl overflow-hidden shadow-xl"
+                        : "rounded-xl overflow-hidden backdrop-blur-md bg-white/[0.05] ring-1 ring-white/20 shadow-lg"
+            }`}
+          >
+            {imageDataUrl ? (
+              <img
+                src={imageDataUrl}
+                alt="Preview"
+                className="w-full h-auto max-h-[180px] object-cover block rounded-sm"
+              />
+            ) : (
+              <div className="w-full h-36 bg-black/10 flex flex-col items-center justify-center text-xs opacity-50 p-3">
+                <ImageIcon size={24} className="mb-1" />
+                <span>Upload an image to see live preview</span>
+              </div>
+            )}
+
+            {theme === "polaroid" && (
+              <div className="pt-2 text-center font-serif">
+                <p className="text-[11px] font-bold text-slate-800 truncate">
+                  {title || "Photo Title"}
+                </p>
+                {description && (
+                  <p className="text-[8.5px] text-slate-500 truncate mt-0.5">
+                    {description}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {theme !== "polaroid" && (
+            <div className="mt-3 px-1">
+              <p className="text-xs font-bold truncate">
+                {title || "Your Showcase Title"}
+              </p>
+              {description && (
+                <p className="text-[9.5px] opacity-75 line-clamp-2 mt-0.5 leading-snug">
+                  {description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Visitor Buttons inside Phone */}
+          <div className="w-full flex flex-col gap-1.5 mt-3 px-1">
+            {ctaEnabled && (
+              <div className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-[9.5px] font-semibold flex items-center justify-center gap-1 shadow">
+                <span>{ctaLabel || "Visit Link"}</span>
+                <ExternalLink size={10} />
+              </div>
+            )}
+            {downloadAllowed && (
+              <div className="w-full py-1.5 rounded-lg bg-white/10 border border-white/10 text-[9.5px] font-semibold flex items-center justify-center gap-1">
+                <Download size={10} />
+                <span>Save Photo</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom simulated home bar */}
+        <div className="w-16 h-1 bg-white/30 rounded-full mx-auto mt-2" />
+      </div>
+    </div>
+  )
+}
+
 export interface ImageShowcaseDesignerProps {
   onGenerated: (result: {
     url: string
     showcase: ImageShowcaseData
   }) => void
   onCancel?: () => void
+  onPreviewChange?: (preview: ShowcaseMobileMockupProps) => void
+  showInlinePreview?: boolean
 }
 
 const THEME_OPTIONS: Array<{
@@ -78,6 +219,8 @@ const THEME_OPTIONS: Array<{
 export default function ImageShowcaseDesigner({
   onGenerated,
   onCancel,
+  onPreviewChange,
+  showInlinePreview = false,
 }: ImageShowcaseDesignerProps) {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imageDataUrl, setImageDataUrl] = useState<string>("")
@@ -95,6 +238,32 @@ export default function ImageShowcaseDesigner({
   const [previewTab, setPreviewTab] = useState<"desktop" | "mobile">("mobile")
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Broadcast preview state changes to parent layout (e.g. for right preview panel)
+  useEffect(() => {
+    onPreviewChange?.({
+      theme,
+      imageDataUrl,
+      title,
+      description,
+      badgeText,
+      ctaEnabled,
+      ctaLabel,
+      ctaUrl,
+      downloadAllowed,
+    })
+  }, [
+    theme,
+    imageDataUrl,
+    title,
+    description,
+    badgeText,
+    ctaEnabled,
+    ctaLabel,
+    ctaUrl,
+    downloadAllowed,
+    onPreviewChange,
+  ])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -159,11 +328,9 @@ export default function ImageShowcaseDesigner({
   }
 
   return (
-    <div className="image-showcase-designer w-full flex flex-col gap-6">
-      {/* Designer Layout: Controls & Live Mockup */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left: Configuration Controls */}
-        <div className="lg:col-span-7 flex flex-col gap-5">
+    <div className="image-showcase-designer w-full flex flex-col gap-5">
+      {/* Controls Container (Full Width) */}
+      <div className="w-full flex flex-col gap-5">
           {/* Step 1: Upload Image */}
           <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -389,133 +556,20 @@ export default function ImageShowcaseDesigner({
           </button>
         </div>
 
-        {/* Right: Live Interactive Mobile Device Mockup */}
-        <div className="lg:col-span-5 flex flex-col items-center">
-          <div className="w-full flex items-center justify-between mb-2 px-1">
-            <span className="text-xs font-bold text-[var(--muted)] flex items-center gap-1">
-              <Smartphone size={13} /> Scanner Mobile Live Preview
-            </span>
-            <span className="text-[11px] text-[var(--muted)]">
-              Updates in real-time
-            </span>
+        {showInlinePreview && (
+          <div className="w-full flex flex-col items-center mt-4">
+            <ShowcaseMobileMockup
+              theme={theme}
+              imageDataUrl={imageDataUrl}
+              title={title}
+              description={description}
+              badgeText={badgeText}
+              ctaEnabled={ctaEnabled}
+              ctaLabel={ctaLabel}
+              downloadAllowed={downloadAllowed}
+            />
           </div>
-
-          {/* Smartphone Hardware Frame Mockup */}
-          <div className="w-full max-w-[320px] aspect-[9/18.5] bg-slate-900 rounded-[44px] p-3 shadow-2xl ring-1 ring-white/10 relative overflow-hidden flex flex-col">
-            {/* Phone Speaker & Camera Island */}
-            <div className="w-24 h-4 bg-black rounded-full mx-auto mb-2 shrink-0 flex items-center justify-end px-2">
-              <div className="w-2 h-2 rounded-full bg-slate-800" />
-            </div>
-
-            {/* Simulated Mobile Viewport */}
-            <div
-              className={`flex-1 rounded-[32px] overflow-y-auto overflow-x-hidden p-3 flex flex-col justify-between text-center select-none ${
-                theme === "polaroid"
-                  ? "bg-[#eae6df] text-slate-900"
-                  : theme === "obsidian"
-                    ? "bg-slate-950 text-white"
-                    : theme === "editorial"
-                      ? "bg-white text-neutral-900"
-                      : theme === "vibrant"
-                        ? "bg-gradient-to-br from-orange-950 via-slate-950 to-pink-950 text-white"
-                        : theme === "billboard"
-                          ? "bg-black text-white"
-                          : "bg-gradient-to-b from-slate-900 via-slate-950 to-indigo-950 text-white"
-              }`}
-            >
-              {/* Header inside phone */}
-              <div className="flex items-center justify-between pt-1 pb-2">
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 font-bold tracking-tight">
-                  Masterfile<span className="text-teal-400">pro</span>
-                </span>
-                {badgeText && (
-                  <span className="text-[8px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    {badgeText}
-                  </span>
-                )}
-              </div>
-
-              {/* Main content inside phone */}
-              <div className="flex-1 flex flex-col items-center justify-center my-1">
-                {/* Framed Image */}
-                <div
-                  className={`w-full max-w-[240px] transition-all ${
-                    theme === "polaroid"
-                      ? "bg-white p-2 pb-5 rounded-sm shadow-md rotate-[-1deg]"
-                      : theme === "obsidian"
-                        ? "rounded-xl overflow-hidden ring-1 ring-white/10 shadow-lg bg-slate-900"
-                        : theme === "editorial"
-                          ? "rounded-none border border-neutral-300 p-1 bg-neutral-50 shadow-sm"
-                          : theme === "vibrant"
-                            ? "rounded-xl overflow-hidden ring-2 ring-orange-500/30 shadow-lg bg-slate-900"
-                            : theme === "billboard"
-                              ? "rounded-2xl overflow-hidden shadow-xl"
-                              : "rounded-xl overflow-hidden backdrop-blur-md bg-white/[0.05] ring-1 ring-white/20 shadow-lg"
-                  }`}
-                >
-                  {imageDataUrl ? (
-                    <img
-                      src={imageDataUrl}
-                      alt="Preview"
-                      className="w-full h-auto max-h-[180px] object-cover block rounded-sm"
-                    />
-                  ) : (
-                    <div className="w-full h-36 bg-black/10 flex flex-col items-center justify-center text-xs opacity-50 p-3">
-                      <ImageIcon size={24} className="mb-1" />
-                      <span>Upload an image to see live preview</span>
-                    </div>
-                  )}
-
-                  {theme === "polaroid" && (
-                    <div className="pt-2 text-center font-serif">
-                      <p className="text-[11px] font-bold text-slate-800 truncate">
-                        {title || "Photo Title"}
-                      </p>
-                      {description && (
-                        <p className="text-[8.5px] text-slate-500 truncate mt-0.5">
-                          {description}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {theme !== "polaroid" && (
-                  <div className="mt-3 px-1">
-                    <p className="text-xs font-bold truncate">
-                      {title || "Your Showcase Title"}
-                    </p>
-                    {description && (
-                      <p className="text-[9.5px] opacity-75 line-clamp-2 mt-0.5 leading-snug">
-                        {description}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Visitor Buttons inside Phone */}
-                <div className="w-full flex flex-col gap-1.5 mt-3 px-1">
-                  {ctaEnabled && (
-                    <div className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-[9.5px] font-semibold flex items-center justify-center gap-1 shadow">
-                      <span>{ctaLabel || "Visit Link"}</span>
-                      <ExternalLink size={10} />
-                    </div>
-                  )}
-                  {downloadAllowed && (
-                    <div className="w-full py-1.5 rounded-lg bg-white/10 border border-white/10 text-[9.5px] font-semibold flex items-center justify-center gap-1">
-                      <Download size={10} />
-                      <span>Save Photo</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom simulated home bar */}
-              <div className="w-16 h-1 bg-white/30 rounded-full mx-auto mt-2" />
-            </div>
-          </div>
-        </div>
+        )}
       </div>
-    </div>
   )
 }
