@@ -880,22 +880,117 @@ html, body {
   width: 100%;
 }
 
+.admin-nav-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.admin-nav-wrapper.has-overflow-left::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 8px;
+  left: 4px;
+  width: 32px;
+  background: linear-gradient(to right, var(--surface), transparent);
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.admin-nav-wrapper.has-overflow-right::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 8px;
+  right: 4px;
+  width: 32px;
+  background: linear-gradient(to left, var(--surface), transparent);
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
 .admin-nav-track {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px;
+  padding: 6px 8px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 201, 183, 0.45) transparent;
+  width: 100%;
 }
 
 .admin-nav-track::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.admin-nav-track::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+  margin: 0 10px;
+}
+
+.admin-nav-track::-webkit-scrollbar-thumb {
+  background: rgba(0, 201, 183, 0.35);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.admin-nav-track::-webkit-scrollbar-thumb:hover {
+  background: var(--accent, #00C9B7);
+}
+
+.admin-nav-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+  backdrop-filter: blur(8px);
+}
+
+.admin-nav-scroll-btn.left {
+  left: -14px;
+}
+
+.admin-nav-scroll-btn.right {
+  right: -14px;
+}
+
+.admin-nav-scroll-btn:hover {
+  background: var(--accent, #00C9B7);
+  color: #ffffff;
+  border-color: var(--accent, #00C9B7);
+  transform: translateY(-50%) scale(1.12);
+  box-shadow: 0 6px 20px rgba(0, 201, 183, 0.4);
+}
+
+.admin-nav-scroll-btn:active {
+  transform: translateY(-50%) scale(0.95);
 }
 
 .admin-nav-tab {

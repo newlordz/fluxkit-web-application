@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import {
   ShieldAlert,
   SlidersHorizontal,
   Users,
   FileCode2,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle,
   XCircle,
   Plus,
@@ -160,6 +162,49 @@ export default function AdminPanel({
     useState<"tiers" | "users" | "pages" | "integrations" | "apis" | "settings">(
       initialTab || "tiers",
     )
+
+  // Horizontal Scroll Management for Navigation Tabs
+  const adminNavTrackRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollState = () => {
+    const el = adminNavTrackRef.current
+    if (!el) return
+    const hasOverflow = el.scrollWidth > el.clientWidth + 4
+    setCanScrollLeft(el.scrollLeft > 6)
+    setCanScrollRight(hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 6)
+  }
+
+  useEffect(() => {
+    updateScrollState()
+    const timer = setTimeout(updateScrollState, 150)
+    const handleResize = () => updateScrollState()
+    window.addEventListener("resize", handleResize)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [])
+
+  // Auto-scroll active tab into view when selected
+  useEffect(() => {
+    const el = adminNavTrackRef.current
+    if (!el) return
+    const activeEl = el.querySelector(".admin-nav-tab.active") as HTMLElement | null
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+      setTimeout(updateScrollState, 250)
+    }
+  }, [activeTab])
+
+  const scrollNav = (direction: "left" | "right") => {
+    const el = adminNavTrackRef.current
+    if (!el) return
+    const offset = direction === "left" ? -240 : 240
+    el.scrollBy({ left: offset, behavior: "smooth" })
+    setTimeout(updateScrollState, 280)
+  }
 
   // Cloud API & Priority State
   const [cloudApis, setCloudApis] = useState<CloudApiConfig[]>(() => getCloudApis())
@@ -936,77 +981,115 @@ export default function AdminPanel({
 
       {/* Tabs */}
       <nav className="admin-nav-bar" aria-label="Admin Dashboard Navigation">
-        <div className="admin-nav-track">
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "tiers" ? "active" : ""}`}
-            onClick={() => setActiveTab("tiers")}
-          >
-            <SlidersHorizontal size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">Tool Tiers</span>
-            <span className="admin-nav-badge pro">{proCount} Pro</span>
-          </button>
-
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "users" ? "active" : ""}`}
-            onClick={() => setActiveTab("users")}
-          >
-            <Users size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">User Approvals</span>
-            <span
-              className={`admin-nav-badge ${userList.length > 0 ? "highlight" : ""}`}
+        <div
+          className={`admin-nav-wrapper ${canScrollLeft ? "has-overflow-left" : ""} ${canScrollRight ? "has-overflow-right" : ""}`}
+        >
+          {canScrollLeft && (
+            <button
+              type="button"
+              className="admin-nav-scroll-btn left"
+              onClick={() => scrollNav("left")}
+              aria-label="Scroll navigation left"
+              title="Scroll left"
             >
-              {userList.length}
-            </span>
-          </button>
+              <ChevronLeft size={16} />
+            </button>
+          )}
 
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "pages" ? "active" : ""}`}
-            onClick={() => setActiveTab("pages")}
+          <div
+            ref={adminNavTrackRef}
+            className="admin-nav-track"
+            onScroll={updateScrollState}
+            onWheel={(e) => {
+              if (adminNavTrackRef.current && e.deltaY !== 0) {
+                adminNavTrackRef.current.scrollLeft += e.deltaY * 0.9
+                updateScrollState()
+              }
+            }}
           >
-            <FileCode2 size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">Page Manager</span>
-            <span className="admin-nav-badge">{customPages.length}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "integrations" ? "active" : ""}`}
-            onClick={() => setActiveTab("integrations")}
-          >
-            <CreditCard size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">Payment Gateways</span>
-            <span
-              className={`admin-nav-badge ${gateways.filter((g) => g.enabled).length > 0 ? "active-badge" : ""}`}
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "tiers" ? "active" : ""}`}
+              onClick={() => setActiveTab("tiers")}
             >
-              {gateways.filter((g) => g.enabled).length} Active
-            </span>
-          </button>
+              <SlidersHorizontal size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Tool Tiers</span>
+              <span className="admin-nav-badge pro">{proCount} Pro</span>
+            </button>
 
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "apis" ? "active" : ""}`}
-            onClick={() => setActiveTab("apis")}
-          >
-            <Cpu size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">PDF & Cloud APIs</span>
-            <span className="admin-nav-badge subtle">Priorities</span>
-          </button>
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "users" ? "active" : ""}`}
+              onClick={() => setActiveTab("users")}
+            >
+              <Users size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">User Approvals</span>
+              <span
+                className={`admin-nav-badge ${userList.length > 0 ? "highlight" : ""}`}
+              >
+                {userList.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            className={`admin-nav-tab ${activeTab === "settings" ? "active" : ""}`}
-            onClick={() => setActiveTab("settings")}
-          >
-            <Database size={16} className="admin-nav-icon" />
-            <span className="admin-nav-label">Database & Settings</span>
-            <span className="admin-nav-badge db-status">
-              <span className="admin-status-dot" />
-              Live
-            </span>
-          </button>
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "pages" ? "active" : ""}`}
+              onClick={() => setActiveTab("pages")}
+            >
+              <FileCode2 size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Page Manager</span>
+              <span className="admin-nav-badge">{customPages.length}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "integrations" ? "active" : ""}`}
+              onClick={() => setActiveTab("integrations")}
+            >
+              <CreditCard size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Payment Gateways</span>
+              <span
+                className={`admin-nav-badge ${gateways.filter((g) => g.enabled).length > 0 ? "active-badge" : ""}`}
+              >
+                {gateways.filter((g) => g.enabled).length} Active
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "apis" ? "active" : ""}`}
+              onClick={() => setActiveTab("apis")}
+            >
+              <Cpu size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">PDF & Cloud APIs</span>
+              <span className="admin-nav-badge subtle">Priorities</span>
+            </button>
+
+            <button
+              type="button"
+              className={`admin-nav-tab ${activeTab === "settings" ? "active" : ""}`}
+              onClick={() => setActiveTab("settings")}
+            >
+              <Database size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Database & Settings</span>
+              <span className="admin-nav-badge db-status">
+                <span className="admin-status-dot" />
+                Live
+              </span>
+            </button>
+          </div>
+
+          {canScrollRight && (
+            <button
+              type="button"
+              className="admin-nav-scroll-btn right"
+              onClick={() => scrollNav("right")}
+              aria-label="Scroll navigation right"
+              title="Scroll right"
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
         </div>
       </nav>
 

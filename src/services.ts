@@ -131,6 +131,7 @@ export interface PDFToWordOptions {
 export interface PDFToPPTOptions {
   aspectRatio?: "16:9" | "4:3"
   theme?: "fluxkit-dark" | "minimal-white" | "corporate-blue"
+  layout?: "auto" | "editable-text" | "high-fidelity"
 }
 
 export interface PDFToExcelOptions {
@@ -3100,7 +3101,9 @@ function parseDocxTable(tblXml: string): ParsedDocxTable {
             cellLines.push(parsedP.text.trim())
           }
           if (parsedP.isBold) cellIsBold = true
-          if (parsedP.align !== "left") cellAlign = parsedP.align
+          if (parsedP.align === "center" || parsedP.align === "right") {
+            cellAlign = parsedP.align
+          }
         }
       } else {
         const tRegex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g

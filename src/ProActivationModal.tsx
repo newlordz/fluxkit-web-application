@@ -26,6 +26,7 @@ import {
 } from "./paymentIntegrationService"
 import {
   getActiveCurrency,
+  setActiveCurrency,
   getExchangeRate,
   type SupportedCurrency,
 } from "./currencyService"

@@ -25,6 +25,8 @@ export interface OutputResult {
   isAlreadyOptimal?: boolean
   extractedText?: string
   previewSnippet?: string
+  format?: string
+  size?: number
 }
 export interface ProcessingJob {
   id: string
