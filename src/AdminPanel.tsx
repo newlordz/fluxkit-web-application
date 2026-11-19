@@ -173,7 +173,9 @@ export default function AdminPanel({
     if (!el) return
     const hasOverflow = el.scrollWidth > el.clientWidth + 4
     setCanScrollLeft(el.scrollLeft > 6)
-    setCanScrollRight(hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 6)
+    setCanScrollRight(
+      hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 6,
+    )
   }
 
   useEffect(() => {
@@ -191,9 +193,15 @@ export default function AdminPanel({
   useEffect(() => {
     const el = adminNavTrackRef.current
     if (!el) return
-    const activeEl = el.querySelector(".admin-nav-tab.active") as HTMLElement | null
+    const activeEl = el.querySelector(
+      ".admin-nav-tab.active",
+    ) as HTMLElement | null
     if (activeEl) {
-      activeEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+      activeEl.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      })
       setTimeout(updateScrollState, 250)
     }
   }, [activeTab])
@@ -207,10 +215,15 @@ export default function AdminPanel({
   }
 
   // Cloud API & Priority State
-  const [cloudApis, setCloudApis] = useState<CloudApiConfig[]>(() => getCloudApis())
+  const [cloudApis, setCloudApis] = useState<CloudApiConfig[]>(() =>
+    getCloudApis(),
+  )
   const [testingApiId, setTestingApiId] = useState<string | null>(null)
-  const [apiHealthResults, setApiHealthResults] = useState<Record<string, ApiHealthResult>>({})
-  const [showApiSecrets, setShowApiSecrets] = useState<Record<string, boolean>>({})
+  const [apiHealthResults, setApiHealthResults] =
+    useState<Record<string, ApiHealthResult>>({})
+  const [showApiSecrets, setShowApiSecrets] = useState<Record<string, boolean>>(
+    {},
+  )
   const [editingApiId, setEditingApiId] = useState<string | null>(null)
   const [editApiKeyInput, setEditApiKeyInput] = useState("")
   const [editApiSecretInput, setEditApiSecretInput] = useState("")
@@ -221,7 +234,8 @@ export default function AdminPanel({
   const [newApiKey, setNewApiKey] = useState("")
   const [newApiSecret, setNewApiSecret] = useState("")
   const [newApiQuota, setNewApiQuota] = useState(1000)
-  const [newApiCategory, setNewApiCategory] = useState<"pdf-compression" | "ocr-text">("pdf-compression")
+  const [newApiCategory, setNewApiCategory] =
+    useState<"pdf-compression" | "ocr-text">("pdf-compression")
   const [apiCategoryFilter, setApiCategoryFilter] = useState<string>("all")
 
   useEffect(() => {
@@ -245,16 +259,25 @@ export default function AdminPanel({
     }
   }, [])
 
-  const handleSetExactPriority = async (apiId: string, targetPriority: number, category?: string) => {
+  const handleSetExactPriority = async (
+    apiId: string,
+    targetPriority: number,
+    category?: string,
+  ) => {
     const all = getCloudApis()
     const targetApi = all.find((a) => a.id === apiId)
     if (!targetApi) return
     const cat = category || targetApi.category
-    const catList = all.filter((a) => a.category === cat).sort((a, b) => a.priority - b.priority)
+    const catList = all
+      .filter((a) => a.category === cat)
+      .sort((a, b) => a.priority - b.priority)
 
     const currentIndex = catList.findIndex((a) => a.id === apiId)
     if (currentIndex === -1) return
-    const targetIndex = Math.max(0, Math.min(catList.length - 1, targetPriority - 1))
+    const targetIndex = Math.max(
+      0,
+      Math.min(catList.length - 1, targetPriority - 1),
+    )
     if (currentIndex === targetIndex) return
 
     // Move item in category list
@@ -276,8 +299,12 @@ export default function AdminPanel({
   // Database-Backed Admin Settings State
   const [, setAdminConfig] = useState(() => getAdminConfig())
   const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null)
-  const [adminNameInput, setAdminNameInput] = useState(() => getAdminConfig().name)
-  const [adminEmailInput, setAdminEmailInput] = useState(() => getAdminConfig().email)
+  const [adminNameInput, setAdminNameInput] = useState(
+    () => getAdminConfig().name,
+  )
+  const [adminEmailInput, setAdminEmailInput] = useState(
+    () => getAdminConfig().email,
+  )
   const [adminPassInput, setAdminPassInput] = useState("")
   const [adminConfirmPassInput, setAdminConfirmPassInput] = useState("")
   const [adminShowPassText, setAdminShowPassText] = useState(false)
@@ -362,7 +389,9 @@ export default function AdminPanel({
   )
   const [toolQuery, setToolQuery] = useState("")
   const [toastMessage, setToastMessage] = useState("")
-  const [justSavedGatewayId, setJustSavedGatewayId] = useState<string | null>(null)
+  const [justSavedGatewayId, setJustSavedGatewayId] = useState<string | null>(
+    null,
+  )
 
   // User Management & Security States
   const [showAddUserModal, setShowAddUserModal] = useState(false)
@@ -407,7 +436,10 @@ export default function AdminPanel({
   })
   const [pageError, setPageError] = useState("")
 
-  const showToast = (msg: string, tone: "success" | "error" | "info" = "success") => {
+  const showToast = (
+    msg: string,
+    tone: "success" | "error" | "info" = "success",
+  ) => {
     setToastMessage(msg)
     try {
       if (notify) {
@@ -425,7 +457,8 @@ export default function AdminPanel({
 
   const handlePriceBlur = (toolId: string, toolName: string) => {
     const p = toolPrices[toolId] ?? (toolTiers[toolId] === "pro" ? 4.99 : 0)
-    const ghs = ghsPrices[toolId] ?? Math.round(Number(p) * exchangeRate * 100) / 100
+    const ghs =
+      ghsPrices[toolId] ?? Math.round(Number(p) * exchangeRate * 100) / 100
     showToast(
       `Price for '${toolName}' set to $${Number(p).toFixed(2)} USD (GH₵ ${ghs.toFixed(2)} GHS).`,
     )
@@ -436,7 +469,8 @@ export default function AdminPanel({
     setActiveCurrency(currency)
     setActiveCurrencyState(currency)
     showToast(
-      `Store display currency set to ${currency === "GHS" ? "Ghanaian Cedi (GH₵)" : "US Dollar ($)"
+      `Store display currency set to ${
+        currency === "GHS" ? "Ghanaian Cedi (GH₵)" : "US Dollar ($)"
       }.`,
     )
   }
@@ -455,7 +489,7 @@ export default function AdminPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "set_rate", rate: parsed }),
       })
-    } catch { }
+    } catch {}
     setExchangeRate(parsed)
     setExchangeRateState(parsed)
 
@@ -587,7 +621,8 @@ export default function AdminPanel({
     setToolTier(toolId, next)
     setToolTiers((prev) => ({ ...prev, [toolId]: next }))
     if (next === "pro") {
-      const p = toolPrices[toolId] && toolPrices[toolId] > 0 ? toolPrices[toolId] : 4.99
+      const p =
+        toolPrices[toolId] && toolPrices[toolId] > 0 ? toolPrices[toolId] : 4.99
       setToolPrice(toolId, p)
       setToolPrices((prev) => ({ ...prev, [toolId]: p }))
       setGhsPrices((prev) => ({
@@ -625,7 +660,8 @@ export default function AdminPanel({
           ? "Free"
           : `$${price.toFixed(2)} USD (GH₵ ${(price * exchangeRate).toFixed(2)} GHS)`
       lines.push(
-        `| ${t.name} | ${t.category} | ${isPro ? "PRO" : "Standard"
+        `| ${t.name} | ${t.category} | ${
+          isPro ? "PRO" : "Standard"
         } | ${priceLabel} |`,
       )
     })
@@ -980,9 +1016,11 @@ export default function AdminPanel({
       )}
 
       {/* Tabs */}
-      <nav className="admin-nav-bar" aria-label="Admin Dashboard Navigation">
+      <div className="admin-nav-bar" role="navigation" aria-label="Admin Dashboard Navigation">
         <div
-          className={`admin-nav-wrapper ${canScrollLeft ? "has-overflow-left" : ""} ${canScrollRight ? "has-overflow-right" : ""}`}
+          className={`admin-nav-wrapper ${
+            canScrollLeft ? "has-overflow-left" : ""
+          } ${canScrollRight ? "has-overflow-right" : ""}`}
         >
           {canScrollLeft && (
             <button
@@ -1009,8 +1047,11 @@ export default function AdminPanel({
           >
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "tiers" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "tiers" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("tiers")}
+              title="Tool Tiers"
             >
               <SlidersHorizontal size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">Tool Tiers</span>
@@ -1019,13 +1060,18 @@ export default function AdminPanel({
 
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "users" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "users" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("users")}
+              title="User Approvals"
             >
               <Users size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">User Approvals</span>
               <span
-                className={`admin-nav-badge ${userList.length > 0 ? "highlight" : ""}`}
+                className={`admin-nav-badge ${
+                  userList.length > 0 ? "highlight" : ""
+                }`}
               >
                 {userList.length}
               </span>
@@ -1033,8 +1079,11 @@ export default function AdminPanel({
 
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "pages" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "pages" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("pages")}
+              title="Page Manager"
             >
               <FileCode2 size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">Page Manager</span>
@@ -1043,13 +1092,20 @@ export default function AdminPanel({
 
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "integrations" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "integrations" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("integrations")}
+              title="Payment Gateways"
             >
               <CreditCard size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">Payment Gateways</span>
               <span
-                className={`admin-nav-badge ${gateways.filter((g) => g.enabled).length > 0 ? "active-badge" : ""}`}
+                className={`admin-nav-badge ${
+                  gateways.filter((g) => g.enabled).length > 0
+                    ? "active-badge"
+                    : ""
+                }`}
               >
                 {gateways.filter((g) => g.enabled).length} Active
               </span>
@@ -1057,8 +1113,11 @@ export default function AdminPanel({
 
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "apis" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "apis" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("apis")}
+              title="PDF & Cloud APIs"
             >
               <Cpu size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">PDF & Cloud APIs</span>
@@ -1067,8 +1126,11 @@ export default function AdminPanel({
 
             <button
               type="button"
-              className={`admin-nav-tab ${activeTab === "settings" ? "active" : ""}`}
+              className={`admin-nav-tab ${
+                activeTab === "settings" ? "active" : ""
+              }`}
               onClick={() => setActiveTab("settings")}
+              title="Database & Settings"
             >
               <Database size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">Database & Settings</span>
@@ -1091,7 +1153,7 @@ export default function AdminPanel({
             </button>
           )}
         </div>
-      </nav>
+      </div>
 
       {/* TAB 1: TOOL TIER MANAGER */}
       {activeTab === "tiers" && (
@@ -1100,7 +1162,8 @@ export default function AdminPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
               gap: "12px",
               marginBottom: "16px",
             }}
@@ -1262,9 +1325,7 @@ export default function AdminPanel({
                     borderRadius: "16px",
                     border: "none",
                     background:
-                      activeCurrency === "USD"
-                        ? "#00C9B7"
-                        : "transparent",
+                      activeCurrency === "USD" ? "#00C9B7" : "transparent",
                     color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
                     cursor: "pointer",
                     fontSize: "11px",
@@ -1285,9 +1346,7 @@ export default function AdminPanel({
                     borderRadius: "16px",
                     border: "none",
                     background:
-                      activeCurrency === "GHS"
-                        ? "#00C9B7"
-                        : "transparent",
+                      activeCurrency === "GHS" ? "#00C9B7" : "transparent",
                     color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
                     cursor: "pointer",
                     fontSize: "11px",
@@ -1657,14 +1716,15 @@ export default function AdminPanel({
                 {filteredTools.map((t) => {
                   const isPro = (toolTiers[t.id] || "standard") === "pro"
                   const priceVal = isPro
-                    ? (typeof toolPrices[t.id] === "number" && toolPrices[t.id] > 0
+                    ? typeof toolPrices[t.id] === "number" &&
+                      toolPrices[t.id] > 0
                       ? toolPrices[t.id]
-                      : 4.99)
+                      : 4.99
                     : 0
                   const ghsVal = isPro
-                    ? (typeof ghsPrices[t.id] === "number" && ghsPrices[t.id] > 0
+                    ? typeof ghsPrices[t.id] === "number" && ghsPrices[t.id] > 0
                       ? ghsPrices[t.id]
-                      : Math.round(priceVal * exchangeRate * 100) / 100)
+                      : Math.round(priceVal * exchangeRate * 100) / 100
                     : 0
                   return (
                     <tr
@@ -1742,8 +1802,21 @@ export default function AdminPanel({
                               fontWeight: 600,
                             }}
                           />
-                          <span style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 600 }}>
-                            /mo {priceVal > 0 && <small style={{ display: "block", color: "#00C9B7" }}>(${(priceVal * 10).toFixed(2)}/yr)</small>}
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: "var(--muted)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            /mo{" "}
+                            {priceVal > 0 && (
+                              <small
+                                style={{ display: "block", color: "#00C9B7" }}
+                              >
+                                (${(priceVal * 10).toFixed(2)}/yr)
+                              </small>
+                            )}
                           </span>
                         </div>
                       </td>
@@ -1770,9 +1843,7 @@ export default function AdminPanel({
                             step="5"
                             min="0"
                             placeholder={
-                              isPro
-                                ? (4.99 * exchangeRate).toFixed(2)
-                                : "0.00"
+                              isPro ? (4.99 * exchangeRate).toFixed(2) : "0.00"
                             }
                             value={ghsVal}
                             onChange={(e) =>
@@ -1790,8 +1861,21 @@ export default function AdminPanel({
                               fontWeight: 600,
                             }}
                           />
-                          <span style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 600 }}>
-                            /mo {ghsVal > 0 && <small style={{ display: "block", color: "#00C9B7" }}>(GH₵{(ghsVal * 10).toFixed(2)}/yr)</small>}
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: "var(--muted)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            /mo{" "}
+                            {ghsVal > 0 && (
+                              <small
+                                style={{ display: "block", color: "#00C9B7" }}
+                              >
+                                (GH₵{(ghsVal * 10).toFixed(2)}/yr)
+                              </small>
+                            )}
                           </span>
                           {priceVal === 0 ? (
                             <span
@@ -3132,7 +3216,8 @@ export default function AdminPanel({
                   Looking for PDF Cloud APIs & Priority Failover?
                 </strong>
                 <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-                  Configure Adobe Acrobat, iLovePDF, OCR.space, and local engine priority rankings, quotas, and automatic failover.
+                  Configure Adobe Acrobat, iLovePDF, OCR.space, and local engine
+                  priority rankings, quotas, and automatic failover.
                 </span>
               </div>
             </div>
@@ -3226,7 +3311,8 @@ export default function AdminPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))",
+              gridTemplateColumns:
+                "repeat(auto-fill, minmax(min(100%, 380px), 1fr))",
               gap: "20px",
             }}
           >
@@ -3666,10 +3752,11 @@ export default function AdminPanel({
                               : "rgba(239,68,68,0.12)",
                           color:
                             gw.testStatus === "success" ? "#10b981" : "#ef4444",
-                          border: `1px solid ${gw.testStatus === "success"
+                          border: `1px solid ${
+                            gw.testStatus === "success"
                               ? "rgba(16,185,129,0.25)"
                               : "rgba(239,68,68,0.25)"
-                            }`,
+                          }`,
                         }}
                       >
                         {gw.testStatus === "success" ? (
@@ -3769,12 +3856,19 @@ export default function AdminPanel({
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "6px",
-                          background: justSavedGatewayId === gw.id ? "#10b981" : undefined,
-                          borderColor: justSavedGatewayId === gw.id ? "#10b981" : undefined,
+                          background:
+                            justSavedGatewayId === gw.id
+                              ? "#10b981"
+                              : undefined,
+                          borderColor:
+                            justSavedGatewayId === gw.id
+                              ? "#10b981"
+                              : undefined,
                           transition: "all 0.2s ease",
                         }}
                       >
-                        <Check size={12} /> {justSavedGatewayId === gw.id ? "Saved! ✓" : "Save"}
+                        <Check size={12} />{" "}
+                        {justSavedGatewayId === gw.id ? "Saved! ✓" : "Save"}
                       </button>
                     </div>
                   </div>
@@ -3789,7 +3883,10 @@ export default function AdminPanel({
           TAB: PDF & CLOUD APIS & FAILOVER PRIORITY POOL
           ========================================================================= */}
       {activeTab === "apis" && (
-        <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div
+          className="page-enter"
+          style={{ display: "flex", flexDirection: "column", gap: "24px" }}
+        >
           {/* Header Overview Banner */}
           <div
             style={{
@@ -3843,13 +3940,22 @@ export default function AdminPanel({
                   lineHeight: 1.5,
                 }}
               >
-                Configure cloud APIs (Adobe Acrobat, iLovePDF, OCR.space) and rank their execution priorities.
-                The system uses Priority #1 first. When monthly credits finish or rate limits occur, it seamlessly
-                transitions down the pipeline to Priority #2 and in-browser WebAssembly with zero downtime.
+                Configure cloud APIs (Adobe Acrobat, iLovePDF, OCR.space) and
+                rank their execution priorities. The system uses Priority #1
+                first. When monthly credits finish or rate limits occur, it
+                seamlessly transitions down the pipeline to Priority #2 and
+                in-browser WebAssembly with zero downtime.
               </p>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
               <a
                 href="https://free-apis.github.io/#/browse"
                 target="_blank"
@@ -3960,7 +4066,13 @@ export default function AdminPanel({
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
                     <div
                       style={{
                         width: "30px",
@@ -3975,11 +4087,25 @@ export default function AdminPanel({
                       <Plus size={17} />
                     </div>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
+                      <h3
+                        style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}
+                      >
                         Connect a Free API
                       </h3>
                       <span style={{ fontSize: "11px", color: "var(--muted)" }}>
-                        From <a href="https://free-apis.github.io/#/browse" target="_blank" rel="noreferrer" style={{ color: "#00C9B7", textDecoration: "underline" }}>Free-APIs Catalog</a> or your custom endpoint
+                        From{" "}
+                        <a
+                          href="https://free-apis.github.io/#/browse"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            color: "#00C9B7",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          Free-APIs Catalog
+                        </a>{" "}
+                        or your custom endpoint
                       </span>
                     </div>
                   </div>
@@ -4005,16 +4131,52 @@ export default function AdminPanel({
 
                 {/* Quick-fill Presets */}
                 <div style={{ marginBottom: "12px" }}>
-                  <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 600,
+                      color: "var(--muted)",
+                      textTransform: "uppercase",
+                      display: "block",
+                      marginBottom: "6px",
+                    }}
+                  >
                     Quick Auto-Fill Presets:
                   </span>
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <div
+                    style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}
+                  >
                     {[
-                      { name: "CloudConvert", cat: "pdf-compression", quota: 750, url: "https://api.cloudconvert.com/v2" },
-                      { name: "PDF.co", cat: "pdf-compression", quota: 300, url: "https://api.pdf.co/v1" },
-                      { name: "ConvertAPI", cat: "pdf-compression", quota: 250, url: "https://v2.convertapi.com" },
-                      { name: "TinyPNG", cat: "image-tools", quota: 500, url: "https://api.tinify.com/shrink" },
-                      { name: "Groq Whisper", cat: "audio-speech", quota: 14400, url: "https://api.groq.com/openai/v1/audio/transcriptions" },
+                      {
+                        name: "CloudConvert",
+                        cat: "pdf-compression",
+                        quota: 750,
+                        url: "https://api.cloudconvert.com/v2",
+                      },
+                      {
+                        name: "PDF.co",
+                        cat: "pdf-compression",
+                        quota: 300,
+                        url: "https://api.pdf.co/v1",
+                      },
+                      {
+                        name: "ConvertAPI",
+                        cat: "pdf-compression",
+                        quota: 250,
+                        url: "https://v2.convertapi.com",
+                      },
+                      {
+                        name: "TinyPNG",
+                        cat: "image-tools",
+                        quota: 500,
+                        url: "https://api.tinify.com/shrink",
+                      },
+                      {
+                        name: "Groq Whisper",
+                        cat: "audio-speech",
+                        quota: 14400,
+                        url: "https://api.groq.com/openai/v1/audio/transcriptions",
+                      },
                     ].map((preset) => (
                       <button
                         key={preset.name}
@@ -4029,9 +4191,18 @@ export default function AdminPanel({
                           fontSize: "11px",
                           padding: "3px 9px",
                           borderRadius: "12px",
-                          background: newApiName === preset.name ? "rgba(0,201,183,0.2)" : "rgba(255,255,255,0.06)",
-                          border: newApiName === preset.name ? "1px solid #00C9B7" : "1px solid var(--border)",
-                          color: newApiName === preset.name ? "#00C9B7" : "var(--text)",
+                          background:
+                            newApiName === preset.name
+                              ? "rgba(0,201,183,0.2)"
+                              : "rgba(255,255,255,0.06)",
+                          border:
+                            newApiName === preset.name
+                              ? "1px solid #00C9B7"
+                              : "1px solid var(--border)",
+                          color:
+                            newApiName === preset.name
+                              ? "#00C9B7"
+                              : "var(--text)",
                           cursor: "pointer",
                           fontWeight: 500,
                         }}
@@ -4050,7 +4221,9 @@ export default function AdminPanel({
                       return
                     }
                     const newId = `custom-${Date.now()}`
-                    const existingCat = cloudApis.filter((a) => a.category === newApiCategory)
+                    const existingCat = cloudApis.filter(
+                      (a) => a.category === newApiCategory,
+                    )
                     const newPriority = existingCat.length + 1
 
                     const newApi: CloudApiConfig = {
@@ -4060,7 +4233,8 @@ export default function AdminPanel({
                       category: newApiCategory,
                       priority: newPriority,
                       enabled: true,
-                      description: "User-configured cloud API connected to Masterfilepro priority pool.",
+                      description:
+                        "User-configured cloud API connected to Masterfilepro priority pool.",
                       endpoint: newApiEndpoint.trim() || undefined,
                       apiKey: newApiKey.trim() || undefined,
                       clientSecret: newApiSecret.trim() || undefined,
@@ -4078,7 +4252,9 @@ export default function AdminPanel({
                     setNewApiEndpoint("")
                     setNewApiKey("")
                     setNewApiSecret("")
-                    showToast(`Connected "${newApi.name}" at Priority #${newPriority}!`)
+                    showToast(
+                      `Connected "${newApi.name}" at Priority #${newPriority}!`,
+                    )
                   }}
                   style={{
                     padding: "16px 20px",
@@ -4089,9 +4265,22 @@ export default function AdminPanel({
                     flex: 1,
                   }}
                 >
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "10px",
+                    }}
+                  >
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         API Provider Name *
                       </label>
                       <input
@@ -4113,12 +4302,21 @@ export default function AdminPanel({
                     </div>
 
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         Service Category
                       </label>
                       <select
                         value={newApiCategory}
-                        onChange={(e) => setNewApiCategory(e.target.value as any)}
+                        onChange={(e) =>
+                          setNewApiCategory(e.target.value as any)
+                        }
                         style={{
                           width: "100%",
                           padding: "7px 10px",
@@ -4129,16 +4327,33 @@ export default function AdminPanel({
                           fontSize: "12px",
                         }}
                       >
-                        <option value="pdf-compression">PDF Compression & Optimization</option>
-                        <option value="ocr-text">OCR & Document Text Extraction</option>
-                        <option value="image-tools">Image Optimization & Compression</option>
-                        <option value="audio-speech">Audio Transcription & Speech</option>
-                        <option value="ai-text">AI Summarization & Translation</option>
+                        <option value="pdf-compression">
+                          PDF Compression & Optimization
+                        </option>
+                        <option value="ocr-text">
+                          OCR & Document Text Extraction
+                        </option>
+                        <option value="image-tools">
+                          Image Optimization & Compression
+                        </option>
+                        <option value="audio-speech">
+                          Audio Transcription & Speech
+                        </option>
+                        <option value="ai-text">
+                          AI Summarization & Translation
+                        </option>
                       </select>
                     </div>
 
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         Endpoint URL / Base URL
                       </label>
                       <input
@@ -4159,7 +4374,14 @@ export default function AdminPanel({
                     </div>
 
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         Monthly Free Quota (Calls)
                       </label>
                       <input
@@ -4180,7 +4402,14 @@ export default function AdminPanel({
                     </div>
 
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         API Key / Client ID / Public Key
                       </label>
                       <input
@@ -4201,7 +4430,14 @@ export default function AdminPanel({
                     </div>
 
                     <div>
-                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
                         Secret Key / Client Secret (Optional)
                       </label>
                       <input
@@ -4220,7 +4456,6 @@ export default function AdminPanel({
                         }}
                       />
                     </div>
-
                   </div>
 
                   {/* Pinned Sticky Footer Actions */}
@@ -4285,15 +4520,36 @@ export default function AdminPanel({
               gap: "8px",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
                 <Layers size={15} color="#00C9B7" />
-                <strong style={{ fontSize: "13px" }}>Failover Execution Order</strong>
+                <strong style={{ fontSize: "13px" }}>
+                  Failover Execution Order
+                </strong>
                 <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                   (Click dropdown or ◀ ▶ to change priorities)
                 </span>
               </div>
-              <span style={{ fontSize: "11px", color: "#10b981", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "#10b981",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
                 <Activity size={12} /> Auto-Failover Active
               </span>
             </div>
@@ -4321,7 +4577,9 @@ export default function AdminPanel({
                   return (
                     <React.Fragment key={api.id}>
                       <div
-                        className={`api-pipeline-node ${isPrimary ? "is-primary" : ""}`}
+                        className={`api-pipeline-node ${
+                          isPrimary ? "is-primary" : ""
+                        }`}
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -4331,7 +4589,9 @@ export default function AdminPanel({
                           background: isPrimary
                             ? "linear-gradient(135deg, rgba(0,201,183,0.18) 0%, rgba(59,130,246,0.12) 100%)"
                             : "var(--bg)",
-                          border: isPrimary ? "1.5px solid #00C9B7" : "1px solid var(--border)",
+                          border: isPrimary
+                            ? "1.5px solid #00C9B7"
+                            : "1px solid var(--border)",
                           whiteSpace: "nowrap",
                           flexShrink: 0,
                         }}
@@ -4341,7 +4601,11 @@ export default function AdminPanel({
                           className="api-priority-select"
                           value={api.priority}
                           onChange={(e) =>
-                            handleSetExactPriority(api.id, Number(e.target.value), "pdf-compression")
+                            handleSetExactPriority(
+                              api.id,
+                              Number(e.target.value),
+                              "pdf-compression",
+                            )
                           }
                           title="Click to set priority"
                           style={{
@@ -4349,9 +4613,13 @@ export default function AdminPanel({
                             fontWeight: 700,
                             padding: "4px 8px",
                             borderRadius: "6px",
-                            background: isPrimary ? "#00C9B7" : "var(--surface)",
+                            background: isPrimary
+                              ? "#00C9B7"
+                              : "var(--surface)",
                             color: isPrimary ? "#ffffff" : "var(--text)",
-                            border: isPrimary ? "1px solid #00C9B7" : "1px solid var(--border)",
+                            border: isPrimary
+                              ? "1px solid #00C9B7"
+                              : "1px solid var(--border)",
                             cursor: "pointer",
                           }}
                         >
@@ -4374,7 +4642,13 @@ export default function AdminPanel({
                           <button
                             type="button"
                             disabled={idx === 0}
-                            onClick={() => moveApiPriority(api.id, "up", "pdf-compression").then(setCloudApis)}
+                            onClick={() =>
+                              moveApiPriority(
+                                api.id,
+                                "up",
+                                "pdf-compression",
+                              ).then(setCloudApis)
+                            }
                             style={{
                               background: "none",
                               border: "none",
@@ -4392,13 +4666,23 @@ export default function AdminPanel({
                           <button
                             type="button"
                             disabled={idx === arr.length - 1}
-                            onClick={() => moveApiPriority(api.id, "down", "pdf-compression").then(setCloudApis)}
+                            onClick={() =>
+                              moveApiPriority(
+                                api.id,
+                                "down",
+                                "pdf-compression",
+                              ).then(setCloudApis)
+                            }
                             style={{
                               background: "none",
                               border: "none",
-                              color: idx === arr.length - 1 ? "var(--muted)" : "var(--text)",
+                              color:
+                                idx === arr.length - 1
+                                  ? "var(--muted)"
+                                  : "var(--text)",
                               opacity: idx === arr.length - 1 ? 0.35 : 1,
-                              cursor: idx === arr.length - 1 ? "default" : "pointer",
+                              cursor:
+                                idx === arr.length - 1 ? "default" : "pointer",
                               padding: "0 2px",
                               fontSize: "10px",
                               lineHeight: 1,
@@ -4410,9 +4694,22 @@ export default function AdminPanel({
                         </div>
 
                         {/* Name & remaining free calls */}
-                        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                          <span style={{ fontSize: "12px", fontWeight: 600 }}>{api.name}</span>
-                          <span style={{ fontSize: "10px", color: isExhausted ? "#f59e0b" : "var(--muted)" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          <span style={{ fontSize: "12px", fontWeight: 600 }}>
+                            {api.name}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: isExhausted ? "#f59e0b" : "var(--muted)",
+                            }}
+                          >
                             {api.provider === "local"
                               ? "Unlimited (Local)"
                               : `${Math.max(0, api.monthlyQuota - api.usedThisMonth)} calls left`}
@@ -4421,7 +4718,14 @@ export default function AdminPanel({
                       </div>
 
                       {idx < arr.length - 1 && (
-                        <span style={{ color: "#00C9B7", opacity: 0.6, fontSize: "12px", flexShrink: 0 }}>
+                        <span
+                          style={{
+                            color: "#00C9B7",
+                            opacity: 0.6,
+                            fontSize: "12px",
+                            flexShrink: 0,
+                          }}
+                        >
                           ➔
                         </span>
                       )}
@@ -4440,13 +4744,27 @@ export default function AdminPanel({
               padding: "18px 22px",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <Key size={16} color="#00C9B7" />
-                <strong style={{ fontSize: "14px" }}>Verified Free API Key Dashboards & Direct Links</strong>
+                <strong style={{ fontSize: "14px" }}>
+                  Verified Free API Key Dashboards & Direct Links
+                </strong>
               </div>
               <span style={{ fontSize: "11px", color: "var(--muted)" }}>
-                Click any dashboard link to view, copy, or refresh your free keys anytime.
+                Click any dashboard link to view, copy, or refresh your free
+                keys anytime.
               </span>
             </div>
 
@@ -4473,11 +4791,30 @@ export default function AdminPanel({
                       gap: "8px",
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-                      <strong style={{ fontSize: "12px", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <strong
+                        style={{
+                          fontSize: "12px",
+                          whiteSpace: "nowrap",
+                          textOverflow: "ellipsis",
+                          overflow: "hidden",
+                        }}
+                      >
                         {api.name}
                       </strong>
-                      <span style={{ fontSize: "11px", color: hasKey ? "#10b981" : "var(--muted)" }}>
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: hasKey ? "#10b981" : "var(--muted)",
+                        }}
+                      >
                         {api.provider === "local"
                           ? "In-Browser (No Key Needed)"
                           : hasKey
@@ -4510,7 +4847,9 @@ export default function AdminPanel({
                         Dashboard <ExternalLink size={11} />
                       </a>
                     ) : (
-                      <span style={{ fontSize: "10px", color: "var(--muted)" }}>Internal</span>
+                      <span style={{ fontSize: "10px", color: "var(--muted)" }}>
+                        Internal
+                      </span>
                     )}
                   </div>
                 )
@@ -4530,24 +4869,48 @@ export default function AdminPanel({
           >
             {[
               { id: "all", label: `All Free APIs (${cloudApis.length})` },
-              { id: "pdf-compression", label: `PDF Optimization (${cloudApis.filter((a) => a.category === "pdf-compression").length})` },
-              { id: "ocr-text", label: `OCR & Extraction (${cloudApis.filter((a) => a.category === "ocr-text").length})` },
-              { id: "image-tools", label: `Image Compression (${cloudApis.filter((a) => a.category === "image-tools").length})` },
-              { id: "audio-speech", label: `Audio Transcription (${cloudApis.filter((a) => a.category === "audio-speech").length})` },
-              { id: "ai-text", label: `AI & Translation (${cloudApis.filter((a) => a.category === "ai-text").length})` },
+              {
+                id: "pdf-compression",
+                label: `PDF Optimization (${cloudApis.filter((a) => a.category === "pdf-compression").length})`,
+              },
+              {
+                id: "ocr-text",
+                label: `OCR & Extraction (${cloudApis.filter((a) => a.category === "ocr-text").length})`,
+              },
+              {
+                id: "image-tools",
+                label: `Image Compression (${cloudApis.filter((a) => a.category === "image-tools").length})`,
+              },
+              {
+                id: "audio-speech",
+                label: `Audio Transcription (${cloudApis.filter((a) => a.category === "audio-speech").length})`,
+              },
+              {
+                id: "ai-text",
+                label: `AI & Translation (${cloudApis.filter((a) => a.category === "ai-text").length})`,
+              },
             ].map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setApiCategoryFilter(cat.id)}
-                className={`api-category-pill ${apiCategoryFilter === cat.id ? "is-active" : ""}`}
+                className={`api-category-pill ${
+                  apiCategoryFilter === cat.id ? "is-active" : ""
+                }`}
                 style={{
                   fontSize: "12px",
                   padding: "6px 14px",
                   borderRadius: "20px",
-                  border: apiCategoryFilter === cat.id ? "1px solid #00C9B7" : "1px solid var(--border)",
-                  background: apiCategoryFilter === cat.id ? "rgba(0,201,183,0.15)" : "var(--surface)",
-                  color: apiCategoryFilter === cat.id ? "#00C9B7" : "var(--muted)",
+                  border:
+                    apiCategoryFilter === cat.id
+                      ? "1px solid #00C9B7"
+                      : "1px solid var(--border)",
+                  background:
+                    apiCategoryFilter === cat.id
+                      ? "rgba(0,201,183,0.15)"
+                      : "var(--surface)",
+                  color:
+                    apiCategoryFilter === cat.id ? "#00C9B7" : "var(--muted)",
                   fontWeight: 600,
                   cursor: "pointer",
                 }}
@@ -4559,7 +4922,14 @@ export default function AdminPanel({
 
           {/* Section: API List based on Category Filter */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+              }}
+            >
               <div>
                 <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>
                   {apiCategoryFilter === "all"
@@ -4574,8 +4944,16 @@ export default function AdminPanel({
                             ? "Audio Transcription & Speech APIs"
                             : "AI Summarization & Translation APIs"}
                 </h3>
-                <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0 0" }}>
-                  Use <strong>Move Up (▲)</strong> and <strong>Move Down (▼)</strong> to change which provider processes requests first.
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--muted)",
+                    margin: "4px 0 0 0",
+                  }}
+                >
+                  Use <strong>Move Up (▲)</strong> and{" "}
+                  <strong>Move Down (▼)</strong> to change which provider
+                  processes requests first.
                 </p>
               </div>
             </div>
@@ -4584,13 +4962,18 @@ export default function AdminPanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
                 gap: "16px",
                 alignItems: "start",
               }}
             >
               {cloudApis
-                .filter((a) => apiCategoryFilter === "all" || a.category === apiCategoryFilter)
+                .filter(
+                  (a) =>
+                    apiCategoryFilter === "all" ||
+                    a.category === apiCategoryFilter,
+                )
                 .sort((a, b) => a.priority - b.priority)
                 .map((api, index, filteredList) => {
                   const isFirst = index === 0
@@ -4599,9 +4982,15 @@ export default function AdminPanel({
                   const health = apiHealthResults[api.id]
                   const showSecret = !!showApiSecrets[api.id]
                   const isEditing = editingApiId === api.id
-                  const isExhausted = api.monthlyQuota && api.usedThisMonth >= api.monthlyQuota
+                  const isExhausted =
+                    api.monthlyQuota && api.usedThisMonth >= api.monthlyQuota
                   const quotaPercent = api.monthlyQuota
-                    ? Math.min(100, Math.round((api.usedThisMonth / api.monthlyQuota) * 100))
+                    ? Math.min(
+                        100,
+                        Math.round(
+                          (api.usedThisMonth / api.monthlyQuota) * 100,
+                        ),
+                      )
                     : 0
 
                   return (
@@ -4609,7 +4998,10 @@ export default function AdminPanel({
                       key={api.id}
                       style={{
                         background: "var(--surface)",
-                        border: api.priority === 1 ? "1.5px solid #00C9B7" : "1px solid var(--border)",
+                        border:
+                          api.priority === 1
+                            ? "1.5px solid #00C9B7"
+                            : "1px solid var(--border)",
                         borderRadius: "12px",
                         padding: "16px 18px",
                         display: "flex",
@@ -4617,7 +5009,10 @@ export default function AdminPanel({
                         gap: "12px",
                         minWidth: 0,
                         alignSelf: "start",
-                        boxShadow: api.priority === 1 ? "0 4px 20px rgba(0,201,183,0.08)" : "none",
+                        boxShadow:
+                          api.priority === 1
+                            ? "0 4px 20px rgba(0,201,183,0.08)"
+                            : "none",
                       }}
                     >
                       {/* Top Bar: Priority Rank + Reorder + Name + Dashboard Link + Enable Switch */}
@@ -4631,10 +5026,19 @@ export default function AdminPanel({
                             marginBottom: "8px",
                           }}
                         >
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              flexWrap: "wrap",
+                            }}
+                          >
                             {/* Priority Dropdown & Badge */}
                             <div
-                              className={`api-priority-badge ${api.priority === 1 ? "is-primary" : ""}`}
+                              className={`api-priority-badge ${
+                                api.priority === 1 ? "is-primary" : ""
+                              }`}
                               style={{
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -4645,22 +5049,36 @@ export default function AdminPanel({
                                   api.priority === 1
                                     ? "linear-gradient(135deg, rgba(0,201,183,0.25) 0%, rgba(124,58,237,0.2) 100%)"
                                     : "rgba(255,255,255,0.06)",
-                                border: api.priority === 1 ? "1px solid #00C9B7" : "1px solid var(--border)",
+                                border:
+                                  api.priority === 1
+                                    ? "1px solid #00C9B7"
+                                    : "1px solid var(--border)",
                               }}
                             >
-                              <Zap size={12} className="api-priority-icon" color="#00C9B7" />
+                              <Zap
+                                size={12}
+                                className="api-priority-icon"
+                                color="#00C9B7"
+                              />
                               <select
                                 className="api-priority-select"
                                 value={api.priority}
                                 onChange={(e) =>
-                                  handleSetExactPriority(api.id, Number(e.target.value), api.category)
+                                  handleSetExactPriority(
+                                    api.id,
+                                    Number(e.target.value),
+                                    api.category,
+                                  )
                                 }
                                 title="Set priority order"
                                 style={{
                                   fontSize: "11px",
                                   fontWeight: 700,
                                   background: "transparent",
-                                  color: api.priority === 1 ? "#00E5D2" : "var(--text)",
+                                  color:
+                                    api.priority === 1
+                                      ? "#00E5D2"
+                                      : "var(--text)",
                                   border: "none",
                                   cursor: "pointer",
                                   outline: "none",
@@ -4676,7 +5094,12 @@ export default function AdminPanel({
                                       color: "var(--text)",
                                     }}
                                   >
-                                    #{i + 1} {i === 0 ? "• Primary" : i === 1 ? "• 2nd Failover" : "• Backup"}
+                                    #{i + 1}{" "}
+                                    {i === 0
+                                      ? "• Primary"
+                                      : i === 1
+                                        ? "• 2nd Failover"
+                                        : "• Backup"}
                                   </option>
                                 ))}
                               </select>
@@ -4689,16 +5112,24 @@ export default function AdminPanel({
                                 title="Move priority up"
                                 disabled={isFirst}
                                 onClick={async () => {
-                                  const updated = await moveApiPriority(api.id, "up", api.category)
+                                  const updated = await moveApiPriority(
+                                    api.id,
+                                    "up",
+                                    api.category,
+                                  )
                                   setCloudApis(updated)
-                                  showToast(`Moved ${api.name} up to Priority #${api.priority - 1}`)
+                                  showToast(
+                                    `Moved ${api.name} up to Priority #${api.priority - 1}`,
+                                  )
                                 }}
                                 style={{
                                   padding: "3px 6px",
                                   borderRadius: "4px",
                                   background: "var(--bg)",
                                   border: "1px solid var(--border)",
-                                  color: isFirst ? "var(--muted)" : "var(--text)",
+                                  color: isFirst
+                                    ? "var(--muted)"
+                                    : "var(--text)",
                                   cursor: isFirst ? "not-allowed" : "pointer",
                                   display: "inline-flex",
                                   alignItems: "center",
@@ -4712,16 +5143,24 @@ export default function AdminPanel({
                                 title="Move priority down"
                                 disabled={isLast}
                                 onClick={async () => {
-                                  const updated = await moveApiPriority(api.id, "down", api.category)
+                                  const updated = await moveApiPriority(
+                                    api.id,
+                                    "down",
+                                    api.category,
+                                  )
                                   setCloudApis(updated)
-                                  showToast(`Moved ${api.name} down to Priority #${api.priority + 1}`)
+                                  showToast(
+                                    `Moved ${api.name} down to Priority #${api.priority + 1}`,
+                                  )
                                 }}
                                 style={{
                                   padding: "3px 6px",
                                   borderRadius: "4px",
                                   background: "var(--bg)",
                                   border: "1px solid var(--border)",
-                                  color: isLast ? "var(--muted)" : "var(--text)",
+                                  color: isLast
+                                    ? "var(--muted)"
+                                    : "var(--text)",
                                   cursor: isLast ? "not-allowed" : "pointer",
                                   display: "inline-flex",
                                   alignItems: "center",
@@ -4732,7 +5171,11 @@ export default function AdminPanel({
                               </button>
                             </div>
 
-                            <strong style={{ fontSize: "14px", marginLeft: "2px" }}>{api.name}</strong>
+                            <strong
+                              style={{ fontSize: "14px", marginLeft: "2px" }}
+                            >
+                              {api.name}
+                            </strong>
 
                             {/* Dashboard Link Badge */}
                             {api.dashboardUrl && (
@@ -4776,21 +5219,39 @@ export default function AdminPanel({
                               checked={api.enabled}
                               onChange={async () => {
                                 const updated = cloudApis.map((a) =>
-                                  a.id === api.id ? { ...a, enabled: !a.enabled } : a,
+                                  a.id === api.id
+                                    ? { ...a, enabled: !a.enabled }
+                                    : a,
                                 )
                                 setCloudApis(updated)
                                 await saveCloudApis(updated)
-                                showToast(`${api.name} is now ${!api.enabled ? "Enabled" : "Disabled"}.`)
+                                showToast(
+                                  `${api.name} is now ${
+                                    !api.enabled ? "Enabled" : "Disabled"
+                                  }.`,
+                                )
                               }}
                             />
-                            <span style={{ fontWeight: 600, color: api.enabled ? "#10b981" : "var(--muted)" }}>
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                color: api.enabled ? "#10b981" : "var(--muted)",
+                              }}
+                            >
                               {api.enabled ? "Enabled" : "Off"}
                             </span>
                           </label>
                         </div>
 
                         {/* Description */}
-                        <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, lineHeight: 1.4 }}>
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            color: "var(--muted)",
+                            margin: 0,
+                            lineHeight: 1.4,
+                          }}
+                        >
                           {api.description}
                         </p>
                       </div>
@@ -4808,12 +5269,26 @@ export default function AdminPanel({
                             gap: "6px",
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: "11px",
+                            }}
+                          >
                             <span>
-                              <strong>Usage:</strong> {api.usedThisMonth} of {api.monthlyQuota} free calls used
+                              <strong>Usage:</strong> {api.usedThisMonth} of{" "}
+                              {api.monthlyQuota} free calls used
                             </span>
-                            <span style={{ fontWeight: 600, color: isExhausted ? "#f59e0b" : "#10b981" }}>
-                              {isExhausted ? "Exhausted (Failing over)" : `${100 - quotaPercent}% remaining`}
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                color: isExhausted ? "#f59e0b" : "#10b981",
+                              }}
+                            >
+                              {isExhausted
+                                ? "Exhausted (Failing over)"
+                                : `${100 - quotaPercent}% remaining`}
                             </span>
                           </div>
                           <div
@@ -4853,7 +5328,10 @@ export default function AdminPanel({
                           }}
                         >
                           <CheckCircle2 size={13} />
-                          <span>Unlimited In-Browser Processing (Private & Zero-Cost)</span>
+                          <span>
+                            Unlimited In-Browser Processing (Private &
+                            Zero-Cost)
+                          </span>
                         </div>
                       )}
 
@@ -4869,67 +5347,181 @@ export default function AdminPanel({
                           }}
                         >
                           {isEditing ? (
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr 1fr",
+                                gap: "8px",
+                              }}
+                            >
                               <div>
-                                <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
-                                  {api.provider === "adobe" ? "Client ID" : "API Key"}
+                                <label
+                                  style={{
+                                    fontSize: "10px",
+                                    display: "block",
+                                    marginBottom: "3px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  {api.provider === "adobe"
+                                    ? "Client ID"
+                                    : "API Key"}
                                 </label>
                                 <input
                                   type="text"
                                   value={editApiKeyInput}
-                                  onChange={(e) => setEditApiKeyInput(e.target.value)}
-                                  style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                  onChange={(e) =>
+                                    setEditApiKeyInput(e.target.value)
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    padding: "5px 8px",
+                                    borderRadius: "4px",
+                                    background: "var(--bg)",
+                                    border: "1px solid var(--border)",
+                                    color: "var(--text)",
+                                    fontSize: "11px",
+                                  }}
                                 />
                               </div>
                               {api.clientSecret !== undefined && (
                                 <div>
-                                  <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
+                                  <label
+                                    style={{
+                                      fontSize: "10px",
+                                      display: "block",
+                                      marginBottom: "3px",
+                                      color: "var(--muted)",
+                                    }}
+                                  >
                                     Client Secret
                                   </label>
                                   <input
                                     type="text"
                                     value={editApiSecretInput}
-                                    onChange={(e) => setEditApiSecretInput(e.target.value)}
-                                    style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                    onChange={(e) =>
+                                      setEditApiSecretInput(e.target.value)
+                                    }
+                                    style={{
+                                      width: "100%",
+                                      padding: "5px 8px",
+                                      borderRadius: "4px",
+                                      background: "var(--bg)",
+                                      border: "1px solid var(--border)",
+                                      color: "var(--text)",
+                                      fontSize: "11px",
+                                    }}
                                   />
                                 </div>
                               )}
                               <div style={{ gridColumn: "1 / -1" }}>
-                                <label style={{ fontSize: "10px", display: "block", marginBottom: "3px", color: "var(--muted)" }}>
+                                <label
+                                  style={{
+                                    fontSize: "10px",
+                                    display: "block",
+                                    marginBottom: "3px",
+                                    color: "var(--muted)",
+                                  }}
+                                >
                                   Monthly Quota (Calls)
                                 </label>
                                 <input
                                   type="number"
                                   value={editApiQuotaInput}
-                                  onChange={(e) => setEditApiQuotaInput(Number(e.target.value))}
-                                  style={{ width: "100%", padding: "5px 8px", borderRadius: "4px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+                                  onChange={(e) =>
+                                    setEditApiQuotaInput(Number(e.target.value))
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    padding: "5px 8px",
+                                    borderRadius: "4px",
+                                    background: "var(--bg)",
+                                    border: "1px solid var(--border)",
+                                    color: "var(--text)",
+                                    fontSize: "11px",
+                                  }}
                                 />
                               </div>
                             </div>
                           ) : (
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                flexWrap: "wrap",
+                                gap: "6px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: "12px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
                                 <div>
-                                  <span style={{ color: "var(--muted)" }}>{api.provider === "adobe" ? "ID: " : "Key: "}</span>
-                                  <code className="api-key-code" style={{ fontSize: "11px", color: "#00C9B7" }}>
-                                    {showSecret ? api.apiKey : (api.apiKey ? `${api.apiKey.substring(0, 8)}••••` : "Not set")}
+                                  <span style={{ color: "var(--muted)" }}>
+                                    {api.provider === "adobe"
+                                      ? "ID: "
+                                      : "Key: "}
+                                  </span>
+                                  <code
+                                    className="api-key-code"
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#00C9B7",
+                                    }}
+                                  >
+                                    {showSecret
+                                      ? api.apiKey
+                                      : api.apiKey
+                                        ? `${api.apiKey.substring(0, 8)}••••`
+                                        : "Not set"}
                                   </code>
                                 </div>
                                 {api.clientSecret && (
                                   <div>
-                                    <span style={{ color: "var(--muted)" }}>Secret: </span>
-                                    <code style={{ fontSize: "11px", color: "#3b82f6" }}>
-                                      {showSecret ? api.clientSecret : "••••••••"}
+                                    <span style={{ color: "var(--muted)" }}>
+                                      Secret:{" "}
+                                    </span>
+                                    <code
+                                      style={{
+                                        fontSize: "11px",
+                                        color: "#3b82f6",
+                                      }}
+                                    >
+                                      {showSecret
+                                        ? api.clientSecret
+                                        : "••••••••"}
                                     </code>
                                   </div>
                                 )}
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setShowApiSecrets((prev) => ({ ...prev, [api.id]: !prev[api.id] }))}
-                                style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px" }}
+                                onClick={() =>
+                                  setShowApiSecrets((prev) => ({
+                                    ...prev,
+                                    [api.id]: !prev[api.id],
+                                  }))
+                                }
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  color: "var(--muted)",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                  fontSize: "10px",
+                                }}
                               >
-                                {showSecret ? <EyeOff size={11} /> : <Eye size={11} />}
+                                {showSecret ? (
+                                  <EyeOff size={11} />
+                                ) : (
+                                  <Eye size={11} />
+                                )}
                                 {showSecret ? "Hide" : "Reveal"}
                               </button>
                             </div>
@@ -4947,12 +5539,22 @@ export default function AdminPanel({
                             display: "flex",
                             alignItems: "center",
                             gap: "6px",
-                            background: health.ok ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                            background: health.ok
+                              ? "rgba(16,185,129,0.12)"
+                              : "rgba(239,68,68,0.12)",
                             color: health.ok ? "#10b981" : "#ef4444",
-                            border: `1px solid ${health.ok ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`,
+                            border: `1px solid ${
+                              health.ok
+                                ? "rgba(16,185,129,0.25)"
+                                : "rgba(239,68,68,0.25)"
+                            }`,
                           }}
                         >
-                          {health.ok ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+                          {health.ok ? (
+                            <CheckCircle2 size={12} />
+                          ) : (
+                            <AlertCircle size={12} />
+                          )}
                           <span>{health.message}</span>
                         </div>
                       )}
@@ -4981,7 +5583,9 @@ export default function AdminPanel({
                                       return {
                                         ...a,
                                         apiKey: editApiKeyInput.trim(),
-                                        clientSecret: editApiSecretInput.trim() || undefined,
+                                        clientSecret:
+                                          editApiSecretInput.trim() ||
+                                          undefined,
                                         monthlyQuota: editApiQuotaInput,
                                       }
                                     }
@@ -4992,14 +5596,29 @@ export default function AdminPanel({
                                   setEditingApiId(null)
                                   showToast(`${api.name} configuration saved.`)
                                 }}
-                                style={{ fontSize: "11px", padding: "5px 10px", borderRadius: "4px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                                style={{
+                                  fontSize: "11px",
+                                  padding: "5px 10px",
+                                  borderRadius: "4px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                }}
                               >
                                 <Save size={11} /> Save
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setEditingApiId(null)}
-                                style={{ fontSize: "11px", padding: "5px 10px", borderRadius: "4px", background: "transparent", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer" }}
+                                style={{
+                                  fontSize: "11px",
+                                  padding: "5px 10px",
+                                  borderRadius: "4px",
+                                  background: "transparent",
+                                  border: "1px solid var(--border)",
+                                  color: "var(--text)",
+                                  cursor: "pointer",
+                                }}
                               >
                                 Cancel
                               </button>
@@ -5037,7 +5656,13 @@ export default function AdminPanel({
                               type="button"
                               onClick={async () => {
                                 const updated = cloudApis.map((a) =>
-                                  a.id === api.id ? { ...a, usedThisMonth: 0, status: "active" as const } : a,
+                                  a.id === api.id
+                                    ? {
+                                        ...a,
+                                        usedThisMonth: 0,
+                                        status: "active" as const,
+                                      }
+                                    : a,
                                 )
                                 setCloudApis(updated)
                                 await saveCloudApis(updated)
@@ -5066,8 +5691,15 @@ export default function AdminPanel({
                             setTestingApiId(api.id)
                             try {
                               const res = await testApiHealth(api)
-                              setApiHealthResults((prev) => ({ ...prev, [api.id]: res }))
-                              showToast(res.ok ? `${api.name}: ${res.message}` : `Test failed: ${res.message}`)
+                              setApiHealthResults((prev) => ({
+                                ...prev,
+                                [api.id]: res,
+                              }))
+                              showToast(
+                                res.ok
+                                  ? `${api.name}: ${res.message}`
+                                  : `Test failed: ${res.message}`,
+                              )
                             } catch (err: any) {
                               showToast(`Error: ${err.message}`)
                             } finally {
@@ -5087,7 +5719,10 @@ export default function AdminPanel({
                             cursor: isTesting ? "wait" : "pointer",
                           }}
                         >
-                          <RefreshCw size={11} className={isTesting ? "spin" : ""} />
+                          <RefreshCw
+                            size={11}
+                            className={isTesting ? "spin" : ""}
+                          />
                           {isTesting ? "Pinging..." : "Test Ping"}
                         </button>
                       </div>
@@ -5103,7 +5738,10 @@ export default function AdminPanel({
           TAB 5: ADMIN SETTINGS & DATABASE ENGINE
           ========================================================================= */}
       {activeTab === "settings" && (
-        <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div
+          className="page-enter"
+          style={{ display: "flex", flexDirection: "column", gap: "24px" }}
+        >
           {/* Header Overview Banner */}
           <div
             style={{
@@ -5136,13 +5774,27 @@ export default function AdminPanel({
               >
                 <Database size={13} /> Database-Backed Administration
               </div>
-              <h2 style={{ margin: "2px 0 6px 0", fontSize: "20px", color: "var(--text)" }}>
+              <h2
+                style={{
+                  margin: "2px 0 6px 0",
+                  fontSize: "20px",
+                  color: "var(--text)",
+                }}
+              >
                 Administrator Security & Database Settings
               </h2>
-              <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)", maxWidth: "680px" }}>
-                Update your administrator email, name, or password at any time. All configuration
-                changes are backed by the secure server disk database
-                and mirrored to browser IndexedDB for offline resilience.
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "13px",
+                  color: "var(--muted)",
+                  maxWidth: "680px",
+                }}
+              >
+                Update your administrator email, name, or password at any time.
+                All configuration changes are backed by the secure server disk
+                database and mirrored to browser IndexedDB for offline
+                resilience.
               </p>
             </div>
 
@@ -5182,8 +5834,17 @@ export default function AdminPanel({
               border: "1px solid var(--border)",
             }}
           >
-            <h3 style={{ fontSize: "15px", margin: "0 0 14px 0", display: "flex", alignItems: "center", gap: "8px" }}>
-              <Server size={16} color="#3b82f6" /> Database Engine & Persistence Layer
+            <h3
+              style={{
+                fontSize: "15px",
+                margin: "0 0 14px 0",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <Server size={16} color="#3b82f6" /> Database Engine & Persistence
+              Layer
             </h3>
             <div
               style={{
@@ -5201,10 +5862,23 @@ export default function AdminPanel({
                   border: "1px solid var(--border)",
                 }}
               >
-                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    display: "block",
+                  }}
+                >
                   Primary Database Engine
                 </span>
-                <strong style={{ fontSize: "13px", color: "var(--text)", marginTop: "4px", display: "block" }}>
+                <strong
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--text)",
+                    marginTop: "4px",
+                    display: "block",
+                  }}
+                >
                   {dbStatus?.engine || "Server Disk Database (JSON/IndexedDB)"}
                 </strong>
               </div>
@@ -5217,10 +5891,24 @@ export default function AdminPanel({
                   border: "1px solid var(--border)",
                 }}
               >
-                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    display: "block",
+                  }}
+                >
                   Database File Location
                 </span>
-                <strong style={{ fontSize: "12px", color: "#00C9B7", fontFamily: "monospace", marginTop: "4px", display: "block" }}>
+                <strong
+                  style={{
+                    fontSize: "12px",
+                    color: "#00C9B7",
+                    fontFamily: "monospace",
+                    marginTop: "4px",
+                    display: "block",
+                  }}
+                >
                   data/masterfile-db.json
                 </strong>
               </div>
@@ -5233,10 +5921,23 @@ export default function AdminPanel({
                   border: "1px solid var(--border)",
                 }}
               >
-                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    display: "block",
+                  }}
+                >
                   Total Persisted Users
                 </span>
-                <strong style={{ fontSize: "13px", color: "var(--text)", marginTop: "4px", display: "block" }}>
+                <strong
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--text)",
+                    marginTop: "4px",
+                    display: "block",
+                  }}
+                >
                   {userList.length} Registered Accounts
                 </strong>
               </div>
@@ -5249,10 +5950,23 @@ export default function AdminPanel({
                   border: "1px solid var(--border)",
                 }}
               >
-                <span style={{ fontSize: "11px", color: "var(--muted)", display: "block" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    display: "block",
+                  }}
+                >
                   Client IndexedDB Engine
                 </span>
-                <strong style={{ fontSize: "13px", color: "#10b981", marginTop: "4px", display: "block" }}>
+                <strong
+                  style={{
+                    fontSize: "13px",
+                    color: "#10b981",
+                    marginTop: "4px",
+                    display: "block",
+                  }}
+                >
                   IndexedDB Active (masterfile_admin_db)
                 </strong>
               </div>
@@ -5335,11 +6049,27 @@ export default function AdminPanel({
               border: "1px solid rgba(0, 201, 183, 0.35)",
             }}
           >
-            <h3 style={{ fontSize: "16px", margin: "0 0 4px 0", display: "flex", alignItems: "center", gap: "8px" }}>
-              <Lock size={16} color="#00C9B7" /> Change Administrator Credentials (At Any Time)
+            <h3
+              style={{
+                fontSize: "16px",
+                margin: "0 0 4px 0",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <Lock size={16} color="#00C9B7" /> Change Administrator
+              Credentials (At Any Time)
             </h3>
-            <p style={{ fontSize: "12.5px", color: "var(--muted)", margin: "0 0 20px 0" }}>
-              Enter your updated details below. Once saved, you can immediately sign in with the new email and password.
+            <p
+              style={{
+                fontSize: "12.5px",
+                color: "var(--muted)",
+                margin: "0 0 20px 0",
+              }}
+            >
+              Enter your updated details below. Once saved, you can immediately
+              sign in with the new email and password.
             </p>
 
             <form
@@ -5349,11 +6079,18 @@ export default function AdminPanel({
                 setAdminSaveStatus(null)
 
                 try {
-                  if (adminPassInput && adminPassInput !== adminConfirmPassInput) {
-                    throw new Error("New password and confirmation do not match.")
+                  if (
+                    adminPassInput &&
+                    adminPassInput !== adminConfirmPassInput
+                  ) {
+                    throw new Error(
+                      "New password and confirmation do not match.",
+                    )
                   }
                   if (adminPassInput && adminPassInput.length < 8) {
-                    throw new Error("New password must be at least 8 characters long.")
+                    throw new Error(
+                      "New password must be at least 8 characters long.",
+                    )
                   }
 
                   const res = await updateAdminSettings({
@@ -5371,18 +6108,39 @@ export default function AdminPanel({
                 } catch (err: any) {
                   setAdminSaveStatus({
                     type: "error",
-                    msg: err.message || "Failed to update administrator settings.",
+                    msg:
+                      err.message || "Failed to update administrator settings.",
                   })
-                  showToast(err.message || "Failed to update administrator settings.")
+                  showToast(
+                    err.message || "Failed to update administrator settings.",
+                  )
                 } finally {
                   setAdminSaving(false)
                 }
               }}
-              style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "700px" }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                maxWidth: "700px",
+              }}
             >
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                }}
+              >
                 <div>
-                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                  <label
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      display: "block",
+                      marginBottom: "6px",
+                    }}
+                  >
                     Administrator Display Name
                   </label>
                   <input
@@ -5404,7 +6162,14 @@ export default function AdminPanel({
                 </div>
 
                 <div>
-                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                  <label
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      display: "block",
+                      marginBottom: "6px",
+                    }}
+                  >
                     Administrator Email Address
                   </label>
                   <input
@@ -5426,9 +6191,22 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                }}
+              >
                 <div>
-                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                  <label
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      display: "block",
+                      marginBottom: "6px",
+                    }}
+                  >
                     New Password (optional)
                   </label>
                   <input
@@ -5449,7 +6227,14 @@ export default function AdminPanel({
                 </div>
 
                 <div>
-                  <label style={{ fontSize: "12px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>
+                  <label
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted)",
+                      display: "block",
+                      marginBottom: "6px",
+                    }}
+                  >
                     Confirm New Password
                   </label>
                   <input
@@ -5470,7 +6255,13 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setAdminShowPassText(!adminShowPassText)}
@@ -5504,7 +6295,9 @@ export default function AdminPanel({
                   }}
                 >
                   <Save size={14} />
-                  {adminSaving ? "Saving to Database..." : "Save Changes to Database"}
+                  {adminSaving
+                    ? "Saving to Database..."
+                    : "Save Changes to Database"}
                 </button>
               </div>
 
@@ -5518,11 +6311,15 @@ export default function AdminPanel({
                       adminSaveStatus.type === "success"
                         ? "rgba(16, 185, 129, 0.12)"
                         : "rgba(239, 68, 68, 0.12)",
-                    border: `1px solid ${adminSaveStatus.type === "success"
+                    border: `1px solid ${
+                      adminSaveStatus.type === "success"
                         ? "rgba(16, 185, 129, 0.3)"
                         : "rgba(239, 68, 68, 0.3)"
-                      }`,
-                    color: adminSaveStatus.type === "success" ? "#10b981" : "#ef4444",
+                    }`,
+                    color:
+                      adminSaveStatus.type === "success"
+                        ? "#10b981"
+                        : "#ef4444",
                   }}
                 >
                   {adminSaveStatus.msg}
@@ -5546,11 +6343,14 @@ export default function AdminPanel({
             }}
           >
             <div>
-              <strong style={{ fontSize: "13px", color: "#fbbf24", display: "block" }}>
+              <strong
+                style={{ fontSize: "13px", color: "#fbbf24", display: "block" }}
+              >
                 Emergency Factory Reset
               </strong>
               <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-                Reset administrator credentials to the database default (<code>admin@masterfilepro.com</code>).
+                Reset administrator credentials to the database default (
+                <code>admin@masterfilepro.com</code>).
               </span>
             </div>
 

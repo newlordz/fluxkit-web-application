@@ -1433,6 +1433,12 @@
   color: #00877a;
 }
 
+:root[data-theme='light'] .admin-nav-tab::before,
+:root[data-theme='light'] .admin-nav-tab::after {
+  display: none !important;
+  content: none !important;
+}
+
 :root[data-theme='light'] .admin-nav-badge {
   background: #e2e8f0;
   color: #475569;

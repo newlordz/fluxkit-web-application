@@ -918,8 +918,9 @@ html, body {
 .admin-nav-track {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  padding: 6px 8px 8px;
+  padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -930,6 +931,7 @@ html, body {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 201, 183, 0.45) transparent;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-nav-track::-webkit-scrollbar {
@@ -994,21 +996,50 @@ html, body {
 }
 
 .admin-nav-tab {
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 9px 15px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--muted);
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
   transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
+  position: relative;
+  text-align: center;
+}
+
+/* Explicitly disable the global sidebar nav button.active:before indicator on admin tabs */
+.admin-nav-tab::before,
+.admin-nav-tab::after {
+  display: none !important;
+  content: none !important;
+}
+
+@media (max-width: 1150px) {
+  .admin-nav-badge {
+    display: none !important;
+  }
+}
+
+@media (max-width: 860px) {
+  .admin-nav-label {
+    display: none !important;
+  }
+  .admin-nav-tab {
+    flex: 1 1 0 !important;
+    padding: 11px 6px;
+    min-width: 44px;
+    justify-content: center;
+  }
 }
 
 .admin-nav-tab:hover {

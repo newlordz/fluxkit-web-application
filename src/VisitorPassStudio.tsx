@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from "react"
+
 import QRCode from "qrcode"
+
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
+
 import {
   IdCard,
   Printer,
@@ -34,246 +37,432 @@ import {
   Check,
   User,
 } from "lucide-react"
+
 import { useNotify } from "./Notifications"
 
 export type BadgeFormat = "cr80" | "clip" | "mobile" | "a4"
+
 export type AccessTier = "general" | "vip" | "contractor" | "interview" | "restricted"
 
 export interface VisitorRecord {
   id: string
+
   fullName: string
+
   organization: string
+
   email: string
+
   phone: string
+
   vehiclePlate: string
+
   hostName: string
+
   hostDepartment: string
+
   location: string
+
   tier: AccessTier
+
   visitDate: string
+
   timeIn: string
+
   timeOut: string
+
   wifiGranted: boolean
+
   wifiSsid: string
+
   wifiPassword: string
+
   ndaAccepted: boolean
+
   photoUrl: string
+
   status: "Checked-In" | "Expected" | "Checked-Out"
+
   createdAt: string
+
   securityToken: string
 }
 
 interface VisitorPassStudioProps {
   navigate?: (route: string) => void
+
   onComplete?: () => void
 }
 
-const TIER_CONFIG: Record<
-  AccessTier,
-  { label: string; color: string; bg: string; border: string; text: string }
-> = {
+const TIER_CONFIG: Record<AccessTier, {
+  label: string
+  color: string
+  bg: string
+  border: string
+  text: string
+}> = {
   general: {
     label: "GENERAL VISITOR",
+
     color: "#00C9B7",
+
     bg: "rgba(0, 201, 183, 0.12)",
+
     border: "#00C9B7",
+
     text: "#008a7d",
   },
+
   vip: {
     label: "VIP EXECUTIVE",
+
     color: "#8b5cf6",
+
     bg: "rgba(139, 92, 246, 0.14)",
+
     border: "#8b5cf6",
+
     text: "#7c3aed",
   },
+
   contractor: {
     label: "CONTRACTOR / VENDOR",
+
     color: "#f59e0b",
+
     bg: "rgba(245, 158, 11, 0.14)",
+
     border: "#f59e0b",
+
     text: "#b45309",
   },
+
   interview: {
     label: "CANDIDATE INTERVIEW",
+
     color: "#10b981",
+
     bg: "rgba(16, 185, 129, 0.14)",
+
     border: "#10b981",
+
     text: "#065f46",
   },
+
   restricted: {
     label: "ESCORT REQUIRED",
+
     color: "#ef4444",
+
     bg: "rgba(239, 68, 68, 0.14)",
+
     border: "#ef4444",
+
     text: "#991b1b",
   },
 }
 
 const BRAND_THEMES = [
   { id: "navy", name: "Corporate Navy", primary: "#0A2558", accent: "#00C9B7" },
+
   { id: "teal", name: "Emerald Teal", primary: "#064e3b", accent: "#10b981" },
+
   { id: "indigo", name: "Royal Indigo", primary: "#312e81", accent: "#6366f1" },
-  { id: "crimson", name: "Executive Crimson", primary: "#881337", accent: "#f43f5e" },
+
+  {
+    id: "crimson",
+    name: "Executive Crimson",
+    primary: "#881337",
+    accent: "#f43f5e",
+  },
+
   { id: "carbon", name: "Slate Carbon", primary: "#0f172a", accent: "#38bdf8" },
 ]
 
-export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassStudioProps) {
+export default function VisitorPassStudio({
+  navigate,
+  onComplete,
+}: VisitorPassStudioProps) {
   const notify = useNotify()
 
   // Primary active studio tab
-  const [activeTab, setActiveTab] = useState<"designer" | "log" | "verifier">("designer")
+
+  const [activeTab, setActiveTab] = useState<"designer" | "log" | "verifier">(
+    "designer",
+  )
 
   // Selected badge format preset
+
   const [badgeFormat, setBadgeFormat] = useState<BadgeFormat>("cr80")
 
   // Company / Facility branding
+
   const [companyName, setCompanyName] = useState("Masterfile Enterprises Inc.")
-  const [facilityLocation, setFacilityLocation] = useState("Global Headquarters · Floor 14")
+
+  const [facilityLocation, setFacilityLocation] = useState(
+    "Global Headquarters · Floor 14",
+  )
+
   const [selectedTheme, setSelectedTheme] = useState(BRAND_THEMES[0])
 
   // Visitor fields (initialized blank for new entry)
-  const [passId, setPassId] = useState(() => `VP-${Math.floor(1000 + Math.random() * 9000)}`)
+
+  const [passId, setPassId] = useState(
+    () => `VP-${Math.floor(1000 + Math.random() * 9000)}`,
+  )
+
   const [fullName, setFullName] = useState("")
+
   const [organization, setOrganization] = useState("")
+
   const [email, setEmail] = useState("")
+
   const [phone, setPhone] = useState("")
+
   const [vehiclePlate, setVehiclePlate] = useState("")
+
   const [photoDataUrl, setPhotoDataUrl] = useState<string>("")
 
   // Host details (initialized blank for new entry)
+
   const [hostName, setHostName] = useState("")
+
   const [hostDepartment, setHostDepartment] = useState("")
+
   const [meetingRoom, setMeetingRoom] = useState("")
 
   // Access & Security
+
   const [accessTier, setAccessTier] = useState<AccessTier>("vip")
-  const [visitDate, setVisitDate] = useState(() => new Date().toISOString().split("T")[0])
+
+  const [visitDate, setVisitDate] = useState(
+    () => new Date().toISOString().split("T")[0],
+  )
+
   const [timeIn, setTimeIn] = useState("08:30")
+
   const [timeOut, setTimeOut] = useState("17:30")
+
   const [wifiGranted, setWifiGranted] = useState(true)
+
   const [wifiSsid, setWifiSsid] = useState("Masterfile-Guest")
+
   const [wifiPassword, setWifiPassword] = useState("Welcome@2026!")
+
   const [ndaAccepted, setNdaAccepted] = useState(true)
 
   // QR Code preview
+
   const [qrDataUrl, setQrDataUrl] = useState<string>("")
+
   const [isExporting, setIsExporting] = useState(false)
+
   const [copiedWifi, setCopiedWifi] = useState(false)
 
   // Visitor log state
+
   const [visitorLog, setVisitorLog] = useState<VisitorRecord[]>([])
+
   const [logSearchQuery, setLogSearchQuery] = useState("")
+
   const [statusFilter, setStatusFilter] = useState<string>("All")
 
   // Verifier state
+
   const [verifyInput, setVerifyInput] = useState("")
-  const [verifiedRecord, setVerifiedRecord] = useState<VisitorRecord | null>(null)
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "valid" | "not_found">("idle")
+
+  const [verifiedRecord, setVerifiedRecord] = useState<VisitorRecord | null>(
+    null,
+  )
+
+  const [verifyStatus, setVerifyStatus] =
+    useState<"idle" | "valid" | "not_found">("idle")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
   const badgeCardRef = useRef<HTMLDivElement>(null)
 
   // Generate unique pass ID
+
   const regeneratePassId = () => {
     const randomNum = Math.floor(1000 + Math.random() * 9000)
+
     setPassId(`VP-${randomNum}`)
   }
 
   // Clear all visitor and host fields so form is completely blank
+
   const handleClearForm = () => {
     setFullName("")
+
     setOrganization("")
+
     setEmail("")
+
     setPhone("")
+
     setVehiclePlate("")
+
     setPhotoDataUrl("")
+
     setHostName("")
+
     setHostDepartment("")
+
     setMeetingRoom("")
+
     regeneratePassId()
+
     notify("Visitor form cleared.", "info")
   }
 
   // Load visitor log from localStorage on mount
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem("fluxkit_visitor_log")
+
       if (stored) {
         setVisitorLog(JSON.parse(stored))
       } else {
         // Seed default high-quality corporate records
+
         const initialLog: VisitorRecord[] = [
           {
             id: "VP-8492",
+
             fullName: "Dr. Sarah Jenkins",
+
             organization: "Apex Quantum Technologies",
+
             email: "sarah.jenkins@apexquantum.io",
+
             phone: "+1 (555) 382-9014",
+
             vehiclePlate: "7XYZ942",
+
             hostName: "David Vance",
+
             hostDepartment: "Strategic Architecture",
+
             location: "Executive Boardroom C",
+
             tier: "vip",
+
             visitDate: new Date().toISOString().split("T")[0],
+
             timeIn: "08:30",
+
             timeOut: "17:30",
+
             wifiGranted: true,
+
             wifiSsid: "Masterfile-Guest",
+
             wifiPassword: "Welcome@2026!",
+
             ndaAccepted: true,
+
             photoUrl: "",
+
             status: "Checked-In",
+
             createdAt: new Date().toISOString(),
+
             securityToken: "SEC-90218A",
           },
+
           {
             id: "VP-7319",
+
             fullName: "Marcus Holloway",
+
             organization: "Cisco Infrastructure Team",
+
             email: "mholloway@contractor.net",
+
             phone: "+1 (555) 831-2940",
+
             vehiclePlate: "9KLM831",
+
             hostName: "Elena Rostova",
+
             hostDepartment: "Network & Security",
+
             location: "Server Room B · Basement 1",
+
             tier: "contractor",
+
             visitDate: new Date().toISOString().split("T")[0],
+
             timeIn: "09:00",
+
             timeOut: "16:00",
+
             wifiGranted: true,
+
             wifiSsid: "Masterfile-Guest",
+
             wifiPassword: "Welcome@2026!",
+
             ndaAccepted: true,
+
             photoUrl: "",
+
             status: "Checked-In",
+
             createdAt: new Date().toISOString(),
+
             securityToken: "SEC-48194B",
           },
+
           {
             id: "VP-6204",
+
             fullName: "Chloe Zhang",
+
             organization: "Independent Candidate",
+
             email: "chloe.zhang@alumni.mit.edu",
+
             phone: "+1 (555) 193-4820",
+
             vehiclePlate: "",
+
             hostName: "Julian Barnes",
+
             hostDepartment: "People Operations",
+
             location: "Interview Room 4",
+
             tier: "interview",
+
             visitDate: new Date().toISOString().split("T")[0],
+
             timeIn: "11:00",
+
             timeOut: "13:00",
+
             wifiGranted: false,
+
             wifiSsid: "",
+
             wifiPassword: "",
+
             ndaAccepted: true,
+
             photoUrl: "",
+
             status: "Expected",
+
             createdAt: new Date().toISOString(),
+
             securityToken: "SEC-37189C",
           },
         ]
+
         setVisitorLog(initialLog)
+
         localStorage.setItem("fluxkit_visitor_log", JSON.stringify(initialLog))
       }
     } catch {
@@ -282,8 +471,10 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
   }, [])
 
   // Save log whenever updated
+
   const persistLog = (updated: VisitorRecord[]) => {
     setVisitorLog(updated)
+
     try {
       localStorage.setItem("fluxkit_visitor_log", JSON.stringify(updated))
     } catch {
@@ -292,335 +483,533 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
   }
 
   // Generate authentic QR code payload whenever details change
+
   useEffect(() => {
     const payload = JSON.stringify({
       protocol: "FLUXPASS/1.0",
+
       id: passId,
+
       name: fullName,
+
       org: organization,
+
       host: hostName,
+
       dept: hostDepartment,
+
       tier: accessTier.toUpperCase(),
+
       date: visitDate,
+
       validUntil: timeOut,
+
       wifi: wifiGranted ? wifiSsid : null,
+
       sec: "AUTHENTIC-CRYPTO-SIGNATURE",
     })
 
     QRCode.toDataURL(payload, {
       width: 320,
+
       margin: 1,
+
       color: {
         dark: "#06204D",
+
         light: "#FFFFFF",
       },
+
       errorCorrectionLevel: "M",
     })
+
       .then((url) => setQrDataUrl(url))
+
       .catch((err) => console.error("QR Code Error:", err))
-  }, [passId, fullName, organization, hostName, hostDepartment, accessTier, visitDate, timeOut, wifiGranted, wifiSsid])
+  }, [
+    passId,
+    fullName,
+    organization,
+    hostName,
+    hostDepartment,
+    accessTier,
+    visitDate,
+    timeOut,
+    wifiGranted,
+    wifiSsid,
+  ])
 
   // Handle Photo File Upload
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+
     if (!file) return
 
     if (!file.type.startsWith("image/")) {
       notify("Please select a valid image file (JPG, PNG, WebP).", "error")
+
       return
     }
 
     const reader = new FileReader()
+
     reader.onload = (event) => {
       if (typeof event.target?.result === "string") {
         setPhotoDataUrl(event.target.result)
+
         notify("Visitor portrait updated successfully.", "success")
       }
     }
+
     reader.readAsDataURL(file)
   }
 
   // Check In and Save to Visitor Log
+
   const handleIssueAndCheckIn = () => {
     const newRecord: VisitorRecord = {
       id: passId,
+
       fullName: fullName || "Guest Visitor",
+
       organization: organization || "Independent",
+
       email,
+
       phone,
+
       vehiclePlate,
+
       hostName: hostName || "Reception Desk",
+
       hostDepartment: hostDepartment || "Front Lobby",
+
       location: meetingRoom || "Main Facility",
+
       tier: accessTier,
+
       visitDate,
+
       timeIn,
+
       timeOut,
+
       wifiGranted,
+
       wifiSsid,
+
       wifiPassword,
+
       ndaAccepted,
+
       photoUrl: photoDataUrl,
+
       status: "Checked-In",
+
       createdAt: new Date().toISOString(),
+
       securityToken: `SEC-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
     }
 
     const existingIdx = visitorLog.findIndex((r) => r.id === passId)
+
     let updated: VisitorRecord[] = []
+
     if (existingIdx >= 0) {
       updated = [...visitorLog]
+
       updated[existingIdx] = newRecord
     } else {
       updated = [newRecord, ...visitorLog]
     }
 
     persistLog(updated)
+
     notify(`Pass ${passId} issued and checked in on premises!`, "success")
+
     if (onComplete) onComplete()
   }
 
   // Print Badge directly
+
   const handlePrintBadge = () => {
     window.print()
+
     notify("Printing visitor pass...", "info")
+
     if (onComplete) onComplete()
   }
 
   // Export as High-Resolution Vector PDF via pdf-lib
+
   const handleExportPDF = async () => {
     try {
       setIsExporting(true)
+
       notify("Compiling vector PDF badge with security watermark...", "info")
 
       const pdfDoc = await PDFDocument.create()
+
       // Standard CR80 badge dimension: 85.6mm x 54mm portrait = 242.6pt x 385.5pt (or landscape 385.5pt x 242.6pt)
+
       // A4 Sheet: 595.28pt x 841.89pt
+
       let page
+
       if (badgeFormat === "a4") {
         page = pdfDoc.addPage([595.28, 841.89])
       } else if (badgeFormat === "clip") {
         // 4" x 3" Badge = 288pt x 216pt
+
         page = pdfDoc.addPage([288, 216])
       } else {
         // CR80 Portrait = 242.6pt x 385.5pt
+
         page = pdfDoc.addPage([242.6, 385.5])
       }
 
       const { width, height } = page.getSize()
+
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
       const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
       // Hex to rgb helper
+
       const hexToRgb = (hex: string) => {
         const cleaned = hex.replace("#", "")
+
         const num = parseInt(cleaned, 16)
-        return rgb(((num >> 16) & 255) / 255, ((num >> 8) & 255) / 255, (num & 255) / 255)
+
+        return rgb(
+          ((num >> 16) & 255) / 255,
+          ((num >> 8) & 255) / 255,
+          (num & 255) / 255,
+        )
       }
 
       const primaryColor = hexToRgb(selectedTheme.primary)
+
       const accentColor = hexToRgb(selectedTheme.accent)
 
       if (badgeFormat === "a4") {
         // Full A4 Security & Parking Pass
+
         page.drawRectangle({
           x: 0,
+
           y: height - 100,
+
           width: width,
+
           height: 100,
+
           color: primaryColor,
         })
 
         page.drawText(companyName.toUpperCase(), {
           x: 40,
+
           y: height - 45,
+
           size: 18,
+
           font: fontBold,
+
           color: rgb(1, 1, 1),
         })
 
-        page.drawText(`OFFICIAL FACILITY VISITOR & PARKING PASS · ID: ${passId}`, {
-          x: 40,
-          y: height - 70,
-          size: 11,
-          font: fontRegular,
-          color: accentColor,
-        })
+        page.drawText(
+          `OFFICIAL FACILITY VISITOR & PARKING PASS · ID: ${passId}`,
+          {
+            x: 40,
+
+            y: height - 70,
+
+            size: 11,
+
+            font: fontRegular,
+
+            color: accentColor,
+          },
+        )
 
         // Draw Badges section
+
         page.drawText("VISITOR PARTICULARS", {
           x: 40,
+
           y: height - 130,
+
           size: 12,
+
           font: fontBold,
+
           color: primaryColor,
         })
 
         const details = [
           `Visitor: ${fullName}`,
+
           `Organization: ${organization}`,
+
           `Host: ${hostName} (${hostDepartment})`,
+
           `Destination: ${meetingRoom}`,
+
           `Access Classification: ${TIER_CONFIG[accessTier].label}`,
+
           `Valid Date: ${visitDate} (${timeIn} - ${timeOut})`,
+
           `NDA Compliance: ${ndaAccepted ? "Verified & Signed" : "Pending"}`,
         ]
 
         let curY = height - 155
+
         for (const line of details) {
           page.drawText(line, {
             x: 40,
+
             y: curY,
+
             size: 10,
+
             font: fontRegular,
+
             color: rgb(0.1, 0.15, 0.25),
           })
+
           curY -= 18
         }
 
         // Embed QR Code
+
         if (qrDataUrl) {
           const qrImage = await pdfDoc.embedPng(qrDataUrl)
+
           page.drawImage(qrImage, {
             x: width - 180,
+
             y: height - 260,
+
             width: 140,
+
             height: 140,
           })
+
           page.drawText("SCAN TO VERIFY PASS", {
             x: width - 170,
+
             y: height - 275,
+
             size: 8,
+
             font: fontBold,
+
             color: primaryColor,
           })
         }
 
         // Parking Permit Box (Cut-out)
+
         page.drawRectangle({
           x: 40,
+
           y: 80,
+
           width: width - 80,
+
           height: 180,
+
           borderColor: primaryColor,
+
           borderWidth: 2,
+
           borderDashArray: [6, 4],
+
           color: rgb(0.97, 0.98, 1),
         })
 
         page.drawText("FOLD & PLACE ON VEHICLE DASHBOARD", {
           x: 60,
+
           y: 235,
+
           size: 12,
+
           font: fontBold,
+
           color: primaryColor,
         })
 
-        page.drawText(`VEHICLE LICENSE PLATE: ${vehiclePlate || "NO REGISTERED VEHICLE"}`, {
-          x: 60,
-          y: 210,
-          size: 16,
-          font: fontBold,
-          color: accentColor,
-        })
+        page.drawText(
+          `VEHICLE LICENSE PLATE: ${vehiclePlate || "NO REGISTERED VEHICLE"}`,
+          {
+            x: 60,
+
+            y: 210,
+
+            size: 16,
+
+            font: fontBold,
+
+            color: accentColor,
+          },
+        )
 
         page.drawText(
           `Authorized by ${companyName} Security Directorate · Valid on ${visitDate} only`,
+
           {
             x: 60,
+
             y: 185,
+
             size: 9,
+
             font: fontRegular,
+
             color: rgb(0.3, 0.35, 0.4),
           },
         )
       } else {
         // CR80 or Clip Badge
+
         const headerHeight = badgeFormat === "clip" ? 50 : 70
+
         page.drawRectangle({
           x: 0,
+
           y: height - headerHeight,
+
           width: width,
+
           height: headerHeight,
+
           color: primaryColor,
         })
 
         page.drawText(companyName.toUpperCase().slice(0, 30), {
           x: 16,
+
           y: height - 28,
+
           size: badgeFormat === "clip" ? 10 : 11,
+
           font: fontBold,
+
           color: rgb(1, 1, 1),
         })
 
         page.drawText(TIER_CONFIG[accessTier].label, {
           x: 16,
+
           y: height - (badgeFormat === "clip" ? 42 : 50),
+
           size: 9,
+
           font: fontBold,
+
           color: accentColor,
         })
 
         // Visitor Name
+
         page.drawText(fullName.slice(0, 26), {
           x: 16,
+
           y: height - (headerHeight + 25),
+
           size: 15,
+
           font: fontBold,
+
           color: primaryColor,
         })
 
         page.drawText(organization.slice(0, 32), {
           x: 16,
+
           y: height - (headerHeight + 40),
+
           size: 10,
+
           font: fontRegular,
+
           color: rgb(0.4, 0.45, 0.5),
         })
 
         // Host info
+
         page.drawText(`HOST: ${hostName}`, {
           x: 16,
+
           y: height - (headerHeight + 60),
+
           size: 9,
+
           font: fontBold,
+
           color: rgb(0.2, 0.25, 0.3),
         })
 
         page.drawText(`DATE: ${visitDate} · PASS ${passId}`, {
           x: 16,
+
           y: height - (headerHeight + 75),
+
           size: 8,
+
           font: fontRegular,
+
           color: rgb(0.4, 0.45, 0.5),
         })
 
         // Embed QR Code
+
         if (qrDataUrl) {
           const qrImage = await pdfDoc.embedPng(qrDataUrl)
+
           const qrSize = badgeFormat === "clip" ? 75 : 95
+
           page.drawImage(qrImage, {
             x: width - qrSize - 16,
+
             y: 16,
+
             width: qrSize,
+
             height: qrSize,
           })
         }
       }
 
       const pdfBytes = await pdfDoc.save()
+
       const blob = new Blob([pdfBytes as any], { type: "application/pdf" })
+
       const url = URL.createObjectURL(blob)
+
       const a = document.createElement("a")
+
       a.href = url
+
       a.download = `${companyName.replace(/[^a-zA-Z0-9]/g, "_")}_Visitor_Pass_${passId}.pdf`
+
       a.click()
+
       URL.revokeObjectURL(url)
 
-      notify("Vector PDF badge generated and downloaded successfully!", "success")
+      notify(
+        "Vector PDF badge generated and downloaded successfully!",
+        "success",
+      )
+
       if (onComplete) onComplete()
     } catch (err) {
       console.error(err)
+
       notify("Failed to generate PDF badge. Please try again.", "error")
     } finally {
       setIsExporting(false)
@@ -628,71 +1017,119 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
   }
 
   // Export Visitor Log as CSV
+
   const handleExportCSV = () => {
     if (visitorLog.length === 0) {
       notify("Visitor log is currently empty.", "info")
+
       return
     }
 
     const headers = [
       "Pass ID",
+
       "Visitor Name",
+
       "Organization",
+
       "Email",
+
       "Phone",
+
       "License Plate",
+
       "Host Name",
+
       "Department",
+
       "Location",
+
       "Access Tier",
+
       "Visit Date",
+
       "Time In",
+
       "Time Out",
+
       "Wi-Fi Granted",
+
       "NDA Accepted",
+
       "Status",
+
       "Security Token",
     ]
 
     const rows = visitorLog.map((r) => [
       `"${r.id}"`,
+
       `"${r.fullName.replace(/"/g, '""')}"`,
+
       `"${r.organization.replace(/"/g, '""')}"`,
+
       `"${r.email}"`,
+
       `"${r.phone}"`,
+
       `"${r.vehiclePlate}"`,
+
       `"${r.hostName.replace(/"/g, '""')}"`,
+
       `"${r.hostDepartment.replace(/"/g, '""')}"`,
+
       `"${r.location.replace(/"/g, '""')}"`,
+
       `"${TIER_CONFIG[r.tier]?.label || r.tier}"`,
+
       `"${r.visitDate}"`,
+
       `"${r.timeIn}"`,
+
       `"${r.timeOut}"`,
+
       r.wifiGranted ? "YES" : "NO",
+
       r.ndaAccepted ? "YES" : "NO",
+
       `"${r.status}"`,
+
       `"${r.securityToken}"`,
     ])
 
-    const csvContent = [headers.join(","), ...rows.map((row) => row.join(","))].join("\r\n")
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.join(",")),
+    ].join("\r\n")
+
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+
     const url = URL.createObjectURL(blob)
+
     const a = document.createElement("a")
+
     a.href = url
+
     a.download = `MasterfilePro_Visitor_Roster_${new Date().toISOString().split("T")[0]}.csv`
+
     a.click()
+
     URL.revokeObjectURL(url)
 
     notify("Visitor log exported as CSV evacuation roll.", "success")
   }
 
   // Handle Verify Pass Lookup
+
   const handleVerifyPass = (e: React.FormEvent) => {
     e.preventDefault()
+
     const query = verifyInput.trim().toUpperCase()
+
     if (!query) return
 
     // Search by pass ID, visitor name, or security token
+
     const match = visitorLog.find(
       (r) =>
         r.id.toUpperCase() === query ||
@@ -702,16 +1139,21 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
     if (match) {
       setVerifiedRecord(match)
+
       setVerifyStatus("valid")
+
       notify(`Pass ${match.id} verified for ${match.fullName}.`, "success")
     } else {
       setVerifiedRecord(null)
+
       setVerifyStatus("not_found")
+
       notify("Pass not found or invalid security signature.", "error")
     }
   }
 
   // Filter visitor log records
+
   const filteredLog = visitorLog.filter((item) => {
     const matchesQuery =
       item.fullName.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
@@ -720,6 +1162,7 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
       item.hostName.toLowerCase().includes(logSearchQuery.toLowerCase())
 
     const matchesStatus = statusFilter === "All" || item.status === statusFilter
+
     return matchesQuery && matchesStatus
   })
 
@@ -740,25 +1183,41 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
               <ChevronLeft size={16} /> All tools
             </button>
           )}
-          <div className="eyebrow" style={{ color: "#00C9B7", marginTop: "4px" }}>
+          <div
+            className="eyebrow"
+            style={{ color: "#00C9B7", marginTop: "4px" }}
+          >
             ENTERPRISE WORKSPACE & SECURITY
           </div>
           <h1 className="visitor-title">Visitor Pass & Badges</h1>
           <p className="visitor-subtitle">
-            Generate branded visitor ID cards, adhesive badges, and digital mobile passes with
-            scannable QR security and on-premises tracking.
+            Generate branded visitor ID cards, adhesive badges, and digital
+            mobile passes with scannable QR security and on-premises tracking.
           </p>
         </div>
 
         {/* Global Action Toolbar */}
         <div className="visitor-header-actions">
-          {(fullName || organization || email || phone || vehiclePlate || photoDataUrl || hostName || hostDepartment || meetingRoom) && (
+          {(fullName ||
+            organization ||
+            email ||
+            phone ||
+            vehiclePlate ||
+            photoDataUrl ||
+            hostName ||
+            hostDepartment ||
+            meetingRoom) && (
             <button
               type="button"
               className="text-button"
               onClick={handleClearForm}
               title="Clear all inputted fields"
-              style={{ fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+              style={{
+                fontSize: "12px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
             >
               <RefreshCw size={13} />
               <span>Clear Form</span>
@@ -830,11 +1289,15 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
           <div className="visitor-form-panel no-print">
             {/* Format Selector Pills */}
             <div className="visitor-section">
-              <label className="visitor-section-title">Badge Format & Presets</label>
+              <label className="visitor-section-title">
+                Badge Format & Presets
+              </label>
               <div className="badge-format-selector">
                 <button
                   type="button"
-                  className={`format-btn ${badgeFormat === "cr80" ? "selected" : ""}`}
+                  className={`format-btn ${
+                    badgeFormat === "cr80" ? "selected" : ""
+                  }`}
                   onClick={() => setBadgeFormat("cr80")}
                 >
                   <IdCard size={18} />
@@ -846,7 +1309,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
                 <button
                   type="button"
-                  className={`format-btn ${badgeFormat === "clip" ? "selected" : ""}`}
+                  className={`format-btn ${
+                    badgeFormat === "clip" ? "selected" : ""
+                  }`}
                   onClick={() => setBadgeFormat("clip")}
                 >
                   <FileBadge size={18} />
@@ -858,7 +1323,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
                 <button
                   type="button"
-                  className={`format-btn ${badgeFormat === "mobile" ? "selected" : ""}`}
+                  className={`format-btn ${
+                    badgeFormat === "mobile" ? "selected" : ""
+                  }`}
                   onClick={() => setBadgeFormat("mobile")}
                 >
                   <Smartphone size={18} />
@@ -870,7 +1337,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
                 <button
                   type="button"
-                  className={`format-btn ${badgeFormat === "a4" ? "selected" : ""}`}
+                  className={`format-btn ${
+                    badgeFormat === "a4" ? "selected" : ""
+                  }`}
                   onClick={() => setBadgeFormat("a4")}
                 >
                   <FileText size={18} />
@@ -884,14 +1353,37 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
             {/* Section 1: Visitor Information */}
             <div className="visitor-section">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <label className="visitor-section-title" style={{ margin: 0 }}>Visitor Information</label>
-                {(fullName || organization || email || phone || vehiclePlate || photoDataUrl || hostName || hostDepartment || meetingRoom) && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "8px",
+                }}
+              >
+                <label className="visitor-section-title" style={{ margin: 0 }}>
+                  Visitor Information
+                </label>
+                {(fullName ||
+                  organization ||
+                  email ||
+                  phone ||
+                  vehiclePlate ||
+                  photoDataUrl ||
+                  hostName ||
+                  hostDepartment ||
+                  meetingRoom) && (
                   <button
                     type="button"
                     className="text-button-sm"
                     onClick={handleClearForm}
-                    style={{ fontSize: "11px", color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
                   >
                     <RefreshCw size={11} /> Clear fields
                   </button>
@@ -945,7 +1437,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
               <div className="form-row-grid">
                 <div className="form-group">
-                  <label htmlFor="vis-plate">Vehicle License Plate (Parking)</label>
+                  <label htmlFor="vis-plate">
+                    Vehicle License Plate (Parking)
+                  </label>
                   <input
                     id="vis-plate"
                     type="text"
@@ -987,7 +1481,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
             {/* Section 2: Host & Security Classification */}
             <div className="visitor-section">
-              <label className="visitor-section-title">Host & Facility Security</label>
+              <label className="visitor-section-title">
+                Host & Facility Security
+              </label>
               <div className="form-row-grid">
                 <div className="form-group">
                   <label htmlFor="vis-host">Host Employee *</label>
@@ -1027,13 +1523,21 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   <select
                     id="vis-tier"
                     value={accessTier}
-                    onChange={(e) => setAccessTier(e.target.value as AccessTier)}
+                    onChange={(e) =>
+                      setAccessTier(e.target.value as AccessTier)
+                    }
                   >
                     <option value="general">General Visitor (Blue)</option>
                     <option value="vip">VIP Executive (Purple / Gold)</option>
-                    <option value="contractor">Contractor / Vendor (Amber)</option>
-                    <option value="interview">Candidate Interview (Emerald)</option>
-                    <option value="restricted">Escort Required (Red Alert)</option>
+                    <option value="contractor">
+                      Contractor / Vendor (Amber)
+                    </option>
+                    <option value="interview">
+                      Candidate Interview (Emerald)
+                    </option>
+                    <option value="restricted">
+                      Escort Required (Red Alert)
+                    </option>
                   </select>
                 </div>
               </div>
@@ -1071,7 +1575,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
             {/* Section 3: Wi-Fi & Facility Protocols */}
             <div className="visitor-section">
-              <label className="visitor-section-title">Wi-Fi & Facility Protocols</label>
+              <label className="visitor-section-title">
+                Wi-Fi & Facility Protocols
+              </label>
               <div className="checkbox-row">
                 <label className="custom-checkbox">
                   <input
@@ -1111,14 +1617,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                     checked={ndaAccepted}
                     onChange={(e) => setNdaAccepted(e.target.checked)}
                   />
-                  <span>Safety Briefing & Non-Disclosure (NDA) Acknowledged</span>
+                  <span>
+                    Safety Briefing & Non-Disclosure (NDA) Acknowledged
+                  </span>
                 </label>
               </div>
             </div>
 
             {/* Section 4: Corporate Branding */}
             <div className="visitor-section">
-              <label className="visitor-section-title">Corporate Branding & Themes</label>
+              <label className="visitor-section-title">
+                Corporate Branding & Themes
+              </label>
               <div className="form-group">
                 <label htmlFor="vis-company">Organization Header</label>
                 <input
@@ -1134,12 +1644,20 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   <button
                     key={th.id}
                     type="button"
-                    className={`theme-chip ${selectedTheme.id === th.id ? "active" : ""}`}
+                    className={`theme-chip ${
+                      selectedTheme.id === th.id ? "active" : ""
+                    }`}
                     onClick={() => setSelectedTheme(th)}
                     title={th.name}
                   >
-                    <span className="chip-color" style={{ background: th.primary }} />
-                    <span className="chip-accent" style={{ background: th.accent }} />
+                    <span
+                      className="chip-color"
+                      style={{ background: th.primary }}
+                    />
+                    <span
+                      className="chip-accent"
+                      style={{ background: th.accent }}
+                    />
                     <span className="chip-label">{th.name}</span>
                   </button>
                 ))}
@@ -1151,7 +1669,8 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
           <div className="visitor-preview-panel">
             <div className="preview-panel-header no-print">
               <span className="preview-label">
-                <EyeIcon /> Live Badge Preview · {badgeFormat.toUpperCase()} Mode
+                <EyeIcon /> Live Badge Preview · {badgeFormat.toUpperCase()}{" "}
+                Mode
               </span>
               <button
                 type="button"
@@ -1185,7 +1704,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       className="cr80-tier-pill"
                       style={{
                         background: tierMeta.bg,
+
                         color: tierMeta.color,
+
                         borderColor: tierMeta.border,
                       }}
                     >
@@ -1213,8 +1734,12 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       )}
                     </div>
 
-                    <div className="cr80-visitor-name">{fullName || "Visitor Name"}</div>
-                    <div className="cr80-visitor-org">{organization || "Organization / Affiliation"}</div>
+                    <div className="cr80-visitor-name">
+                      {fullName || "Visitor Name"}
+                    </div>
+                    <div className="cr80-visitor-org">
+                      {organization || "Organization / Affiliation"}
+                    </div>
 
                     {/* Metadata table */}
                     <div className="cr80-meta-grid">
@@ -1248,7 +1773,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       <div className="cr80-qr-meta">
                         <span className="cr80-pass-id">PASS #{passId}</span>
                         <small>SCAN AT FRONT TURNSTILE</small>
-                        {wifiGranted && <span className="cr80-wifi-tag">📶 WI-FI PASS</span>}
+                        {wifiGranted && (
+                          <span className="cr80-wifi-tag">📶 WI-FI PASS</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1271,37 +1798,54 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                     style={{ background: selectedTheme.primary }}
                   >
                     <div className="clip-brand">{companyName}</div>
-                    <div className="clip-tier-flag" style={{ color: selectedTheme.accent }}>
+                    <div
+                      className="clip-tier-flag"
+                      style={{ color: selectedTheme.accent }}
+                    >
                       {tierMeta.label}
                     </div>
                   </div>
 
                   <div className="clip-body-content">
                     <div className="clip-left-column">
-                      <div className="clip-visitor-name">{fullName || "Visitor Name"}</div>
-                      <div className="clip-visitor-org">{organization || "Organization / Affiliation"}</div>
+                      <div className="clip-visitor-name">
+                        {fullName || "Visitor Name"}
+                      </div>
+                      <div className="clip-visitor-org">
+                        {organization || "Organization / Affiliation"}
+                      </div>
 
                       <div className="clip-info-rows">
                         <div>
                           <span>HOST:</span>{" "}
                           <strong>
                             {hostName
-                              ? `${hostName}${hostDepartment ? ` (${hostDepartment})` : ""}`
+                              ? `${hostName}${
+                                  hostDepartment ? ` (${hostDepartment})` : ""
+                                }`
                               : "Front Desk Staff"}
                           </strong>
                         </div>
                         <div>
-                          <span>ROOM:</span> <strong>{meetingRoom || "Main Lobby"}</strong>
+                          <span>ROOM:</span>{" "}
+                          <strong>{meetingRoom || "Main Lobby"}</strong>
                         </div>
                         <div>
-                          <span>VALID:</span> <strong>{visitDate} ({timeIn} - {timeOut})</strong>
+                          <span>VALID:</span>{" "}
+                          <strong>
+                            {visitDate} ({timeIn} - {timeOut})
+                          </strong>
                         </div>
                       </div>
                     </div>
 
                     <div className="clip-right-column">
                       {qrDataUrl && (
-                        <img src={qrDataUrl} alt="Badge QR" className="clip-qr-img" />
+                        <img
+                          src={qrDataUrl}
+                          alt="Badge QR"
+                          className="clip-qr-img"
+                        />
                       )}
                       <div className="clip-pass-number">ID: {passId}</div>
                     </div>
@@ -1320,16 +1864,26 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                     >
                       <div className="mobile-header-top">
                         <span className="mobile-org-title">{companyName}</span>
-                        <span className="mobile-status-live">● ACTIVE PASS</span>
+                        <span className="mobile-status-live">
+                          ● ACTIVE PASS
+                        </span>
                       </div>
-                      <div className="mobile-guest-name">{fullName || "Visitor Name"}</div>
-                      <div className="mobile-guest-sub">{organization || "Organization / Affiliation"}</div>
+                      <div className="mobile-guest-name">
+                        {fullName || "Visitor Name"}
+                      </div>
+                      <div className="mobile-guest-sub">
+                        {organization || "Organization / Affiliation"}
+                      </div>
                     </div>
 
                     <div className="mobile-pass-body">
                       <div className="mobile-qr-wrapper">
                         {qrDataUrl && (
-                          <img src={qrDataUrl} alt="Wallet QR" className="mobile-qr-img" />
+                          <img
+                            src={qrDataUrl}
+                            alt="Wallet QR"
+                            className="mobile-qr-img"
+                          />
                         )}
                         <span className="mobile-scan-instruction">
                           Hold near security turnstile scanner
@@ -1339,7 +1893,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       <div className="mobile-details-list">
                         <div className="mobile-detail-item">
                           <span>ACCESS TIER</span>
-                          <strong style={{ color: tierMeta.color }}>{tierMeta.label}</strong>
+                          <strong style={{ color: tierMeta.color }}>
+                            {tierMeta.label}
+                          </strong>
                         </div>
                         <div className="mobile-detail-item">
                           <span>HOST SPONSOR</span>
@@ -1362,18 +1918,28 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             <strong>Guest Wi-Fi Credentials</strong>
                           </div>
                           <div className="mobile-wifi-body">
-                            <div>SSID: <code>{wifiSsid}</code></div>
-                            <div>Pass: <code>{wifiPassword}</code></div>
+                            <div>
+                              SSID: <code>{wifiSsid}</code>
+                            </div>
+                            <div>
+                              Pass: <code>{wifiPassword}</code>
+                            </div>
                             <button
                               type="button"
                               className="copy-wifi-btn"
                               onClick={() => {
                                 navigator.clipboard.writeText(wifiPassword)
+
                                 setCopiedWifi(true)
+
                                 setTimeout(() => setCopiedWifi(false), 2000)
                               }}
                             >
-                              {copiedWifi ? <Check size={12} /> : <Copy size={12} />}
+                              {copiedWifi ? (
+                                <Check size={12} />
+                              ) : (
+                                <Copy size={12} />
+                              )}
                               <span>{copiedWifi ? "Copied" : "Copy Key"}</span>
                             </button>
                           </div>
@@ -1402,7 +1968,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   <div className="a4-sheet-content">
                     <div className="a4-top-section">
                       <div className="a4-badge-cutout">
-                        <div className="cutout-guide">✂ Cut along dashed line for lanyard</div>
+                        <div className="cutout-guide">
+                          ✂ Cut along dashed line for lanyard
+                        </div>
                         <div
                           className="a4-mini-badge"
                           style={{ borderColor: selectedTheme.accent }}
@@ -1416,9 +1984,20 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                           </div>
                           <div className="a4-mini-body">
                             <h3>{fullName || "Visitor Name"}</h3>
-                            <p>{organization || "Organization / Affiliation"}</p>
-                            <small>Host: {hostName || "Reception Desk"} ({hostDepartment || "Front Lobby"})</small>
-                            {qrDataUrl && <img src={qrDataUrl} alt="A4 QR" className="a4-mini-qr" />}
+                            <p>
+                              {organization || "Organization / Affiliation"}
+                            </p>
+                            <small>
+                              Host: {hostName || "Reception Desk"} (
+                              {hostDepartment || "Front Lobby"})
+                            </small>
+                            {qrDataUrl && (
+                              <img
+                                src={qrDataUrl}
+                                alt="A4 QR"
+                                className="a4-mini-qr"
+                              />
+                            )}
                             <span className="a4-pass-code">{passId}</span>
                           </div>
                         </div>
@@ -1427,18 +2006,35 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       <div className="a4-safety-protocols">
                         <h4>FACILITY RULES & EMERGENCY PROTOCOLS</h4>
                         <ul>
-                          <li>Badge must remain visible on outer garment at all times.</li>
-                          <li>Visitor must remain accompanied by designated host: <strong>{hostName}</strong>.</li>
-                          <li>Photography, unauthorized recordings, and hardware interception are strictly prohibited.</li>
-                          <li>In the event of building alarm, assemble at East Lawn Quadrangle.</li>
-                          <li>Return this badge to Front Desk reception upon check-out.</li>
+                          <li>
+                            Badge must remain visible on outer garment at all
+                            times.
+                          </li>
+                          <li>
+                            Visitor must remain accompanied by designated host:{" "}
+                            <strong>{hostName}</strong>.
+                          </li>
+                          <li>
+                            Photography, unauthorized recordings, and hardware
+                            interception are strictly prohibited.
+                          </li>
+                          <li>
+                            In the event of building alarm, assemble at East
+                            Lawn Quadrangle.
+                          </li>
+                          <li>
+                            Return this badge to Front Desk reception upon
+                            check-out.
+                          </li>
                         </ul>
                       </div>
                     </div>
 
                     {/* Parking Permit Tear-off */}
                     <div className="a4-parking-permit">
-                      <div className="cutout-guide">✂ FOLD & PLACE ON VEHICLE DASHBOARD (FACE UP)</div>
+                      <div className="cutout-guide">
+                        ✂ FOLD & PLACE ON VEHICLE DASHBOARD (FACE UP)
+                      </div>
                       <div className="parking-box">
                         <div className="parking-header">
                           <Car size={20} />
@@ -1450,9 +2046,15 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             <h1>{vehiclePlate || "VISITOR-GUEST"}</h1>
                           </div>
                           <div className="parking-meta">
-                            <div>DATE: <strong>{visitDate}</strong></div>
-                            <div>LOCATION: <strong>GUEST VISITOR LOT B</strong></div>
-                            <div>SECURITY TOKEN: <strong>{passId}</strong></div>
+                            <div>
+                              DATE: <strong>{visitDate}</strong>
+                            </div>
+                            <div>
+                              LOCATION: <strong>GUEST VISITOR LOT B</strong>
+                            </div>
+                            <div>
+                              SECURITY TOKEN: <strong>{passId}</strong>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1548,13 +2150,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
               <tbody>
                 {filteredLog.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", padding: "32px" }}>
+                    <td
+                      colSpan={7}
+                      style={{ textAlign: "center", padding: "32px" }}
+                    >
                       No visitor records found matching your filters.
                     </td>
                   </tr>
                 ) : (
                   filteredLog.map((record) => {
-                    const recTier = TIER_CONFIG[record.tier] || TIER_CONFIG.general
+                    const recTier =
+                      TIER_CONFIG[record.tier] || TIER_CONFIG.general
+
                     return (
                       <tr key={record.id}>
                         <td>
@@ -1562,13 +2169,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                         </td>
                         <td>
                           <strong>{record.fullName}</strong>
-                          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                            {record.organization} · {record.phone || record.email}
+                          <div
+                            style={{ fontSize: "12px", color: "var(--muted)" }}
+                          >
+                            {record.organization} ·{" "}
+                            {record.phone || record.email}
                           </div>
                         </td>
                         <td>
                           <div>{record.hostName}</div>
-                          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                          <div
+                            style={{ fontSize: "12px", color: "var(--muted)" }}
+                          >
                             {record.hostDepartment}
                           </div>
                         </td>
@@ -1577,7 +2189,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             className="table-tier-badge"
                             style={{
                               background: recTier.bg,
+
                               color: recTier.color,
+
                               borderColor: recTier.border,
                             }}
                           >
@@ -1614,8 +2228,13 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                                     ? { ...r, status: "Checked-Out" as const }
                                     : r,
                                 )
+
                                 persistLog(updated)
-                                notify(`Visitor ${record.fullName} checked out.`, "info")
+
+                                notify(
+                                  `Visitor ${record.fullName} checked out.`,
+                                  "info",
+                                )
                               }}
                             >
                               Check Out
@@ -1626,11 +2245,17 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                               className="table-action-btn secondary-btn"
                               onClick={() => {
                                 setPassId(record.id)
+
                                 setFullName(record.fullName)
+
                                 setOrganization(record.organization)
+
                                 setHostName(record.hostName)
+
                                 setHostDepartment(record.hostDepartment)
+
                                 setAccessTier(record.tier)
+
                                 setActiveTab("designer")
                               }}
                             >
@@ -1656,7 +2281,10 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
               <ShieldCheck size={28} color="#00C9B7" />
               <div>
                 <h2>Security Reception Pass Verifier</h2>
-                <p>Verify holographic pass validity, entry permissions, and time stamps.</p>
+                <p>
+                  Verify holographic pass validity, entry permissions, and time
+                  stamps.
+                </p>
               </div>
             </div>
 
@@ -1682,7 +2310,10 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   <CheckCircle2 size={32} color="#10b981" />
                   <div>
                     <h3>CLEARANCE GRANTED · VALID VISITOR PASS</h3>
-                    <small>Security signature verified and matched with on-premises roster</small>
+                    <small>
+                      Security signature verified and matched with on-premises
+                      roster
+                    </small>
                   </div>
                 </div>
 
@@ -1697,13 +2328,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   </div>
                   <div className="result-item">
                     <span>Access Tier</span>
-                    <strong style={{ color: TIER_CONFIG[verifiedRecord.tier]?.color }}>
+                    <strong
+                      style={{ color: TIER_CONFIG[verifiedRecord.tier]?.color }}
+                    >
                       {TIER_CONFIG[verifiedRecord.tier]?.label}
                     </strong>
                   </div>
                   <div className="result-item">
                     <span>Authorized Host</span>
-                    <strong>{verifiedRecord.hostName} ({verifiedRecord.hostDepartment})</strong>
+                    <strong>
+                      {verifiedRecord.hostName} ({verifiedRecord.hostDepartment}
+                      )
+                    </strong>
                   </div>
                   <div className="result-item">
                     <span>Facility Location</span>
@@ -1711,7 +2347,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                   </div>
                   <div className="result-item">
                     <span>Valid Today</span>
-                    <strong>{verifiedRecord.timeIn} - {verifiedRecord.timeOut}</strong>
+                    <strong>
+                      {verifiedRecord.timeIn} - {verifiedRecord.timeOut}
+                    </strong>
                   </div>
                 </div>
 
@@ -1726,8 +2364,14 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             ? { ...r, status: "Checked-Out" as const }
                             : r,
                         )
+
                         persistLog(updated)
-                        setVerifiedRecord({ ...verifiedRecord, status: "Checked-Out" })
+
+                        setVerifiedRecord({
+                          ...verifiedRecord,
+                          status: "Checked-Out",
+                        })
+
                         notify("Visitor checked out from facility.", "info")
                       }}
                     >
@@ -1743,8 +2387,14 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             ? { ...r, status: "Checked-In" as const }
                             : r,
                         )
+
                         persistLog(updated)
-                        setVerifiedRecord({ ...verifiedRecord, status: "Checked-In" })
+
+                        setVerifiedRecord({
+                          ...verifiedRecord,
+                          status: "Checked-In",
+                        })
+
                         notify("Visitor checked in to facility.", "success")
                       }}
                     >
@@ -1761,8 +2411,8 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                 <div>
                   <h3>ACCESS DENIED · PASS NOT FOUND</h3>
                   <p>
-                    No matching visitor record or security token found. Please redirect guest to
-                    Main Reception for security re-screening.
+                    No matching visitor record or security token found. Please
+                    redirect guest to Main Reception for security re-screening.
                   </p>
                 </div>
               </div>

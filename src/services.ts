@@ -1,4 +1,11 @@
-import { PDFDocument, PDFName, PDFNumber, StandardFonts, degrees, rgb } from "pdf-lib"
+import {
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  StandardFonts,
+  degrees,
+  rgb,
+} from "pdf-lib"
 
 // Guard PDFDocument.prototype.updateInfoDict so custom Producer and Creator are preserved
 const pdfDocProto = PDFDocument.prototype as any
@@ -44,11 +51,15 @@ async function getApiPool(): Promise<any> {
 
 function getNextAvailableApi(category: string): any {
   try {
-    if (typeof window !== "undefined" && (window as any).__fluxkitApiPool?.getNextAvailableApi) {
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__fluxkitApiPool?.getNextAvailableApi
+    ) {
       return (window as any).__fluxkitApiPool.getNextAvailableApi(category)
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
+    const pool =
+      typeof require !== "undefined" ? require("./apiPoolService") : null
     return pool?.getNextAvailableApi ? pool.getNextAvailableApi(category) : null
   } catch {
     return null
@@ -57,12 +68,16 @@ function getNextAvailableApi(category: string): any {
 
 function recordApiOutcome(apiId: string, outcome: any): void {
   try {
-    if (typeof window !== "undefined" && (window as any).__fluxkitApiPool?.recordApiOutcome) {
-      (window as any).__fluxkitApiPool.recordApiOutcome(apiId, outcome)
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__fluxkitApiPool?.recordApiOutcome
+    ) {
+      ;(window as any).__fluxkitApiPool.recordApiOutcome(apiId, outcome)
       return
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
+    const pool =
+      typeof require !== "undefined" ? require("./apiPoolService") : null
     if (pool?.recordApiOutcome) pool.recordApiOutcome(apiId, outcome)
   } catch {}
 }
@@ -178,7 +193,7 @@ export interface ExtractedPage {
 }
 
 export const apiBaseUrl =
-  ((import.meta as any).env?.VITE_API_BASE_URL as string | undefined) || undefined
+  (import.meta as any).env?.VITE_API_BASE_URL as string | undefined || undefined
 
 // ============================================================================
 // Encoding & Cryptographic Helpers
@@ -353,7 +368,9 @@ export async function mergePDFs(
     })
     const indices = pdf.getPageIndices()
     if (indices.length === 0) {
-      throw new Error(`Document "${file.name}" contains no valid pages to merge.`)
+      throw new Error(
+        `Document "${file.name}" contains no valid pages to merge.`,
+      )
     }
     const pages = await merged.copyPages(pdf, indices)
     pages.forEach((page) => merged.addPage(page))
@@ -679,7 +696,8 @@ async function compressImageStream(
   quality: number,
   maxDimension: number,
 ): Promise<{ bytes: Uint8Array; width: number; height: number } | null> {
-  if (typeof window === "undefined" || typeof document === "undefined") return null
+  if (typeof window === "undefined" || typeof document === "undefined")
+    return null
   try {
     const isJpeg = rawBytes[0] === 0xff && rawBytes[1] === 0xd8
     const mime = isJpeg ? "image/jpeg" : "image/png"
@@ -767,10 +785,14 @@ export async function compressPDF(
       const len = bytes.byteLength
       const chunkSize = 0x8000
       for (let i = 0; i < len; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        binary += String.fromCharCode.apply(
+          null,
+          Array.from(bytes.subarray(i, i + chunkSize)),
+        )
       }
       const pdfBase64 = btoa(binary)
-      const compressionLevel = level === "extreme" ? "HIGH" : level === "high" ? "MEDIUM" : "LOW"
+      const compressionLevel =
+        level === "extreme" ? "HIGH" : level === "high" ? "MEDIUM" : "LOW"
 
       const response = await fetch("/api/adobe-pdf/compress", {
         method: "POST",
@@ -796,7 +818,8 @@ export async function compressPDF(
 
           const compressedSize = compressedBytes.byteLength
           const savedBytes = Math.max(0, originalSize - compressedSize)
-          const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+          const savedPercentage =
+            originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
           const isAlreadyOptimal = compressedSize >= originalSize
 
           const safeName = file.name || "document.pdf"
@@ -819,7 +842,10 @@ export async function compressPDF(
         })
       }
     } catch (adobeErr) {
-      console.warn("Adobe PDF Services compression error, failing over to local engine:", adobeErr)
+      console.warn(
+        "Adobe PDF Services compression error, failing over to local engine:",
+        adobeErr,
+      )
       recordApiOutcome(activeApi.id, {
         success: false,
         errorMessage: String(adobeErr),
@@ -828,7 +854,10 @@ export async function compressPDF(
   }
 
   // 0b. iLovePDF Cloud Engine (Secondary Priority / Failover)
-  const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+  const iloveApi =
+    activeApi?.provider === "ilovepdf"
+      ? activeApi
+      : getNextAvailableApi("pdf-compression")
   if (iloveApi && iloveApi.provider === "ilovepdf") {
     try {
       let binary = ""
@@ -836,10 +865,18 @@ export async function compressPDF(
       const len = bytes.byteLength
       const chunkSize = 0x8000
       for (let i = 0; i < len; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        binary += String.fromCharCode.apply(
+          null,
+          Array.from(bytes.subarray(i, i + chunkSize)),
+        )
       }
       const pdfBase64 = btoa(binary)
-      const compressionLevel = level === "extreme" ? "extreme" : level === "high" ? "recommended" : "low"
+      const compressionLevel =
+        level === "extreme"
+          ? "extreme"
+          : level === "high"
+            ? "recommended"
+            : "low"
 
       const response = await fetch("/api/ilovepdf/compress", {
         method: "POST",
@@ -864,7 +901,8 @@ export async function compressPDF(
 
           const compressedSize = compressedBytes.byteLength
           const savedBytes = Math.max(0, originalSize - compressedSize)
-          const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+          const savedPercentage =
+            originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
           const isAlreadyOptimal = compressedSize >= originalSize
 
           const safeName = file.name || "document.pdf"
@@ -887,7 +925,10 @@ export async function compressPDF(
         })
       }
     } catch (iloveErr) {
-      console.warn("iLovePDF compression error, failing over to local engine:", iloveErr)
+      console.warn(
+        "iLovePDF compression error, failing over to local engine:",
+        iloveErr,
+      )
       recordApiOutcome(iloveApi.id, {
         success: false,
         errorMessage: String(iloveErr),
@@ -895,13 +936,15 @@ export async function compressPDF(
     }
   }
 
-  const quality = level === "extreme" ? 0.40 : level === "high" ? 0.55 : 0.70
+  const quality = level === "extreme" ? 0.4 : level === "high" ? 0.55 : 0.7
   const maxDim = level === "extreme" ? 850 : level === "high" ? 1150 : 1500
 
   // 1. Direct Image Streams Compression + Structural Cleanup via pdf-lib
   let directOptimizedBytes: Uint8Array | null = null
   try {
-    const pdf = await PDFDocument.load(originalBytes, { ignoreEncryption: true })
+    const pdf = await PDFDocument.load(originalBytes, {
+      ignoreEncryption: true,
+    })
 
     try {
       pdf.catalog.delete(PDFName.of("Metadata"))
@@ -931,11 +974,26 @@ export async function compressPDF(
           const result = await compressImageStream(rawBytes, quality, maxDim)
           if (result && result.bytes.length < rawBytes.length) {
             ;(obj as any).contents = result.bytes
-            ;(obj as any).dict.set(PDFName.of("Length"), PDFNumber.of(result.bytes.length))
-            ;(obj as any).dict.set(PDFName.of("Width"), PDFNumber.of(result.width))
-            ;(obj as any).dict.set(PDFName.of("Height"), PDFNumber.of(result.height))
-            ;(obj as any).dict.set(PDFName.of("Filter"), PDFName.of("DCTDecode"))
-            ;(obj as any).dict.set(PDFName.of("BitsPerComponent"), PDFNumber.of(8))
+            ;(obj as any).dict.set(
+              PDFName.of("Length"),
+              PDFNumber.of(result.bytes.length),
+            )
+            ;(obj as any).dict.set(
+              PDFName.of("Width"),
+              PDFNumber.of(result.width),
+            )
+            ;(obj as any).dict.set(
+              PDFName.of("Height"),
+              PDFNumber.of(result.height),
+            )
+            ;(obj as any).dict.set(
+              PDFName.of("Filter"),
+              PDFName.of("DCTDecode"),
+            )
+            ;(obj as any).dict.set(
+              PDFName.of("BitsPerComponent"),
+              PDFNumber.of(8),
+            )
             ;(obj as any).dict.delete(PDFName.of("DecodeParms"))
           }
         }
@@ -957,7 +1015,7 @@ export async function compressPDF(
     ? (originalSize - directOptimizedBytes.byteLength) / originalSize
     : 0
 
-  if (savingsSoFar < 0.10) {
+  if (savingsSoFar < 0.1) {
     try {
       const engine = await getPdfEngine()
       const pdfjs = engine ? await engine.getPdfJsLibrary() : null
@@ -972,8 +1030,10 @@ export async function compressPDF(
 
         if (totalPages > 0 && totalPages <= 150) {
           const newDoc = await PDFDocument.create()
-          const rasterScale = level === "extreme" ? 0.95 : level === "high" ? 1.15 : 1.35
-          const rasterQuality = level === "extreme" ? 0.42 : level === "high" ? 0.58 : 0.72
+          const rasterScale =
+            level === "extreme" ? 0.95 : level === "high" ? 1.15 : 1.35
+          const rasterQuality =
+            level === "extreme" ? 0.42 : level === "high" ? 0.58 : 0.72
 
           for (let p = 1; p <= totalPages; p++) {
             const page = await pdfDoc.getPage(p)
@@ -1033,7 +1093,8 @@ export async function compressPDF(
       : bestBytes
   const finalSize = finalBytes.byteLength
   const savedBytes = Math.max(0, originalSize - finalSize)
-  const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+  const savedPercentage =
+    originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
 
   const safeName = file.name || "document.pdf"
   return {
@@ -1745,11 +1806,16 @@ export async function extractPDFPages(
     // Extract CMap from page Resources & Fonts
     const cmap = new Map<number, string>()
     try {
-      const res = typeof page.node?.Resources === "function" ? page.node.Resources() : null
-      const fontDict = res?.lookup ? (res.lookup(PDFName.of("Font")) as any) : null
+      const res =
+        typeof page.node?.Resources === "function"
+          ? page.node.Resources()
+          : null
+      const fontDict = res?.lookup
+        ? res.lookup(PDFName.of("Font")) as any
+        : null
       if (fontDict && fontDict.dict) {
         for (const k of (fontDict.dict as Map<any, any>).keys()) {
-          const f = fontDict.lookup ? (fontDict.lookup(k) as any) : null
+          const f = fontDict.lookup ? fontDict.lookup(k) as any : null
           const toUnicode = f?.dict?.get?.(PDFName.of("ToUnicode"))
           if (toUnicode) {
             const cmapStream = doc.context.lookup(toUnicode) as {
@@ -1873,7 +1939,10 @@ export async function extractPDFPages(
           lastY = null
           lastX = null
         } else if (op === "Tm") {
-          const prevChunk = fullStreamText.slice(Math.max(0, m.index - 100), m.index)
+          const prevChunk = fullStreamText.slice(
+            Math.max(0, m.index - 100),
+            m.index,
+          )
           const tmMatch = prevChunk.match(
             /(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*$/,
           )
@@ -1897,7 +1966,10 @@ export async function extractPDFPages(
             lastX = null
           }
         } else if (op === "Td" || op === "TD") {
-          const prevChunk = fullStreamText.slice(Math.max(0, m.index - 80), m.index)
+          const prevChunk = fullStreamText.slice(
+            Math.max(0, m.index - 80),
+            m.index,
+          )
           const tdMatch = prevChunk.match(/(-?[\d.]+)\s+(-?[\d.]+)\s*$/)
           if (tdMatch) {
             const dx = parseFloat(tdMatch[1])
@@ -1924,12 +1996,10 @@ export async function extractPDFPages(
 
     const cleanLines = lines
       .map((l) =>
-        l
-          .replace(
-            /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF]/g,
-            "",
-          )
-          .trim(),
+        l.replace(
+          /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF]/g,
+          "",
+        ).trim(),
       )
       .filter((l) => {
         if (l.length < 1) return false
@@ -2003,9 +2073,12 @@ function colIndexToName(index: number): string {
   return name
 }
 
-function extractEmbeddedPageImage(page: any): { bytes: Uint8Array; type: "jpeg" | "png" } | null {
+function extractEmbeddedPageImage(
+  page: any,
+): { bytes: Uint8Array; type: "jpeg" | "png" } | null {
   try {
-    const res = typeof page.node?.Resources === "function" ? page.node.Resources() : null
+    const res =
+      typeof page.node?.Resources === "function" ? page.node.Resources() : null
     const xObject = res?.lookup ? res.lookup(PDFName.of("XObject")) : null
     if (!xObject || !xObject.dict) return null
 
@@ -2017,8 +2090,14 @@ function extractEmbeddedPageImage(page: any): { bytes: Uint8Array; type: "jpeg" 
       const subtype = obj?.dict?.get?.(PDFName.of("Subtype"))
       const subVal = subtype?.value?.() || subtype?.encodedName || ""
       if (subVal === "/Image") {
-        const contents = typeof obj.getContents === "function" ? obj.getContents() : null
-        if (contents && contents.length > 5000 && contents[0] === 0xff && contents[1] === 0xd8) {
+        const contents =
+          typeof obj.getContents === "function" ? obj.getContents() : null
+        if (
+          contents &&
+          contents.length > 5000 &&
+          contents[0] === 0xff &&
+          contents[1] === 0xd8
+        ) {
           if (contents.length > maxLen) {
             maxLen = contents.length
             bestImage = { bytes: contents, type: "jpeg" }
@@ -2032,7 +2111,11 @@ function extractEmbeddedPageImage(page: any): { bytes: Uint8Array; type: "jpeg" 
   }
 }
 
-function isLikelyWordHeading(line: string, lineIdx: number, pageHeadings: string[]): boolean {
+function isLikelyWordHeading(
+  line: string,
+  lineIdx: number,
+  pageHeadings: string[],
+): boolean {
   const trimmed = line.trim()
   if (!trimmed) return false
 
@@ -2104,7 +2187,10 @@ export async function pdfToWord(
     const engine = await getPdfEngine()
     if (engine && typeof engine.extractTextWithPdfJs === "function") {
       const pdfJsPages = await engine.extractTextWithPdfJs(bytes)
-      if (pdfJsPages && pdfJsPages.some((p: any) => p.lines && p.lines.length > 0)) {
+      if (
+        pdfJsPages &&
+        pdfJsPages.some((p: any) => p.lines && p.lines.length > 0)
+      ) {
         pages = pdfJsPages
       }
     }
@@ -2129,7 +2215,9 @@ export async function pdfToWord(
   const layout = options.layout || "standard"
 
   let fullExtractedText = pages
-    .map((p, idx) => (pages.length > 1 ? `--- Page ${idx + 1} ---\n${p.fullText}` : p.fullText))
+    .map((p, idx) =>
+      pages.length > 1 ? `--- Page ${idx + 1} ---\n${p.fullText}` : p.fullText,
+    )
     .join("\n\n")
     .trim()
 
@@ -2181,7 +2269,8 @@ export async function pdfToWord(
       pageImg = extractEmbeddedPageImage(pdfDoc.getPage(pageIdx))
     }
 
-    const lines = page.lines.length > 0 ? page.lines : [`Page ${page.pageNumber}`]
+    const lines =
+      page.lines.length > 0 ? page.lines : [`Page ${page.pageNumber}`]
     const pageHeadings = page.headings || []
     const isWatermarkOnly =
       lines.length <= 1 &&
@@ -2223,7 +2312,10 @@ export async function pdfToWord(
     }
   })
 
-  if (embeddedImageCount > 0 && (!fullExtractedText || fullExtractedText.length < 50)) {
+  if (
+    embeddedImageCount > 0 &&
+    (!fullExtractedText || fullExtractedText.length < 50)
+  ) {
     fullExtractedText = `[Scanned Document: Embedded ${embeddedImageCount} high-resolution page scan(s) into Word document]`
   }
 
@@ -2322,7 +2414,10 @@ export async function pdfToPPT(
         const len = bytes.byteLength
         const chunkSize = 0x8000
         for (let i = 0; i < len; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
         }
         const pdfBase64 = btoa(binary)
         const response = await fetch("/api/adobe-pdf/export", {
@@ -2363,7 +2458,10 @@ export async function pdfToPPT(
           })
         }
       } catch (cloudErr) {
-        console.warn("Adobe PDF Services PPTX export failed, falling back to next engine:", cloudErr)
+        console.warn(
+          "Adobe PDF Services PPTX export failed, falling back to next engine:",
+          cloudErr,
+        )
         recordApiOutcome(activeApi.id, {
           success: false,
           errorMessage: String(cloudErr),
@@ -2372,14 +2470,20 @@ export async function pdfToPPT(
     }
 
     // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
-    const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+    const iloveApi =
+      activeApi?.provider === "ilovepdf"
+        ? activeApi
+        : getNextAvailableApi("pdf-compression")
     if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
       try {
         let binary = ""
         const len = bytes.byteLength
         const chunkSize = 0x8000
         for (let i = 0; i < len; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
         }
         const pdfBase64 = btoa(binary)
         const response = await fetch("/api/ilovepdf/pdfppt", {
@@ -2420,7 +2524,10 @@ export async function pdfToPPT(
           })
         }
       } catch (iloveErr) {
-        console.warn("iLovePDF PPTX conversion failed, falling back to local engine:", iloveErr)
+        console.warn(
+          "iLovePDF PPTX conversion failed, falling back to local engine:",
+          iloveErr,
+        )
         recordApiOutcome(iloveApi.id, {
           success: false,
           errorMessage: String(iloveErr),
@@ -2494,25 +2601,37 @@ ${presRels}</Relationships>`
   <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
   <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
 </p:sldMaster>`
-  entries.push({ name: "ppt/slideMasters/slideMaster1.xml", data: slideMasterXml })
+  entries.push({
+    name: "ppt/slideMasters/slideMaster1.xml",
+    data: slideMasterXml,
+  })
 
   const slideMasterRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>`
-  entries.push({ name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", data: slideMasterRelsXml })
+  entries.push({
+    name: "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+    data: slideMasterRelsXml,
+  })
 
   const slideLayoutXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
   <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:grpSpPr/></p:nvGrpSpPr></p:spTree></p:cSld>
 </p:sldLayout>`
-  entries.push({ name: "ppt/slideLayouts/slideLayout1.xml", data: slideLayoutXml })
+  entries.push({
+    name: "ppt/slideLayouts/slideLayout1.xml",
+    data: slideLayoutXml,
+  })
 
   const slideLayoutRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
 </Relationships>`
-  entries.push({ name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", data: slideLayoutRelsXml })
+  entries.push({
+    name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+    data: slideLayoutRelsXml,
+  })
 
   let sldIdList = ""
   for (let i = 1; i <= slideCount; i++) {
@@ -2534,7 +2653,10 @@ ${sldIdList}  </p:sldIdLst>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>`
-    entries.push({ name: `ppt/slides/_rels/slide${i}.xml.rels`, data: slideRelXml })
+    entries.push({
+      name: `ppt/slides/_rels/slide${i}.xml.rels`,
+      data: slideRelXml,
+    })
 
     const pageData = pages[i - 1]
     const lines =
@@ -2697,7 +2819,10 @@ export async function pdfToExcel(
         const len = bytes.byteLength
         const chunkSize = 0x8000
         for (let i = 0; i < len; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
         }
         const pdfBase64 = btoa(binary)
         const response = await fetch("/api/adobe-pdf/export", {
@@ -2739,7 +2864,10 @@ export async function pdfToExcel(
           })
         }
       } catch (cloudErr) {
-        console.warn("Adobe PDF Services XLSX export failed, falling back to local extractor:", cloudErr)
+        console.warn(
+          "Adobe PDF Services XLSX export failed, falling back to local extractor:",
+          cloudErr,
+        )
         recordApiOutcome(activeApi.id, {
           success: false,
           errorMessage: String(cloudErr),
@@ -2756,7 +2884,11 @@ export async function pdfToExcel(
       const engine = await getPdfEngine()
       if (engine && typeof engine.extractTableWithPdfJs === "function") {
         const tableRows = await engine.extractTableWithPdfJs(bytes)
-        if (tableRows && tableRows.length > 0 && tableRows.some((r: string[]) => r.length > 1)) {
+        if (
+          tableRows &&
+          tableRows.length > 0 &&
+          tableRows.some((r: string[]) => r.length > 1)
+        ) {
           rows = tableRows
         }
       }
@@ -2814,11 +2946,9 @@ export async function pdfToExcel(
       "\uFEFF" +
       rows
         .map((r) =>
-          r
-            .map((c) =>
-              /[",\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c,
-            )
-            .join(","),
+          r.map((c) =>
+            /[",\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c,
+          ).join(","),
         )
         .join("\r\n")
     return {
@@ -2867,8 +2997,7 @@ export async function pdfToExcel(
       const trimmed = cellVal.trim()
       const isLeadingZeroId = /^0\d+$/.test(trimmed)
       const isNum =
-        !isLeadingZeroId &&
-        /^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/.test(trimmed)
+        !isLeadingZeroId && /^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/.test(trimmed)
 
       if (isNum) {
         const rawNum = trimmed
@@ -3185,7 +3314,8 @@ function extractDocxBlocks(docXml: string): ParsedDocxBlock[] {
             continue
           }
           depth++
-          cur = closeBracket !== -1 ? closeBracket + 1 : nextOpen + openTag.length
+          cur =
+            closeBracket !== -1 ? closeBracket + 1 : nextOpen + openTag.length
         } else {
           depth--
           cur = nextClose + closeTag.length
@@ -3249,7 +3379,13 @@ export async function wordToPDF(
         docxBlocks = extractDocxBlocks(docXml)
         if (docxBlocks.length > 0) {
           fullText = docxBlocks
-            .map((b) => (b.type === "p" ? b.text : b.rows.map((r) => r.cells.map((c) => c.text).join("\t")).join("\n")))
+            .map((b) =>
+              b.type === "p"
+                ? b.text
+                : b.rows
+                    .map((r) => r.cells.map((c) => c.text).join("\t"))
+                    .join("\n"),
+            )
             .join("\n\n")
         }
       }
@@ -3355,7 +3491,10 @@ export async function wordToPDF(
               for (const w of words) {
                 if (!w) continue
                 const testChunk = chunk ? `${chunk} ${w}` : w
-                const textWidth = cellFont.widthOfTextAtSize(testChunk, fontSize)
+                const textWidth = cellFont.widthOfTextAtSize(
+                  testChunk,
+                  fontSize,
+                )
                 if (textWidth <= innerW) {
                   chunk = testChunk
                 } else {
@@ -3650,7 +3789,12 @@ export async function wordToPDF(
   }
 }
 
-function wrapTextLines(text: string, font: any, fontSize: number, maxWidth: number): string[] {
+function wrapTextLines(
+  text: string,
+  font: any,
+  fontSize: number,
+  maxWidth: number,
+): string[] {
   if (!text) return []
   const words = text.split(/\s+/)
   const lines: string[] = []
@@ -3700,7 +3844,10 @@ export async function pptToPDF(
         const len = bytes.byteLength
         const chunkSize = 0x8000
         for (let i = 0; i < len; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
         }
         const pptxBase64 = btoa(binary)
         const response = await fetch("/api/adobe-pdf/create", {
@@ -3738,7 +3885,10 @@ export async function pptToPDF(
           })
         }
       } catch (cloudErr) {
-        console.warn("Adobe PDF Services PPTX to PDF failed, falling back to next engine:", cloudErr)
+        console.warn(
+          "Adobe PDF Services PPTX to PDF failed, falling back to next engine:",
+          cloudErr,
+        )
         recordApiOutcome(activeApi.id, {
           success: false,
           errorMessage: String(cloudErr),
@@ -3747,14 +3897,20 @@ export async function pptToPDF(
     }
 
     // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
-    const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+    const iloveApi =
+      activeApi?.provider === "ilovepdf"
+        ? activeApi
+        : getNextAvailableApi("pdf-compression")
     if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
       try {
         let binary = ""
         const len = bytes.byteLength
         const chunkSize = 0x8000
         for (let i = 0; i < len; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
         }
         const pptxBase64 = btoa(binary)
         const response = await fetch("/api/ilovepdf/officepdf", {
@@ -3792,7 +3948,10 @@ export async function pptToPDF(
           })
         }
       } catch (iloveErr) {
-        console.warn("iLovePDF PPTX to PDF conversion failed, falling back to local engine:", iloveErr)
+        console.warn(
+          "iLovePDF PPTX to PDF conversion failed, falling back to local engine:",
+          iloveErr,
+        )
         recordApiOutcome(iloveApi.id, {
           success: false,
           errorMessage: String(iloveErr),
@@ -3849,7 +4008,9 @@ export async function pptToPDF(
         }
 
         const slideKeys = Object.keys(zip.files)
-          .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k) && !zip.files[k].dir)
+          .filter(
+            (k) => /^ppt\/slides\/slide\d+\.xml$/.test(k) && !zip.files[k].dir,
+          )
           .sort((a, b) => {
             const numA = parseInt(a.replace(/\D/g, ""), 10)
             const numB = parseInt(b.replace(/\D/g, ""), 10)
@@ -3860,11 +4021,13 @@ export async function pptToPDF(
           const xml = await zip.file(sk).async("string")
 
           // Relationships for images
-          const relKey = sk.replace("ppt/slides/slide", "ppt/slides/_rels/slide") + ".rels"
+          const relKey =
+            sk.replace("ppt/slides/slide", "ppt/slides/_rels/slide") + ".rels"
           const relMap: Record<string, string> = {}
           if (zip.file(relKey)) {
             const relsXml = await zip.file(relKey).async("string")
-            const relRegex = /<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"/g
+            const relRegex =
+              /<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"/g
             let rm: RegExpExecArray | null
             while ((rm = relRegex.exec(relsXml)) !== null) {
               relMap[rm[1]] = rm[2]
@@ -3893,9 +4056,15 @@ export async function pptToPDF(
           let picM: RegExpExecArray | null
           while ((picM = picRegex.exec(xml)) !== null) {
             const picXml = picM[0]
-            const blipMatch = picXml.match(/<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/)
-            const offMatch = picXml.match(/<a:off[^>]+x="(-?\d+)"[^>]+y="(-?\d+)"/)
-            const extMatch = picXml.match(/<a:ext[^>]+cx="(\d+)"[^>]+cy="(\d+)"/)
+            const blipMatch = picXml.match(
+              /<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/,
+            )
+            const offMatch = picXml.match(
+              /<a:off[^>]+x="(-?\d+)"[^>]+y="(-?\d+)"/,
+            )
+            const extMatch = picXml.match(
+              /<a:ext[^>]+cx="(\d+)"[^>]+cy="(\d+)"/,
+            )
             if (blipMatch && relMap[blipMatch[1]]) {
               let target = relMap[blipMatch[1]].replace(/^(\.\.\/)+/, "ppt/")
               if (!target.startsWith("ppt/")) target = "ppt/" + target
@@ -3909,25 +4078,42 @@ export async function pptToPDF(
                 const isFull =
                   (cx >= sldCx * 0.85 && cy >= sldCy * 0.85) ||
                   (x === 0 && y === 0 && cx >= sldCx * 0.75)
-                images.push({ bytes: imgBytes, x, y, cx, cy, isFullSlide: isFull })
+                images.push({
+                  bytes: imgBytes,
+                  x,
+                  y,
+                  cx,
+                  cy,
+                  isFullSlide: isFull,
+                })
               }
             }
           }
 
           // Check slide background image (<p:bg>)
-          const bgMatch = xml.match(/<p:bg[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/)
+          const bgMatch = xml.match(
+            /<p:bg[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/,
+          )
           if (bgMatch && relMap[bgMatch[1]]) {
             let target = relMap[bgMatch[1]].replace(/^(\.\.\/)+/, "ppt/")
             if (!target.startsWith("ppt/")) target = "ppt/" + target
             const file = zip.file(target) || zip.file(target.toLowerCase())
             if (file) {
               const imgBytes = await file.async("uint8array")
-              images.unshift({ bytes: imgBytes, x: 0, y: 0, cx: sldCx, cy: sldCy, isFullSlide: true })
+              images.unshift({
+                bytes: imgBytes,
+                x: 0,
+                y: 0,
+                cx: sldCx,
+                cy: sldCy,
+                isFullSlide: true,
+              })
             }
           }
 
           // Check blipFill shapes (<a:blipFill>)
-          const bfRegex = /<a:blipFill[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/g
+          const bfRegex =
+            /<a:blipFill[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/g
           let bfM: RegExpExecArray | null
           while ((bfM = bfRegex.exec(xml)) !== null) {
             const rId = bfM[1]
@@ -3937,9 +4123,18 @@ export async function pptToPDF(
               const file = zip.file(target) || zip.file(target.toLowerCase())
               if (file) {
                 const imgBytes = await file.async("uint8array")
-                const alreadyHas = images.some((im) => im.bytes.length === imgBytes.length)
+                const alreadyHas = images.some(
+                  (im) => im.bytes.length === imgBytes.length,
+                )
                 if (!alreadyHas) {
-                  images.push({ bytes: imgBytes, x: 0, y: 0, cx: sldCx, cy: sldCy, isFullSlide: false })
+                  images.push({
+                    bytes: imgBytes,
+                    x: 0,
+                    y: 0,
+                    cx: sldCx,
+                    cy: sldCy,
+                    isFullSlide: false,
+                  })
                 }
               }
             }
@@ -3947,7 +4142,9 @@ export async function pptToPDF(
 
           if (lines.length > 0 || images.length > 0) {
             rawSlides.push({
-              title: lines[0] || (images.length > 0 ? "" : `Slide ${rawSlides.length + 1}`),
+              title:
+                lines[0] ||
+                (images.length > 0 ? "" : `Slide ${rawSlides.length + 1}`),
               bullets: lines.length > 0 ? lines.slice(1) : [],
               images,
             })
@@ -3984,7 +4181,11 @@ export async function pptToPDF(
             if (pText.trim()) lines.push(pText.trim())
           }
           if (lines.length > 0) {
-            rawSlides.push({ title: lines[0], bullets: lines.slice(1), images: [] })
+            rawSlides.push({
+              title: lines[0],
+              bullets: lines.slice(1),
+              images: [],
+            })
           }
         }
       } catch {
@@ -4008,7 +4209,11 @@ export async function pptToPDF(
         .map((l) => l.trim())
         .filter((l) => l.length > 0)
       if (blines.length > 0) {
-        rawSlides.push({ title: blines[0], bullets: blines.slice(1), images: [] })
+        rawSlides.push({
+          title: blines[0],
+          bullets: blines.slice(1),
+          images: [],
+        })
       }
     }
   }
@@ -4041,7 +4246,9 @@ export async function pptToPDF(
   const slidesPerPage = options.slidesPerPage || 1
   const totalSlides = rawSlides.length
 
-  const embedImageSafely = async (imgBytes: Uint8Array): Promise<any | null> => {
+  const embedImageSafely = async (
+    imgBytes: Uint8Array,
+  ): Promise<any | null> => {
     if (!imgBytes || imgBytes.length < 4) return null
     const isPng =
       imgBytes[0] === 0x89 &&
@@ -4132,8 +4339,14 @@ export async function pptToPDF(
 
               const clampedW = Math.max(30, Math.min(pageWidth - 70, rawW))
               const clampedH = Math.max(30, Math.min(pageHeight - 120, rawH))
-              const clampedX = Math.max(35, Math.min(pageWidth - 35 - clampedW, rawX))
-              const clampedY = Math.max(35, Math.min(pageHeight - 95 - clampedH, rawY))
+              const clampedX = Math.max(
+                35,
+                Math.min(pageWidth - 35 - clampedW, rawX),
+              )
+              const clampedY = Math.max(
+                35,
+                Math.min(pageHeight - 95 - clampedH, rawY),
+              )
 
               page.drawImage(pdfImg, {
                 x: clampedX,
@@ -4168,7 +4381,10 @@ export async function pptToPDF(
           } else if (leftImg) {
             const leftX = leftImg.x * (pageWidth / sldCx)
             const leftW = leftImg.cx * (pageWidth / sldCx)
-            textStartX = Math.min(pageWidth - 200, Math.max(70, leftX + leftW + 30))
+            textStartX = Math.min(
+              pageWidth - 200,
+              Math.max(70, leftX + leftW + 30),
+            )
             maxTextWidth = Math.max(160, pageWidth - textStartX - 50)
           }
         }
@@ -4200,13 +4416,16 @@ export async function pptToPDF(
           curY -= 6
         }
 
-        page.drawText(`Slide ${i + 1} of ${totalSlides} | Masterfile Pro Presentation`, {
-          x: 45,
-          y: 35,
-          size: 9,
-          font,
-          color: rgb(0.55, 0.6, 0.65),
-        })
+        page.drawText(
+          `Slide ${i + 1} of ${totalSlides} | Masterfile Pro Presentation`,
+          {
+            x: 45,
+            y: 35,
+            size: 9,
+            font,
+            color: rgb(0.55, 0.6, 0.65),
+          },
+        )
       }
     }
   } else {
@@ -4938,7 +5157,11 @@ export function download(result: OutputResult) {
 
   setTimeout(() => {
     try {
-      if (document.body && typeof document.body.contains === "function" && document.body.contains(link)) {
+      if (
+        document.body &&
+        typeof document.body.contains === "function" &&
+        document.body.contains(link)
+      ) {
         document.body.removeChild(link)
       }
     } catch {}
@@ -6054,7 +6277,10 @@ export async function scanOCR(
       const len = rawBytes.byteLength
       const chunkSize = 0x8000
       for (let i = 0; i < len; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, Array.from(rawBytes.subarray(i, i + chunkSize)))
+        binary += String.fromCharCode.apply(
+          null,
+          Array.from(rawBytes.subarray(i, i + chunkSize)),
+        )
       }
       const mime = isPdf ? "application/pdf" : "image/png"
       const base64Image = `data:${mime};base64,${btoa(binary)}`
@@ -6074,7 +6300,9 @@ export async function scanOCR(
         if (data.success && data.text) {
           recordApiOutcome(ocrApi.id, { success: true })
           const text = (data.text || "").trim()
-          const rawLines = text.split("\n").filter((l: string) => l.trim().length > 0)
+          const rawLines = text
+            .split("\n")
+            .filter((l: string) => l.trim().length > 0)
           const lines: OCRLine[] = rawLines.map((l: string) => ({
             text: l.trim(),
             confidence: 0.95,
@@ -11071,9 +11299,9 @@ export async function dbGetAllDocuments(): Promise<SessionDocument[]> {
       const req = store.getAll()
 
       req.onsuccess = () => {
-        const results = (req.result || []) as (SessionDocument & {
+        const results = (req.result || []) as SessionDocument & {
           persistedAt?: number
-        })[]
+        }[]
         results.sort((a, b) => (b.persistedAt || 0) - (a.persistedAt || 0))
         resolve(results)
       }

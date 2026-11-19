@@ -239,14 +239,16 @@ export function unlockSingleToolForUser(
   if (idx >= 0) {
     const existing = accounts[idx].unlockedTools || []
     const existingSubs = (accounts[idx] as any).toolSubscriptions || {}
-    accounts[idx] = {
+    accounts[idx] = ({
       ...accounts[idx],
-      unlockedTools: existing.includes(toolId) ? existing : [...existing, toolId],
+      unlockedTools: existing.includes(toolId)
+        ? existing
+        : [...existing, toolId],
       toolSubscriptions: {
         ...existingSubs,
         [toolId]: subRecord,
       },
-    } as any
+    } as any)
     saveRegisteredAccounts(accounts)
     updated = accounts[idx]
   } else {
@@ -257,16 +259,16 @@ export function unlockSingleToolForUser(
       ? existing
       : [...existing, toolId]
     if (current && (current.id === userId || !current.id)) {
-      updated = {
+      updated = ({
         ...current,
         unlockedTools: combined,
         toolSubscriptions: {
           ...existingSubs,
           [toolId]: subRecord,
         },
-      } as any
+      } as any)
     } else {
-      updated = {
+      updated = ({
         id: userId,
         name: "Customer",
         email: "customer@masterfilepro.com",
@@ -280,7 +282,7 @@ export function unlockSingleToolForUser(
         },
         createdAt: now.toISOString(),
         lastLoginAt: now.toISOString(),
-      } as any
+      } as any)
     }
   }
 

@@ -2,11 +2,17 @@ import React from "react"
 
 export interface MasterfileLogoProps {
   variant?: "full" | "icon" | "wordmark" | "image"
+
   size?: "sm" | "md" | "lg" | "xl"
+
   height?: number
+
   className?: string
+
   theme?: "light" | "dark" | "auto"
+
   showBadge?: boolean
+
   badgeText?: string
 }
 
@@ -17,31 +23,43 @@ export interface MasterfileLogoProps {
  * - Deep navy (#06204D) & electric teal (#00C9B7) color palette
  * - Responsive sizing and light/dark theme adaptation
  */
+
 export default function MasterfileLogo({
   variant = "full",
+
   size = "md",
+
   height,
+
   className = "",
+
   theme = "auto",
+
   showBadge = false,
+
   badgeText = "PRO",
 }: MasterfileLogoProps) {
   // Height presets
+
   const resolvedHeight =
     height ||
     (size === "sm" ? 26 : size === "md" ? 34 : size === "lg" ? 44 : 56)
 
   // Color definitions from official Masterfilepro logo
+
   const navyColor =
     theme === "dark"
       ? "#FFFFFF"
       : theme === "light"
-      ? "#06204D"
-      : "var(--brand-navy, #06204D)"
+        ? "#06204D"
+        : "var(--brand-navy, #06204D)"
+
   const tealColor = "#00C9B7"
+
   const folderNavy = "#06204D"
 
   // If raster image variant is requested
+
   if (variant === "image") {
     return (
       <div
@@ -53,8 +71,11 @@ export default function MasterfileLogo({
           alt="Masterfilepro"
           style={{
             height: `${resolvedHeight}px`,
+
             width: "auto",
+
             objectFit: "contain",
+
             display: "block",
           }}
         />
@@ -62,12 +83,19 @@ export default function MasterfileLogo({
           <span
             style={{
               fontSize: "10px",
+
               fontWeight: 700,
+
               padding: "2px 6px",
+
               borderRadius: "4px",
+
               background: "rgba(0, 201, 183, 0.15)",
+
               color: "#00C9B7",
+
               border: "1px solid rgba(0, 201, 183, 0.35)",
+
               letterSpacing: "0.5px",
             }}
           >
@@ -79,6 +107,7 @@ export default function MasterfileLogo({
   }
 
   // Pixel-perfect SVG Icon Mark matching the logo: 3 stacked files, folded corner, white & teal stylized M
+
   const iconMark = (
     <svg
       width={Math.round(resolvedHeight * 1.05)}
@@ -128,35 +157,17 @@ export default function MasterfileLogo({
           - Center-right diagonal + right leg: Electric Teal */}
       <g id="emblem-m">
         {/* Left half of M (White) */}
-        <path
-          d="M36 70V44L47 55.5V64.5L41.5 59V70H36Z"
-          fill="#FFFFFF"
-        />
+        <path d="M36 70V44L47 55.5V64.5L41.5 59V70H36Z" fill="#FFFFFF" />
         {/* Left column outer upright (White) */}
-        <path
-          d="M36 44H41.5V70H36V44Z"
-          fill="#FFFFFF"
-        />
+        <path d="M36 44H41.5V70H36V44Z" fill="#FFFFFF" />
         {/* Left inner diagonal (White) */}
-        <path
-          d="M41.5 51L51 61.5L47 65.5L38.5 56.5L41.5 51Z"
-          fill="#FFFFFF"
-        />
+        <path d="M41.5 51L51 61.5L47 65.5L38.5 56.5L41.5 51Z" fill="#FFFFFF" />
 
         {/* Right half of M (Teal #00C9B7) */}
-        <path
-          d="M51 61.5L60.5 51L63.5 56.5L55 65.5L51 61.5Z"
-          fill="#00C9B7"
-        />
+        <path d="M51 61.5L60.5 51L63.5 56.5L55 65.5L51 61.5Z" fill="#00C9B7" />
         {/* Right column outer upright (Teal #00C9B7) */}
-        <path
-          d="M60.5 44H66V70H60.5V44Z"
-          fill="#00C9B7"
-        />
-        <path
-          d="M60.5 59L55 64.5V55.5L66 44V70H60.5V59Z"
-          fill="#00C9B7"
-        />
+        <path d="M60.5 44H66V70H60.5V44Z" fill="#00C9B7" />
+        <path d="M60.5 59L55 64.5V55.5L66 44V70H60.5V59Z" fill="#00C9B7" />
       </g>
     </svg>
   )
@@ -173,28 +184,35 @@ export default function MasterfileLogo({
   }
 
   // Wordmark: "Masterfile" in navy/white + "pro" in vibrant teal
+
   const fontSize = Math.round(resolvedHeight * 0.65)
 
   const wordmark = (
     <span
       style={{
         display: "inline-flex",
+
         alignItems: "baseline",
+
         fontFamily: "'Manrope', 'DM Sans', -apple-system, sans-serif",
+
         fontSize: `${fontSize}px`,
+
         fontWeight: 800,
+
         letterSpacing: "-0.04em",
+
         lineHeight: 1,
+
         whiteSpace: "nowrap",
+
         marginLeft: Math.round(resolvedHeight * 0.22) + "px",
       }}
     >
       <span style={{ color: navyColor, transition: "color 0.2s ease" }}>
         Masterfile
       </span>
-      <span style={{ color: tealColor }}>
-        pro
-      </span>
+      <span style={{ color: tealColor }}>pro</span>
     </span>
   )
 
@@ -210,13 +228,17 @@ export default function MasterfileLogo({
   }
 
   // Full logo (Icon + Wordmark)
+
   return (
     <div
       className={`masterfile-logo-full ${className}`}
       style={{
         display: "inline-flex",
+
         alignItems: "center",
+
         textDecoration: "none",
+
         userSelect: "none",
       }}
     >
@@ -226,14 +248,23 @@ export default function MasterfileLogo({
         <span
           style={{
             fontSize: `${Math.max(9, Math.round(fontSize * 0.4))}px`,
+
             fontWeight: 800,
+
             padding: "2px 6px",
+
             borderRadius: "4px",
+
             background: "rgba(0, 201, 183, 0.12)",
+
             color: "#00C9B7",
+
             border: "1px solid rgba(0, 201, 183, 0.3)",
+
             letterSpacing: "0.8px",
+
             marginLeft: "8px",
+
             alignSelf: "center",
           }}
         >

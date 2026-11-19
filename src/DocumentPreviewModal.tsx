@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+
 import { createPortal } from "react-dom"
+
 import {
   X,
   GripVertical,
@@ -20,7 +22,9 @@ import {
   ExternalLink,
   Download,
 } from "lucide-react"
+
 import { PDFDocument } from "pdf-lib"
+
 import {
   extractPDFPages,
   getSinglePagePdfUrl,
@@ -34,48 +38,70 @@ type Mode = "merge" | "split" | "rotate" | "arrange"
 
 interface DocumentPreviewModalProps {
   mode: Mode
+
   files: File[]
+
   onConfirm: (result: {
     orderedFiles?: File[]
+
     pageRanges?: string
+
     rotations?: Record<number, number>
+
     orderedPages?: number[]
   }) => void
+
   onClose: () => void
 }
 
 export interface DocumentPreviewData {
   pageCount: number
+
   imageUrl?: string
+
   pdfUrl?: string
+
   textLines?: string[]
+
   fullText?: string
+
   width?: number
+
   height?: number
+
   isImage?: boolean
 }
 
 export function cleanReadableLines(lines: string[]): string[] {
   if (!lines || lines.length === 0) return []
+
   return lines
+
     .map((l) =>
-      l
-        .replace(
-          /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF\uE000-\uF8FF\u25A0-\u25FF]/g,
-          "",
-        )
+      l.replace(
+        /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD\uFFF0-\uFFFF\uE000-\uF8FF\u25A0-\u25FF]/g,
+
+        "",
+      )
+
         .trim(),
     )
+
     .filter((l) => {
       if (l.length < 2) return false
+
       const letters = l.match(/[\p{L}\p{N}]/gu) || []
+
       if (letters.length < 2) return false
+
       const printable = l.match(/[\p{L}\p{N}\p{P}\p{S}\p{Z}]/gu) || []
+
       return printable.length / l.length >= 0.7
     })
 }
 
 export { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
+
 import { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
 
 export function getFileKey(file: File, index?: number): string {
@@ -88,12 +114,16 @@ export async function loadFilePreview(
   const isImg =
     file.type.startsWith("image/") ||
     /\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(file.name)
+
   if (isImg) {
     try {
       const url = URL.createObjectURL(file)
+
       return {
         pageCount: 1,
+
         imageUrl: url,
+
         isImage: true,
       }
     } catch {
@@ -102,25 +132,37 @@ export async function loadFilePreview(
   }
 
   const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+
   if (isPdf) {
     try {
       const buf = await file.arrayBuffer()
+
       const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
+
       const pageCount = doc.getPageCount()
+
       let width = 595
+
       let height = 842
+
       try {
         const p1 = doc.getPage(0)
+
         const size = p1.getSize()
+
         width = size.width
+
         height = size.height
       } catch {}
 
       // Try rendering real canvas snapshot via PDF.js first in browser
+
       let imageUrl: string | undefined = undefined
+
       if (typeof window !== "undefined") {
         try {
           const rendered = await renderPdfPageToDataUrl(buf, 1, 1.2)
+
           if (rendered) {
             imageUrl = rendered
           }
@@ -128,9 +170,11 @@ export async function loadFilePreview(
       }
 
       // Embedded images fallback
+
       if (!imageUrl) {
         try {
           const imgs = await extractEmbeddedImagesFromPdf(new Uint8Array(buf))
+
           if (imgs && imgs.length > 0) {
             imageUrl = imgs[0]
           }
@@ -138,18 +182,25 @@ export async function loadFilePreview(
       }
 
       // Extracted text lines from page 1 (sanitized against corrupted font glyphs/tofu)
+
       let textLines: string[] = []
+
       let fullText: string = ""
+
       try {
         const pgs = await extractPDFPages(buf)
+
         if (pgs && pgs.length > 0) {
           textLines = cleanReadableLines(pgs[0].lines).slice(0, 8)
+
           fullText = textLines.join("\n")
         }
       } catch {}
 
       // Single-page PDF URL for clean inspection
+
       let pdfUrl: string | undefined = undefined
+
       try {
         pdfUrl = await getSinglePagePdfUrl(file, 1)
       } catch {
@@ -160,11 +211,17 @@ export async function loadFilePreview(
 
       return {
         pageCount,
+
         imageUrl,
+
         pdfUrl,
+
         textLines,
+
         fullText,
+
         width,
+
         height,
       }
     } catch {
@@ -173,12 +230,17 @@ export async function loadFilePreview(
   }
 
   // Text or others
+
   try {
     const text = await file.text()
+
     const lines = cleanReadableLines(text.split("\n")).slice(0, 8)
+
     return {
       pageCount: 1,
+
       textLines: lines,
+
       fullText: lines.join("\n"),
     }
   } catch {
@@ -190,7 +252,9 @@ export async function loadFilePreview(
 
 function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
+
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
@@ -201,35 +265,51 @@ function fileExt(file: File) {
 function extColor(ext: string) {
   const map: Record<string, string> = {
     PDF: "#ef4444",
+
     JPG: "#f97316",
+
     JPEG: "#f97316",
+
     PNG: "#22c55e",
+
     WEBP: "#06b6d4",
+
     MP3: "#00C9B7",
+
     WAV: "#00A899",
+
     DOC: "#3b82f6",
+
     DOCX: "#3b82f6",
+
     XLS: "#16a34a",
+
     XLSX: "#16a34a",
+
     ZIP: "#eab308",
   }
+
   return map[ext] ?? "#00C9B7"
 }
 
 function splitPointsToRanges(
   splitPoints: Set<number>,
+
   orderedPages: number[],
 ): string {
   if (orderedPages.length === 0) return ""
+
   if (splitPoints.size === 0) {
     return `${orderedPages[0]}-${orderedPages[orderedPages.length - 1]}`
   }
 
   const parts: string[] = []
+
   let currentGroup: number[] = []
 
   orderedPages.forEach((pageNum, idx) => {
     currentGroup.push(pageNum)
+
     if (splitPoints.has(pageNum) || idx === orderedPages.length - 1) {
       if (currentGroup.length === 1) {
         parts.push(`${currentGroup[0]}`)
@@ -238,6 +318,7 @@ function splitPointsToRanges(
           `${currentGroup[0]}-${currentGroup[currentGroup.length - 1]}`,
         )
       }
+
       currentGroup = []
     }
   })
@@ -249,35 +330,59 @@ function splitPointsToRanges(
 
 interface FilePreviewCardProps {
   file: File
+
   index: number
+
   total: number
+
   preview?: DocumentPreviewData
+
   isDragSource: boolean
+
   isDragOver: boolean
+
   onDragStart: (e: React.DragEvent, i: number) => void
+
   onDragEnter: (i: number) => void
+
   onDragEnd: () => void
+
   onRemove: (i: number) => void
+
   onInspect: (file: File, index: number) => void
+
   onMove: (from: number, to: number) => void
 }
 
 function FilePreviewCard({
   file,
+
   index,
+
   total,
+
   preview,
+
   isDragSource,
+
   isDragOver,
+
   onDragStart,
+
   onDragEnter,
+
   onDragEnd,
+
   onRemove,
+
   onInspect,
+
   onMove,
 }: FilePreviewCardProps) {
   const ext = fileExt(file)
+
   const color = extColor(ext)
+
   const [localImg, setLocalImg] = useState<string | null>(
     preview?.imageUrl || null,
   )
@@ -285,9 +390,12 @@ function FilePreviewCard({
   useEffect(() => {
     if (preview?.imageUrl) {
       setLocalImg(preview.imageUrl)
+
       return
     }
+
     let active = true
+
     if (
       file &&
       (file.type === "application/pdf" || /\.pdf$/i.test(file.name))
@@ -296,6 +404,7 @@ function FilePreviewCard({
         if (active && img) setLocalImg(img)
       })
     }
+
     return () => {
       active = false
     }
@@ -305,10 +414,14 @@ function FilePreviewCard({
     <div
       className={[
         "dpm-file-preview-card",
+
         isDragSource ? "dpm-file-preview-card--dragging" : "",
+
         isDragOver ? "dpm-file-preview-card--over" : "",
       ]
+
         .filter(Boolean)
+
         .join(" ")}
       draggable
       onDragStart={(e) => onDragStart(e, index)}
@@ -322,8 +435,11 @@ function FilePreviewCard({
         <div
           style={{
             display: "inline-flex",
+
             alignItems: "center",
+
             gap: "2px",
+
             color: "var(--muted)",
           }}
           title="Grab and move this card to set merge order"
@@ -389,12 +505,19 @@ function FilePreviewCard({
             <div
               style={{
                 display: "flex",
+
                 flexDirection: "column",
+
                 alignItems: "center",
+
                 justifyContent: "center",
+
                 height: "100%",
+
                 gap: "8px",
+
                 padding: "12px",
+
                 textAlign: "center",
               }}
             >
@@ -405,11 +528,17 @@ function FilePreviewCard({
               <span
                 style={{
                   fontSize: "11px",
+
                   fontWeight: 700,
+
                   color: "var(--text)",
+
                   maxWidth: "100%",
+
                   overflow: "hidden",
+
                   textOverflow: "ellipsis",
+
                   whiteSpace: "nowrap",
                 }}
               >
@@ -468,44 +597,71 @@ function FilePreviewCard({
 
 interface FileCardProps {
   file: File
+
   index: number
+
   total: number
+
   preview?: DocumentPreviewData
+
   isDragSource: boolean
+
   isDragOver: boolean
+
   onDragStart: (e: React.DragEvent, i: number) => void
+
   onDragEnter: (i: number) => void
+
   onDragEnd: () => void
+
   onRemove: (i: number) => void
+
   onInspect?: (file: File, index: number) => void
+
   onMove?: (from: number, to: number) => void
 }
 
 function FileCard({
   file,
+
   index,
+
   total,
+
   preview,
+
   isDragSource,
+
   isDragOver,
+
   onDragStart,
+
   onDragEnter,
+
   onDragEnd,
+
   onRemove,
+
   onInspect,
+
   onMove,
 }: FileCardProps) {
   const ext = fileExt(file)
+
   const color = extColor(ext)
 
   return (
     <div
       className={[
         "dpm-file-card",
+
         isDragSource ? "dpm-file-card--dragging" : "",
+
         isDragOver ? "dpm-file-card--over" : "",
       ]
+
         .filter(Boolean)
+
         .join(" ")}
       draggable
       onDragStart={(e) => onDragStart(e, index)}
@@ -606,36 +762,61 @@ function FileCard({
 
 interface InteractivePageCardProps {
   pageNum: number
+
   index: number
+
   pageData?: ExtractedPage
+
   pageImage?: string
+
   isSplitAfter: boolean
+
   isLast: boolean
+
   isDragSource: boolean
+
   isDragOver: boolean
+
   onDragStart: (e: React.DragEvent, i: number) => void
+
   onDragEnter: (i: number) => void
+
   onDragEnd: () => void
+
   onToggleSplit: (pageNum: number) => void
+
   onInspect: (num: number, data?: ExtractedPage) => void
 }
 
 function InteractivePageCard({
   pageNum,
+
   index,
+
   pageData,
+
   pageImage,
+
   isSplitAfter,
+
   isLast,
+
   isDragSource,
+
   isDragOver,
+
   onDragStart,
+
   onDragEnter,
+
   onDragEnd,
+
   onToggleSplit,
+
   onInspect,
 }: InteractivePageCardProps) {
   const previewLines = pageData?.lines?.slice(0, 5) || []
+
   const hasText = previewLines.length > 0
 
   return (
@@ -643,11 +824,16 @@ function InteractivePageCard({
       <div
         className={[
           "dpm-page-thumb",
+
           "dpm-page-thumb--interactive",
+
           isDragSource ? "dpm-page-thumb--dragging" : "",
+
           isDragOver ? "dpm-page-thumb--over" : "",
         ]
+
           .filter(Boolean)
+
           .join(" ")}
         draggable
         onDragStart={(e) => onDragStart(e, index)}
@@ -698,6 +884,7 @@ function InteractivePageCard({
             className="dpm-page-thumb__zoom-btn"
             onClick={(e) => {
               e.stopPropagation()
+
               onInspect(pageNum, pageData)
             }}
             title="Inspect full page"
@@ -718,9 +905,12 @@ function InteractivePageCard({
           type="button"
           className={[
             "dpm-split-btn",
+
             isSplitAfter ? "dpm-split-btn--active" : "",
           ]
+
             .filter(Boolean)
+
             .join(" ")}
           aria-label={
             isSplitAfter
@@ -729,6 +919,7 @@ function InteractivePageCard({
           }
           onClick={(e) => {
             e.stopPropagation()
+
             onToggleSplit(pageNum)
           }}
           title={
@@ -746,17 +937,25 @@ function InteractivePageCard({
 
 interface RotatePageCardProps {
   pageNum: number
+
   deg: number
+
   pageData?: ExtractedPage
+
   onRotate: (page: number) => void
+
   onInspect: (num: number, data?: ExtractedPage) => void
 }
 
 function RotatePageCard({
   pageNum,
+
   deg,
+
   pageData,
+
   onRotate,
+
   onInspect,
 }: RotatePageCardProps) {
   const previewLines = pageData?.lines?.slice(0, 5) || []
@@ -773,6 +972,7 @@ function RotatePageCard({
           className="dpm-page-thumb__canvas"
           style={{
             transform: `rotate(${deg}deg)`,
+
             transition: "transform 0.35s cubic-bezier(0.34,1.56,0.64,1)",
           }}
         >
@@ -801,6 +1001,7 @@ function RotatePageCard({
         className="dpm-rotate-btn"
         onClick={(e) => {
           e.stopPropagation()
+
           onRotate(pageNum)
         }}
         aria-label={`Rotate page ${pageNum} 90° clockwise`}
@@ -816,177 +1017,252 @@ function RotatePageCard({
 
 export default function DocumentPreviewModal({
   mode,
+
   files,
+
   onConfirm,
+
   onClose,
 }: DocumentPreviewModalProps) {
   // File reordering & preview state
+
   const [orderedFiles, setOrderedFiles] = useState<File[]>([...files])
+
   const dragIndexRef = useRef<number | null>(null)
+
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
   const [arrangeViewMode, setArrangeViewMode] = useState<"grid" | "list">(
     "grid",
   )
-  const [filePreviews, setFilePreviews] = useState<
-    Record<string, DocumentPreviewData>
-  >({})
+
+  const [filePreviews, setFilePreviews] =
+    useState<Record<string, DocumentPreviewData>>({})
+
   const [inspectDocModal, setInspectDocModal] = useState<{
     file: File
+
     index: number
   } | null>(null)
+
   const [docInspectImg, setDocInspectImg] = useState<string | null>(null)
+
   const [isDocInspectLoading, setIsDocInspectLoading] = useState(false)
 
   useEffect(() => {
     if (!inspectDocModal) {
       setDocInspectImg(null)
+
       setIsDocInspectLoading(false)
+
       return
     }
+
     const key = getFileKey(inspectDocModal.file, inspectDocModal.index)
+
     const existing = filePreviews[key]?.imageUrl
+
     if (existing) {
       setDocInspectImg(existing)
+
       setIsDocInspectLoading(false)
+
       return
     }
+
     let active = true
+
     if (
       inspectDocModal.file &&
       (inspectDocModal.file.type === "application/pdf" ||
         /\.pdf$/i.test(inspectDocModal.file.name))
     ) {
       setIsDocInspectLoading(true)
+
       renderPdfPageToDataUrl(inspectDocModal.file, 1, 1.8)
+
         .then((img) => {
           if (active) {
             if (img) setDocInspectImg(img)
+
             setIsDocInspectLoading(false)
           }
         })
+
         .catch(() => {
           if (active) setIsDocInspectLoading(false)
         })
     } else {
       setIsDocInspectLoading(false)
     }
+
     return () => {
       active = false
     }
   }, [inspectDocModal, filePreviews])
 
   // Real Page Content & Count extraction
+
   const [extractedPages, setExtractedPages] = useState<ExtractedPage[]>([])
+
   const [pageOrder, setPageOrder] = useState<number[]>([])
+
   const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set())
+
   const [rotations, setRotations] = useState<Record<number, number>>({})
+
   const [pageImages, setPageImages] = useState<string[]>([])
+
   const [inspectModal, setInspectModal] = useState<{
     num: number
+
     text: string
+
     pdfUrl?: string
+
     imageUrl?: string
   } | null>(null)
+
   const [isLoadingPages, setIsLoadingPages] = useState(false)
 
   // Load real previews for all files in merge / arrange mode
+
   useEffect(() => {
     let active = true
+
     if (mode === "merge" || mode === "arrange") {
       orderedFiles.forEach(async (file, idx) => {
         const key = getFileKey(file, idx)
+
         if (filePreviews[key]) return
+
         try {
           const preview = await loadFilePreview(file)
+
           if (!active) return
+
           setFilePreviews((prev) => ({
             ...prev,
+
             [key]: preview,
           }))
         } catch {
           if (!active) return
+
           setFilePreviews((prev) => ({
             ...prev,
+
             [key]: { pageCount: 1, textLines: [file.name] },
           }))
         }
       })
     }
+
     return () => {
       active = false
     }
   }, [orderedFiles, mode])
 
   // Page Drag & Drop
+
   const pageDragIndexRef = useRef<number | null>(null)
+
   const [pageDragOverIndex, setPageDragOverIndex] = useState<number | null>(
     null,
   )
 
   // Load Real PDF Pages and Embedded Images on mount
+
   useEffect(() => {
     let active = true
+
     const targetFile = files[0]
+
     if (targetFile && targetFile.type === "application/pdf") {
       setIsLoadingPages(true)
+
       targetFile
+
         .arrayBuffer()
+
         .then(async (buf) => {
           const pgs = await extractPDFPages(buf)
+
           const imgs = await extractEmbeddedImagesFromPdf(new Uint8Array(buf))
+
           return { pgs, imgs }
         })
+
         .then(({ pgs, imgs }) => {
           if (!active) return
+
           if (imgs && imgs.length > 0) {
             setPageImages(imgs)
           }
+
           if (pgs && pgs.length > 0) {
             setExtractedPages(pgs)
+
             setPageOrder(pgs.map((p) => p.pageNumber))
           } else if (imgs && imgs.length > 0) {
             setPageOrder(Array.from({ length: imgs.length }, (_, i) => i + 1))
           } else {
             const count = Math.max(
               2,
+
               Math.min(16, Math.ceil(targetFile.size / 20480)),
             )
+
             setPageOrder(Array.from({ length: count }, (_, i) => i + 1))
           }
+
           setIsLoadingPages(false)
         })
+
         .catch(() => {
           if (!active) return
+
           const count = Math.max(
             2,
+
             Math.min(16, Math.ceil(targetFile.size / 20480)),
           )
+
           setPageOrder(Array.from({ length: count }, (_, i) => i + 1))
+
           setIsLoadingPages(false)
         })
     } else if (targetFile) {
       const count = Math.max(
         2,
+
         Math.min(12, Math.ceil(targetFile.size / 51200)),
       )
+
       setPageOrder(Array.from({ length: count }, (_, i) => i + 1))
     }
+
     return () => {
       active = false
     }
   }, [files])
 
   // Animation entry
+
   const [visible, setVisible] = useState(false)
+
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
+
     document.body.style.overflow = "hidden"
+
     return () => {
       document.body.style.overflow = ""
     }
   }, [])
 
   // Escape key handler
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -994,13 +1270,16 @@ export default function DocumentPreviewModal({
           setInspectDocModal(null)
         } else if (inspectModal) {
           if (inspectModal.pdfUrl) URL.revokeObjectURL(inspectModal.pdfUrl)
+
           setInspectModal(null)
         } else {
           handleClose()
         }
       }
     }
+
     window.addEventListener("keydown", handleKey)
+
     return () => window.removeEventListener("keydown", handleKey)
   }, [inspectModal, inspectDocModal])
 
@@ -1008,23 +1287,33 @@ export default function DocumentPreviewModal({
     if (inspectModal?.pdfUrl) {
       URL.revokeObjectURL(inspectModal.pdfUrl)
     }
+
     setInspectDocModal(null)
+
     setVisible(false)
+
     setTimeout(onClose, 260)
   }, [onClose, inspectModal])
 
   // File Move Handler
+
   const handleMoveFile = (from: number, to: number) => {
     if (to < 0 || to >= orderedFiles.length || from === to) return
+
     setOrderedFiles((prev) => {
       const copy = [...prev]
+
       const [moved] = copy.splice(from, 1)
+
       copy.splice(to, 0, moved)
+
       return copy
     })
+
     if (inspectDocModal && inspectDocModal.index === from) {
       setInspectDocModal({
         file: orderedFiles[to] || inspectDocModal.file,
+
         index: to,
       })
     }
@@ -1035,142 +1324,194 @@ export default function DocumentPreviewModal({
   }
 
   // File Drag Handlers
+
   const handleFileDragStart = (e: React.DragEvent, i: number) => {
     e.dataTransfer.effectAllowed = "move"
+
     e.dataTransfer.setData("text/plain", `${i}`)
+
     dragIndexRef.current = i
   }
 
   const handleFileDragEnter = (i: number) => {
     if (dragIndexRef.current === null || dragIndexRef.current === i) return
+
     setDragOverIndex(i)
+
     setOrderedFiles((prev) => {
       const copy = [...prev]
+
       const [moved] = copy.splice(dragIndexRef.current!, 1)
+
       copy.splice(i, 0, moved)
+
       dragIndexRef.current = i
+
       return copy
     })
   }
 
   const handleFileDragEnd = () => {
     dragIndexRef.current = null
+
     setDragOverIndex(null)
   }
 
   const handleFileRemove = (i: number) => {
     setOrderedFiles((prev) => prev.filter((_, idx) => idx !== i))
+
     if (inspectDocModal && inspectDocModal.index === i) {
       setInspectDocModal(null)
     }
   }
 
   // Page Drag Handlers (Moving pages within the document)
+
   const handlePageDragStart = (e: React.DragEvent, i: number) => {
     e.dataTransfer.effectAllowed = "move"
+
     e.dataTransfer.setData("text/plain", `${i}`)
+
     pageDragIndexRef.current = i
   }
 
   const handlePageDragEnter = (i: number) => {
     if (pageDragIndexRef.current === null || pageDragIndexRef.current === i)
       return
+
     setPageDragOverIndex(i)
+
     setPageOrder((prev) => {
       const copy = [...prev]
+
       const [moved] = copy.splice(pageDragIndexRef.current!, 1)
+
       copy.splice(i, 0, moved)
+
       pageDragIndexRef.current = i
+
       return copy
     })
   }
 
   const handlePageDragEnd = () => {
     pageDragIndexRef.current = null
+
     setPageDragOverIndex(null)
   }
 
   // Split points toggle
+
   const handleToggleSplit = (pageNum: number) => {
     setSplitPoints((prev) => {
       const next = new Set(prev)
+
       if (next.has(pageNum)) next.delete(pageNum)
       else next.add(pageNum)
+
       return next
     })
   }
 
   // Rotate pages
+
   const handleRotate = (page: number) => {
     setRotations((prev) => ({
       ...prev,
+
       [page]: ((prev[page] ?? 0) + 90) % 360,
     }))
   }
 
   // Inspect page modal open
+
   const handleInspectPage = async (num: number, data?: ExtractedPage) => {
     let pdfUrl: string | undefined = undefined
+
     let imgMatch = pageImages[num - 1]
+
     if (!imgMatch && files[0] && files[0].type === "application/pdf") {
       try {
         const rendered = await renderPdfPageToDataUrl(files[0], num, 1.8)
+
         if (rendered) {
           imgMatch = rendered
         }
       } catch {}
+
       try {
         pdfUrl = await getSinglePagePdfUrl(files[0], num)
       } catch {
         // Fallback to text
       }
     }
+
     setInspectModal({
       num,
+
       text: data?.fullText || "No digital text stream in this page.",
+
       pdfUrl,
+
       imageUrl: imgMatch,
     })
   }
 
   // Confirm changes
+
   const handleConfirm = () => {
     if (mode === "split") {
       const pageRanges = splitPointsToRanges(splitPoints, pageOrder)
+
       onConfirm({ pageRanges, orderedPages: pageOrder })
     } else if (mode === "rotate") {
       onConfirm({ rotations })
     } else {
       onConfirm({ orderedFiles })
     }
+
     handleClose()
   }
 
   // Header configs
+
   const headerMap: Record<Mode, {
     icon: React.ReactNode
+
     title: string
+
     subtitle: string
   }> = {
     merge: {
       icon: <Layers size={22} />,
+
       title: "Arrange Files",
+
       subtitle: "Drag files up or down to set the merge order",
     },
+
     arrange: {
       icon: <Layers size={22} />,
+
       title: "Arrange Files",
+
       subtitle: "Drag files up or down to set the merge order",
     },
+
     split: {
       icon: <Scissors size={22} />,
+
       title: "Preview Content & Set Split Points",
+
       subtitle:
         "Click any page card to inspect full preview. Grab and move to rearrange pages.",
     },
+
     rotate: {
       icon: <RotateCw size={22} />,
+
       title: "Rotate Pages",
+
       subtitle: "Inspect pages and click Rotate to adjust orientation",
     },
   }
@@ -1178,17 +1519,23 @@ export default function DocumentPreviewModal({
   const header = headerMap[mode]
 
   // Mount safety
+
   const [mounted, setMounted] = useState(false)
+
   useEffect(() => setMounted(true), [])
+
   if (!mounted) return null
 
   const calculatedRanges = splitPointsToRanges(splitPoints, pageOrder)
+
   const partsCount = splitPoints.size + 1
 
   return createPortal(
     <div
       className={["dpm-backdrop", visible ? "dpm-backdrop--visible" : ""]
+
         .filter(Boolean)
+
         .join(" ")}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) handleClose()
@@ -1199,7 +1546,9 @@ export default function DocumentPreviewModal({
     >
       <div
         className={["dpm-modal", visible ? "dpm-modal--visible" : ""]
+
           .filter(Boolean)
+
           .join(" ")}
       >
         {/* Header */}
@@ -1235,8 +1584,8 @@ export default function DocumentPreviewModal({
                     <div className="dpm-arrange-toolbar__hint">
                       <GripVertical size={14} />
                       <span>
-                        <strong>Grab &amp; move</strong> cards to set merge sequence
-                        · Merges top/left &rarr; bottom/right
+                        <strong>Grab &amp; move</strong> cards to set merge
+                        sequence · Merges top/left &rarr; bottom/right
                       </span>
                     </div>
 
@@ -1245,11 +1594,14 @@ export default function DocumentPreviewModal({
                         type="button"
                         className={[
                           "dpm-view-toggle__btn",
+
                           arrangeViewMode === "grid"
                             ? "dpm-view-toggle__btn--active"
                             : "",
                         ]
+
                           .filter(Boolean)
+
                           .join(" ")}
                         onClick={() => setArrangeViewMode("grid")}
                         title="Visual Cards Preview"
@@ -1261,11 +1613,14 @@ export default function DocumentPreviewModal({
                         type="button"
                         className={[
                           "dpm-view-toggle__btn",
+
                           arrangeViewMode === "list"
                             ? "dpm-view-toggle__btn--active"
                             : "",
                         ]
+
                           .filter(Boolean)
+
                           .join(" ")}
                         onClick={() => setArrangeViewMode("list")}
                         title="Detailed List View"
@@ -1280,7 +1635,9 @@ export default function DocumentPreviewModal({
                     <div className="dpm-file-grid">
                       {orderedFiles.map((file, i) => {
                         const key = getFileKey(file, i)
+
                         const preview = filePreviews[key]
+
                         return (
                           <FilePreviewCard
                             key={key}
@@ -1304,7 +1661,9 @@ export default function DocumentPreviewModal({
                     <div className="dpm-file-list">
                       {orderedFiles.map((file, i) => {
                         const key = getFileKey(file, i)
+
                         const preview = filePreviews[key]
+
                         return (
                           <FileCard
                             key={key}
@@ -1330,7 +1689,9 @@ export default function DocumentPreviewModal({
                     <GripVertical size={14} />
                     <span>
                       Drag any document card or row to reposition · Order:{" "}
-                      {orderedFiles.map((f, i) => `#${i + 1} ${f.name}`).join(" → ")}
+                      {orderedFiles
+                        .map((f, i) => `#${i + 1} ${f.name}`)
+                        .join(" → ")}
                     </span>
                   </div>
                 </>
@@ -1364,7 +1725,9 @@ export default function DocumentPreviewModal({
                   const pData = extractedPages.find(
                     (p) => p.pageNumber === pageNum,
                   )
+
                   const pImg = pageImages[pageNum - 1]
+
                   return (
                     <InteractivePageCard
                       key={pageNum}
@@ -1436,6 +1799,7 @@ export default function DocumentPreviewModal({
                   const pData = extractedPages.find(
                     (p) => p.pageNumber === pageNum,
                   )
+
                   return (
                     <RotatePageCard
                       key={pageNum}
@@ -1496,6 +1860,7 @@ export default function DocumentPreviewModal({
           className="dpm-inspect-backdrop"
           onClick={() => {
             if (inspectModal.pdfUrl) URL.revokeObjectURL(inspectModal.pdfUrl)
+
             setInspectModal(null)
           }}
         >
@@ -1512,10 +1877,15 @@ export default function DocumentPreviewModal({
                   className="secondary"
                   style={{
                     padding: "4px 10px",
+
                     fontSize: "11px",
+
                     borderRadius: "6px",
+
                     display: "inline-flex",
+
                     alignItems: "center",
+
                     gap: "4px",
                   }}
                   onClick={() => window.open(inspectModal.pdfUrl, "_blank")}
@@ -1530,6 +1900,7 @@ export default function DocumentPreviewModal({
                 onClick={() => {
                   if (inspectModal.pdfUrl)
                     URL.revokeObjectURL(inspectModal.pdfUrl)
+
                   setInspectModal(null)
                 }}
               >
@@ -1551,13 +1922,21 @@ export default function DocumentPreviewModal({
                 <div
                   style={{
                     padding: "40px",
+
                     textAlign: "center",
+
                     color: "var(--muted)",
+
                     width: "100%",
+
                     display: "flex",
+
                     flexDirection: "column",
+
                     alignItems: "center",
+
                     justifyContent: "center",
+
                     gap: "12px",
                   }}
                 >
@@ -1574,10 +1953,15 @@ export default function DocumentPreviewModal({
                       className="primary"
                       style={{
                         padding: "6px 14px",
+
                         fontSize: "12px",
+
                         borderRadius: "8px",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
                       }}
                       onClick={() => window.open(inspectModal.pdfUrl, "_blank")}
@@ -1614,16 +1998,22 @@ export default function DocumentPreviewModal({
               {(() => {
                 const key = getFileKey(
                   inspectDocModal.file,
+
                   inspectDocModal.index,
                 )
+
                 const pInfo = filePreviews[key]
+
                 const docUrl =
                   pInfo?.pdfUrl || URL.createObjectURL(inspectDocModal.file)
+
                 return (
                   <div
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "6px",
                     }}
                   >
@@ -1632,10 +2022,15 @@ export default function DocumentPreviewModal({
                       className="secondary"
                       style={{
                         padding: "4px 10px",
+
                         fontSize: "11px",
+
                         borderRadius: "6px",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "4px",
                       }}
                       onClick={() => window.open(docUrl, "_blank")}
@@ -1648,16 +2043,24 @@ export default function DocumentPreviewModal({
                       className="secondary"
                       style={{
                         padding: "4px 10px",
+
                         fontSize: "11px",
+
                         borderRadius: "6px",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "4px",
                       }}
                       onClick={() => {
                         const a = document.createElement("a")
+
                         a.href = docUrl
+
                         a.download = inspectDocModal.file.name
+
                         a.click()
                       }}
                       title="Download document"
@@ -1706,15 +2109,21 @@ export default function DocumentPreviewModal({
                   disabled={inspectDocModal.index === 0}
                   style={{
                     padding: "4px 10px",
+
                     fontSize: "11px",
+
                     borderRadius: "6px",
+
                     display: "inline-flex",
+
                     alignItems: "center",
+
                     gap: "4px",
                   }}
                   onClick={() =>
                     handleMoveFile(
                       inspectDocModal.index,
+
                       inspectDocModal.index - 1,
                     )
                   }
@@ -1727,15 +2136,21 @@ export default function DocumentPreviewModal({
                   disabled={inspectDocModal.index === orderedFiles.length - 1}
                   style={{
                     padding: "4px 10px",
+
                     fontSize: "11px",
+
                     borderRadius: "6px",
+
                     display: "inline-flex",
+
                     alignItems: "center",
+
                     gap: "4px",
                   }}
                   onClick={() =>
                     handleMoveFile(
                       inspectDocModal.index,
+
                       inspectDocModal.index + 1,
                     )
                   }
@@ -1752,23 +2167,36 @@ export default function DocumentPreviewModal({
                     <div
                       style={{
                         padding: "60px 20px",
+
                         textAlign: "center",
+
                         color: "var(--muted)",
+
                         width: "100%",
+
                         display: "flex",
+
                         flexDirection: "column",
+
                         alignItems: "center",
+
                         justifyContent: "center",
+
                         gap: "12px",
                       }}
                     >
                       <div
                         style={{
                           width: "32px",
+
                           height: "32px",
+
                           borderRadius: "50%",
+
                           border: "3px solid rgba(170, 145, 255, 0.2)",
+
                           borderTopColor: "var(--accent, #aa91ff)",
+
                           animation: "spin 0.8s linear infinite",
                         }}
                       />
@@ -1778,12 +2206,17 @@ export default function DocumentPreviewModal({
                     </div>
                   )
                 }
+
                 const key = getFileKey(
                   inspectDocModal.file,
+
                   inspectDocModal.index,
                 )
+
                 const pInfo = filePreviews[key]
+
                 const finalImg = docInspectImg || pInfo?.imageUrl
+
                 if (finalImg) {
                   return (
                     <div className="dpm-inspect-image-wrap">
@@ -1795,22 +2228,33 @@ export default function DocumentPreviewModal({
                     </div>
                   )
                 }
+
                 if (pInfo?.fullText && pInfo.fullText.trim()) {
                   return <pre>{pInfo.fullText}</pre>
                 }
+
                 const docUrl =
                   pInfo?.pdfUrl || URL.createObjectURL(inspectDocModal.file)
+
                 return (
                   <div
                     style={{
                       padding: "40px 20px",
+
                       textAlign: "center",
+
                       color: "var(--muted)",
+
                       width: "100%",
+
                       display: "flex",
+
                       flexDirection: "column",
+
                       alignItems: "center",
+
                       justifyContent: "center",
+
                       gap: "14px",
                     }}
                   >
@@ -1822,8 +2266,11 @@ export default function DocumentPreviewModal({
                       <p
                         style={{
                           fontWeight: 700,
+
                           fontSize: "15px",
+
                           color: "var(--text)",
+
                           marginBottom: "4px",
                         }}
                       >
@@ -1839,9 +2286,13 @@ export default function DocumentPreviewModal({
                     <div
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "10px",
+
                         flexWrap: "wrap",
+
                         justifyContent: "center",
                       }}
                     >
@@ -1850,10 +2301,15 @@ export default function DocumentPreviewModal({
                         className="primary"
                         style={{
                           padding: "8px 16px",
+
                           fontSize: "12px",
+
                           borderRadius: "8px",
+
                           display: "inline-flex",
+
                           alignItems: "center",
+
                           gap: "6px",
                         }}
                         onClick={() => window.open(docUrl, "_blank")}
@@ -1865,16 +2321,24 @@ export default function DocumentPreviewModal({
                         className="secondary"
                         style={{
                           padding: "8px 16px",
+
                           fontSize: "12px",
+
                           borderRadius: "8px",
+
                           display: "inline-flex",
+
                           alignItems: "center",
+
                           gap: "6px",
                         }}
                         onClick={() => {
                           const a = document.createElement("a")
+
                           a.href = docUrl
+
                           a.download = inspectDocModal.file.name
+
                           a.click()
                         }}
                       >
@@ -1889,6 +2353,7 @@ export default function DocumentPreviewModal({
         </div>
       )}
     </div>,
+
     document.body,
   )
 }

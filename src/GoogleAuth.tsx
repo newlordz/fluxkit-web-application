@@ -271,7 +271,9 @@ export default function GoogleAuth({
                 marginBottom: "16px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "10px" }}
+              >
                 <GoogleIcon size={24} />
                 <strong style={{ fontSize: "16px", fontWeight: 700 }}>
                   Sign in with Google
@@ -513,8 +515,9 @@ export default function GoogleAuth({
                       lineHeight: 1.4,
                     }}
                   >
-                    Provide your OAuth 2.0 Web Client ID from Google Cloud Console to
-                    enable live <code>accounts.google.com</code> popups.
+                    Provide your OAuth 2.0 Web Client ID from Google Cloud
+                    Console to enable live <code>accounts.google.com</code>{" "}
+                    popups.
                   </p>
                   <input
                     type="text"

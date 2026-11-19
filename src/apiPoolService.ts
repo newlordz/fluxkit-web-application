@@ -1,6 +1,6 @@
 /**
  * FluxKit Cloud API Registry & Failover Priority Service
- * 
+ *
  * Manages the multi-provider API pool, priority execution order,
  * automatic failover when credits finish, and direct links to free API dashboards.
  */
@@ -55,8 +55,10 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "pdf-compression",
     priority: 1,
     enabled: true,
-    description: "Industry-standard high-fidelity PDF compression, linearizing, and optimization with lossless font embedding.",
-    dashboardUrl: "https://developer.adobe.com/document-services/apis/pdf-services/",
+    description:
+      "Industry-standard high-fidelity PDF compression, linearizing, and optimization with lossless font embedding.",
+    dashboardUrl:
+      "https://developer.adobe.com/document-services/apis/pdf-services/",
     apiKey: getEnv("VITE_ADOBE_CLIENT_ID"),
     clientSecret: getEnv("VITE_ADOBE_CLIENT_SECRET"),
     endpoint: "https://pdf-services.adobe.io",
@@ -73,7 +75,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "pdf-compression",
     priority: 2,
     enabled: true,
-    description: "Cloud-based PDF compression with balanced ratios and fast failover processing.",
+    description:
+      "Cloud-based PDF compression with balanced ratios and fast failover processing.",
     dashboardUrl: "https://developer.ilovepdf.com/",
     apiKey: getEnv("VITE_ILOVEPDF_PUBLIC_KEY"),
     clientSecret: getEnv("VITE_ILOVEPDF_SECRET_KEY"),
@@ -91,7 +94,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "pdf-compression",
     priority: 3,
     enabled: true,
-    description: "Server-grade Ghostscript & LibreOffice engine for heavy PDF shrinking and cross-format conversion. 25 free credits/day (750/mo).",
+    description:
+      "Server-grade Ghostscript & LibreOffice engine for heavy PDF shrinking and cross-format conversion. 25 free credits/day (750/mo).",
     dashboardUrl: "https://cloudconvert.com/dashboard/api/v2/keys",
     endpoint: "https://api.cloudconvert.com/v2",
     monthlyQuota: 750,
@@ -106,7 +110,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "pdf-compression",
     priority: 4,
     enabled: true,
-    description: "High-speed document conversion and compression. 250 free conversions included on registration.",
+    description:
+      "High-speed document conversion and compression. 250 free conversions included on registration.",
     dashboardUrl: "https://www.convertapi.com/a",
     endpoint: "https://v2.convertapi.com",
     monthlyQuota: 250,
@@ -121,7 +126,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "pdf-compression",
     priority: 5,
     enabled: true,
-    description: "100% private client-side in-browser PDF processing. Zero latency, unlimited quota, zero cost, completely offline fallback.",
+    description:
+      "100% private client-side in-browser PDF processing. Zero latency, unlimited quota, zero cost, completely offline fallback.",
     endpoint: "local-browser://pdf-engine",
     monthlyQuota: 999999,
     usedThisMonth: 0,
@@ -137,7 +143,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "ocr-text",
     priority: 1,
     enabled: true,
-    description: "Multi-language optical character recognition for scanned PDFs and document images. 25,000 requests/month free (500/day).",
+    description:
+      "Multi-language optical character recognition for scanned PDFs and document images. 25,000 requests/month free (500/day).",
     dashboardUrl: "https://ocr.space/ocrapi/freekey",
     apiKey: getEnv("VITE_OCRSPACE_API_KEY"),
     endpoint: "https://api.ocr.space/parse/image",
@@ -155,7 +162,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "image-tools",
     priority: 1,
     enabled: true,
-    description: "Intelligent lossy compression for PNG, JPEG, and WebP images. 500 image compressions free every month.",
+    description:
+      "Intelligent lossy compression for PNG, JPEG, and WebP images. 500 image compressions free every month.",
     dashboardUrl: "https://tinypng.com/developers",
     endpoint: "https://api.tinify.com/shrink",
     monthlyQuota: 500,
@@ -172,7 +180,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "audio-speech",
     priority: 1,
     enabled: true,
-    description: "Ultra-fast Audio-to-Text using OpenAI Whisper Large v3. 14,400 seconds (~4 hours) of audio transcribed free every day.",
+    description:
+      "Ultra-fast Audio-to-Text using OpenAI Whisper Large v3. 14,400 seconds (~4 hours) of audio transcribed free every day.",
     dashboardUrl: "https://console.groq.com/keys",
     endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
     monthlyQuota: 14400,
@@ -189,7 +198,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "ai-text",
     priority: 1,
     enabled: true,
-    description: "Document Summarizer, Grammar Fixer, and smart drafting. 1,500 requests/day (45,000/mo) completely free.",
+    description:
+      "Document Summarizer, Grammar Fixer, and smart drafting. 1,500 requests/day (45,000/mo) completely free.",
     dashboardUrl: "https://aistudio.google.com/app/apikey",
     endpoint: "https://generativelanguage.googleapis.com/v1beta",
     monthlyQuota: 45000,
@@ -204,7 +214,8 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     category: "ai-text",
     priority: 2,
     enabled: true,
-    description: "Document and text translation across 60+ languages. 50,000 words free every single day.",
+    description:
+      "Document and text translation across 60+ languages. 50,000 words free every single day.",
     dashboardUrl: "https://mymemory.translated.net/doc/keygen.php",
     endpoint: "https://api.mymemory.translated.net/get",
     monthlyQuota: 50000,
@@ -241,17 +252,30 @@ export function getCloudApis(category?: string): CloudApiConfig[] {
               existing.dashboardUrl = def.dashboardUrl
               changed = true
             }
-            if (def.apiKey && (!existing.apiKey || existing.apiKey.startsWith("YOUR_") || existing.apiKey.length < 5)) {
+            if (
+              def.apiKey &&
+              (!existing.apiKey ||
+                existing.apiKey.startsWith("YOUR_") ||
+                existing.apiKey.length < 5)
+            ) {
               existing.apiKey = def.apiKey
               if (def.clientSecret) existing.clientSecret = def.clientSecret
               changed = true
             }
             // Specific verified pre-configured keys (OCR.space and iLovePDF)
-            if (def.id === "ocr-space-api" && (!existing.apiKey || existing.apiKey.startsWith("YOUR_") || existing.apiKey !== def.apiKey)) {
+            if (
+              def.id === "ocr-space-api" &&
+              (!existing.apiKey ||
+                existing.apiKey.startsWith("YOUR_") ||
+                existing.apiKey !== def.apiKey)
+            ) {
               existing.apiKey = def.apiKey
               changed = true
             }
-            if (def.id === "ilovepdf-cloud" && (!existing.apiKey || existing.apiKey.startsWith("YOUR_"))) {
+            if (
+              def.id === "ilovepdf-cloud" &&
+              (!existing.apiKey || existing.apiKey.startsWith("YOUR_"))
+            ) {
               existing.apiKey = def.apiKey
               existing.clientSecret = def.clientSecret
               changed = true
@@ -264,7 +288,9 @@ export function getCloudApis(category?: string): CloudApiConfig[] {
       }
     }
 
-    const filtered = category ? list.filter((a) => a.category === category) : list
+    const filtered = category
+      ? list.filter((a) => a.category === category)
+      : list
     return filtered.sort((a, b) => a.priority - b.priority)
   } catch {
     return DEFAULT_CLOUD_APIS
@@ -280,7 +306,9 @@ export async function saveCloudApis(apis: CloudApiConfig[]): Promise<void> {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted))
 
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("fluxkit-apis-updated", { detail: { apis: sorted } }))
+      window.dispatchEvent(
+        new CustomEvent("fluxkit-apis-updated", { detail: { apis: sorted } }),
+      )
     }
 
     // Write to server disk database
@@ -390,7 +418,9 @@ export function recordApiOutcome(
 /**
  * Test an API's connectivity and return live latency & status
  */
-export async function testApiHealth(api: CloudApiConfig): Promise<ApiHealthResult> {
+export async function testApiHealth(
+  api: CloudApiConfig,
+): Promise<ApiHealthResult> {
   const start = performance.now()
   try {
     if (api.provider === "adobe") {
@@ -465,7 +495,8 @@ export async function testApiHealth(api: CloudApiConfig): Promise<ApiHealthResul
         ok: true,
         service: "Local In-Browser Engine",
         latencyMs: 1,
-        message: "Instant (1ms). Client-side WebAssembly active with unlimited quota.",
+        message:
+          "Instant (1ms). Client-side WebAssembly active with unlimited quota.",
         quotaRemaining: 999999,
       }
     }
@@ -475,7 +506,11 @@ export async function testApiHealth(api: CloudApiConfig): Promise<ApiHealthResul
       const proxyRes = await fetch("/api/cloud-apis/ping", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: api.endpoint, apiKey: api.apiKey, provider: api.provider }),
+        body: JSON.stringify({
+          endpoint: api.endpoint,
+          apiKey: api.apiKey,
+          provider: api.provider,
+        }),
       })
       if (proxyRes.ok) {
         const data = await proxyRes.json()
@@ -483,7 +518,8 @@ export async function testApiHealth(api: CloudApiConfig): Promise<ApiHealthResul
           ok: true,
           service: api.name,
           latencyMs: data.latencyMs || Math.round(performance.now() - start),
-          message: data.message || `Connected & Ready (${data.latencyMs || 15}ms)`,
+          message:
+            data.message || `Connected & Ready (${data.latencyMs || 15}ms)`,
         }
       }
     } catch {
@@ -492,13 +528,17 @@ export async function testApiHealth(api: CloudApiConfig): Promise<ApiHealthResul
 
     // Direct ping fallback
     if (api.endpoint) {
-      const res = await fetch(api.endpoint, { method: "HEAD" }).catch(() => null)
+      const res = await fetch(api.endpoint, { method: "HEAD" }).catch(
+        () => null,
+      )
       const latencyMs = Math.round(performance.now() - start)
       return {
         ok: true,
         service: api.name,
         latencyMs,
-        message: res ? `Connected • HTTP ${res.status} (${latencyMs}ms)` : `Endpoint configured & ready (${latencyMs}ms)`,
+        message: res
+          ? `Connected • HTTP ${res.status} (${latencyMs}ms)`
+          : `Endpoint configured & ready (${latencyMs}ms)`,
       }
     }
 

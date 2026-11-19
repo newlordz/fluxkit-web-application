@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react"
+
 import {
   Lock,
   Unlock,
@@ -10,9 +11,13 @@ import {
   ShieldCheck,
   Coins,
 } from "lucide-react"
+
 import TactilePadlock from "./TactilePadlock"
+
 import type { Tool } from "./config"
+
 import type { UserAccount } from "./authService"
+
 import {
   activateProSimulatedPayment,
   requestProApproval,
@@ -20,10 +25,12 @@ import {
   getToolPrice,
   unlockSingleToolForUser,
 } from "./adminService"
+
 import {
   getActiveGateway,
   triggerLivePaystackCheckout,
 } from "./paymentIntegrationService"
+
 import {
   getActiveCurrency,
   setActiveCurrency,
@@ -33,24 +40,38 @@ import {
 
 export interface ProActivationModalProps {
   tool: Tool
+
   currentUser: UserAccount | null
+
   onActivated?: (user: UserAccount) => void
+
   onNavigate?: (id: string) => void
 }
 
 export default function ProActivationModal({
   tool,
+
   currentUser,
+
   onActivated,
+
   onNavigate,
 }: ProActivationModalProps) {
   const [loading, setLoading] = useState<"payment" | "approval" | null>(null)
+
   const [successMessage, setSuccessMessage] = useState("")
+
   const [errorMessage, setErrorMessage] = useState("")
+
   const [isUnlocked, setIsUnlocked] = useState(false)
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly")
+
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">(
+    "monthly",
+  )
+
   const [activeCurrency, setActiveCurrencyLocal] =
     useState<SupportedCurrency>(getActiveCurrency)
+
   const exchangeRate = getExchangeRate()
 
   const isYearly = billingCycle === "yearly"
@@ -65,41 +86,60 @@ export default function ProActivationModal({
     const onCurrChange = (e: any) => {
       if (e.detail) setActiveCurrencyLocal(e.detail)
     }
+
     window.addEventListener("fluxkit-currency-changed", onCurrChange)
+
     return () =>
       window.removeEventListener("fluxkit-currency-changed", onCurrChange)
   }, [])
 
   const isPending = currentUser?.proStatus === "pending"
+
   const activeGateway = getActiveGateway()
 
   // Single-Tool subscription prices
+
   const rawToolPrice = getToolPrice(tool.id)
+
   const singleToolUsd = isYearly ? rawToolPrice * 10 : rawToolPrice
+
   const singleToolLabel = getFormattedToolPrice(
     tool.id,
+
     activeCurrency,
+
     isYearly ? "year" : "month",
   )
 
   // All-Access Pro plan prices
+
   const allAccessUsd = isYearly ? 190 : 19
+
   const formattedFee =
     activeCurrency === "GHS"
-      ? `GH₵ ${(allAccessUsd * exchangeRate).toFixed(2)} GHS / ${isYearly ? "year" : "month"}`
+      ? `GH₵ ${(allAccessUsd * exchangeRate).toFixed(2)} GHS / ${
+          isYearly ? "year" : "month"
+        }`
       : `$${allAccessUsd}.00 USD / ${isYearly ? "year" : "month"}`
 
   const handleBuySingleTool = () => {
     setLoading("payment")
+
     setErrorMessage("")
+
     setTimeout(() => {
       const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
+
       const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
+
       setLoading(null)
+
       const renewsPeriod = isYearly ? "1 year" : "1 month"
+
       setSuccessMessage(
         `Success! You subscribed to ${tool.name} (${billingCycle.toUpperCase()} plan). Auto-renews in ${renewsPeriod}. Access is now active!`,
       )
+
       if (onActivated) {
         onActivated(updated)
       }
@@ -108,9 +148,12 @@ export default function ProActivationModal({
 
   const handleBuySingleToolLive = () => {
     setErrorMessage("")
+
     if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
       setLoading("payment")
+
       const userEmail = currentUser?.email || "customer@masterfilepro.com"
+
       const subunits =
         activeGateway.currency === "GHS"
           ? Math.round(singleToolUsd * exchangeRate * 100)
@@ -120,33 +163,45 @@ export default function ProActivationModal({
 
       triggerLivePaystackCheckout({
         publicKey: activeGateway.publicKey,
+
         email: userEmail,
+
         amountInSubunits: subunits,
+
         currency: activeGateway.currency,
+
         onSuccess: (ref) => {
           const userId = currentUser
             ? currentUser.id
             : "usr_guest_" + Date.now()
+
           const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
+
           setLoading(null)
+
           setSuccessMessage(
             `Live Paystack Payment Verified! (Ref: ${ref}). ${tool.name} ${billingCycle.toUpperCase()} subscription active!`,
           )
+
           if (onActivated) {
             onActivated(updated)
           }
         },
+
         onClose: () => {
           setLoading(null)
         },
+
         onError: (err) => {
           setLoading(null)
+
           setErrorMessage(
             err.message ||
               "Paystack checkout was closed or encountered an error.",
           )
         },
       })
+
       return
     }
 
@@ -155,14 +210,20 @@ export default function ProActivationModal({
 
   const handleSimulatedPayment = () => {
     setLoading("payment")
+
     setErrorMessage("")
+
     setTimeout(() => {
       const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
+
       const updated = activateProSimulatedPayment(userId)
+
       setLoading(null)
+
       setSuccessMessage(
         `Payment verified via ${activeGateway?.name || "Paystack"} (${activeGateway?.mode?.toUpperCase() || "TEST"}). Pro subscription unlocked.`,
       )
+
       if (onActivated) {
         onActivated(updated)
       }
@@ -171,9 +232,12 @@ export default function ProActivationModal({
 
   const handleLivePayment = () => {
     setErrorMessage("")
+
     if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
       setLoading("payment")
+
       const userEmail = currentUser?.email || "customer@masterfilepro.com"
+
       const subunits =
         activeGateway.currency === "GHS"
           ? Math.round(allAccessUsd * exchangeRate * 100)
@@ -183,33 +247,45 @@ export default function ProActivationModal({
 
       triggerLivePaystackCheckout({
         publicKey: activeGateway.publicKey,
+
         email: userEmail,
+
         amountInSubunits: subunits,
+
         currency: activeGateway.currency,
+
         onSuccess: (ref) => {
           const userId = currentUser
             ? currentUser.id
             : "usr_guest_" + Date.now()
+
           const updated = activateProSimulatedPayment(userId)
+
           setLoading(null)
+
           setSuccessMessage(
             `Live Paystack Payment Verified! (Ref: ${ref}). Pro subscription unlocked.`,
           )
+
           if (onActivated) {
             onActivated(updated)
           }
         },
+
         onClose: () => {
           setLoading(null)
         },
+
         onError: (err) => {
           setLoading(null)
+
           setErrorMessage(
             err.message ||
               "Paystack checkout was closed or encountered an error.",
           )
         },
       })
+
       return
     }
 
@@ -219,15 +295,21 @@ export default function ProActivationModal({
   const handleRequestApproval = () => {
     if (!currentUser) {
       if (onNavigate) onNavigate("sign-in")
+
       return
     }
+
     setLoading("approval")
+
     setTimeout(() => {
       const updated = requestProApproval(currentUser.id)
+
       setLoading(null)
+
       setSuccessMessage(
         "Your activation request has been submitted to the administrator for approval.",
       )
+
       if (onActivated) {
         onActivated(updated)
       }
@@ -239,8 +321,11 @@ export default function ProActivationModal({
       className="panel pro-paywall-panel page-enter"
       style={{
         maxWidth: "680px",
+
         margin: "8px auto 20px",
+
         padding: "20px 24px",
+
         position: "relative",
       }}
     >
@@ -248,7 +333,10 @@ export default function ProActivationModal({
       <div className="paywall-header-bar">
         {/* Left: 3D Tactile Lock + Title + Pill + Subtitle */}
         <div className="paywall-header-left">
-          <div className="paywall-lock-slot" style={{ position: "relative", flexShrink: 0 }}>
+          <div
+            className="paywall-lock-slot"
+            style={{ position: "relative", flexShrink: 0 }}
+          >
             <TactilePadlock unlocked={isUnlocked} size="sm" />
             {isUnlocked && (
               <div className="paywall-unlock-sparkles">
@@ -264,9 +352,15 @@ export default function ProActivationModal({
           <div className="paywall-title-block">
             <div className="paywall-title-row">
               <h1 className="paywall-title">
-                {isUnlocked ? `Welcome to ${tool.name}` : `Unlock ${tool.name} with Pro`}
+                {isUnlocked
+                  ? `Welcome to ${tool.name}`
+                  : `Unlock ${tool.name} with Pro`}
               </h1>
-              <span className={`tactile-pro-pill ${isUnlocked ? "is-unlocked" : ""}`}>
+              <span
+                className={`tactile-pro-pill ${
+                  isUnlocked ? "is-unlocked" : ""
+                }`}
+              >
                 {isUnlocked ? "✓ UNLOCKED" : "PRO FEATURE"}
               </span>
             </div>
@@ -284,18 +378,31 @@ export default function ProActivationModal({
             className="paywall-currency-switcher"
             style={{ display: "flex", alignItems: "center", gap: "6px" }}
           >
-            <span style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: "11px",
+                color: "var(--muted)",
+                fontWeight: 600,
+              }}
+            >
               Currency:
             </span>
             <div
               style={{
                 display: "inline-flex",
+
                 alignItems: "center",
+
                 background: "var(--surface)",
+
                 border: "1px solid var(--border)",
+
                 borderRadius: "20px",
+
                 padding: "2px",
+
                 fontSize: "11px",
+
                 fontWeight: 600,
               }}
             >
@@ -303,19 +410,29 @@ export default function ProActivationModal({
                 type="button"
                 onClick={() => {
                   setActiveCurrency("USD")
+
                   setActiveCurrencyLocal("USD")
                 }}
                 style={{
                   padding: "2px 8px",
+
                   borderRadius: "16px",
+
                   border: "none",
+
                   background:
                     activeCurrency === "USD" ? "#00C9B7" : "transparent",
+
                   color: activeCurrency === "USD" ? "#06204D" : "var(--muted)",
+
                   cursor: "pointer",
+
                   fontWeight: 700,
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "4px",
                 }}
               >
@@ -326,19 +443,29 @@ export default function ProActivationModal({
                 type="button"
                 onClick={() => {
                   setActiveCurrency("GHS")
+
                   setActiveCurrencyLocal("GHS")
                 }}
                 style={{
                   padding: "2px 8px",
+
                   borderRadius: "16px",
+
                   border: "none",
+
                   background:
                     activeCurrency === "GHS" ? "#00C9B7" : "transparent",
+
                   color: activeCurrency === "GHS" ? "#06204D" : "var(--muted)",
+
                   cursor: "pointer",
+
                   fontWeight: 700,
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "4px",
                 }}
               >
@@ -375,11 +502,17 @@ export default function ProActivationModal({
         <div
           style={{
             padding: "20px",
+
             background: "rgba(16,185,129,0.15)",
+
             border: "1px solid rgba(16,185,129,0.3)",
+
             borderRadius: "10px",
+
             textAlign: "center",
+
             color: "#10b981",
+
             marginBottom: "24px",
           }}
         >
@@ -402,11 +535,17 @@ export default function ProActivationModal({
             <div
               style={{
                 padding: "12px 16px",
+
                 background: "rgba(239,68,68,0.12)",
+
                 border: "1px solid rgba(239,68,68,0.3)",
+
                 borderRadius: "8px",
+
                 color: "#ef4444",
+
                 fontSize: "12px",
+
                 marginBottom: "20px",
               }}
             >
@@ -416,8 +555,11 @@ export default function ProActivationModal({
           <div
             style={{
               display: "grid",
+
               gridTemplateColumns: "1fr 1fr",
+
               gap: "16px",
+
               marginBottom: "20px",
             }}
           >
@@ -425,11 +567,17 @@ export default function ProActivationModal({
             <div
               style={{
                 border: "1px solid rgba(59,130,246,0.4)",
+
                 background: "rgba(59,130,246,0.06)",
+
                 borderRadius: "12px",
+
                 padding: "20px",
+
                 display: "flex",
+
                 flexDirection: "column",
+
                 justifyContent: "space-between",
               }}
             >
@@ -437,9 +585,13 @@ export default function ProActivationModal({
                 <div
                   style={{
                     display: "flex",
+
                     alignItems: "center",
+
                     gap: "8px",
+
                     color: "#3b82f6",
+
                     fontWeight: 600,
                   }}
                 >
@@ -448,7 +600,9 @@ export default function ProActivationModal({
                 <div
                   style={{
                     fontSize: "24px",
+
                     fontWeight: 800,
+
                     margin: "12px 0 6px",
                   }}
                 >
@@ -456,7 +610,9 @@ export default function ProActivationModal({
                   <span
                     style={{
                       fontSize: "13px",
+
                       fontWeight: 400,
+
                       color: "var(--muted)",
                     }}
                   >
@@ -466,11 +622,14 @@ export default function ProActivationModal({
                 <p
                   style={{
                     fontSize: "12px",
+
                     color: "var(--muted)",
+
                     lineHeight: 1.6,
                   }}
                 >
-                  Dedicated monthly subscription for <strong>{tool.name}</strong>.
+                  Dedicated monthly subscription for{" "}
+                  <strong>{tool.name}</strong>.
                   {isYearly
                     ? " Renews annually with 2 months free applied. Cancel anytime."
                     : " Renews automatically every month on this date. Cancel anytime."}
@@ -481,9 +640,13 @@ export default function ProActivationModal({
                   className="primary"
                   style={{
                     marginTop: "16px",
+
                     width: "100%",
+
                     justifyContent: "center",
+
                     background: "#3b82f6",
+
                     borderColor: "#3b82f6",
                   }}
                   disabled={loading !== null}
@@ -500,11 +663,17 @@ export default function ProActivationModal({
             <div
               style={{
                 border: "1px solid rgba(168,85,247,0.4)",
+
                 background: "rgba(168,85,247,0.06)",
+
                 borderRadius: "12px",
+
                 padding: "20px",
+
                 display: "flex",
+
                 flexDirection: "column",
+
                 justifyContent: "space-between",
               }}
             >
@@ -512,9 +681,13 @@ export default function ProActivationModal({
                 <div
                   style={{
                     display: "flex",
+
                     alignItems: "center",
+
                     gap: "8px",
+
                     color: "#00C9B7",
+
                     fontWeight: 600,
                   }}
                 >
@@ -523,7 +696,9 @@ export default function ProActivationModal({
                 <div
                   style={{
                     fontSize: "24px",
+
                     fontWeight: 800,
+
                     margin: "12px 0 6px",
                   }}
                 >
@@ -531,7 +706,9 @@ export default function ProActivationModal({
                   <span
                     style={{
                       fontSize: "13px",
+
                       fontWeight: 400,
+
                       color: "var(--muted)",
                     }}
                   >
@@ -541,7 +718,9 @@ export default function ProActivationModal({
                 <p
                   style={{
                     fontSize: "12px",
+
                     color: "var(--muted)",
+
                     lineHeight: 1.6,
                   }}
                 >
@@ -555,7 +734,9 @@ export default function ProActivationModal({
                   className="primary"
                   style={{
                     marginTop: "16px",
+
                     width: "100%",
+
                     justifyContent: "center",
                   }}
                   disabled={loading !== null}
@@ -573,13 +754,21 @@ export default function ProActivationModal({
           <div
             style={{
               padding: "12px 18px",
+
               border: "1px dashed var(--border)",
+
               borderRadius: "10px",
+
               display: "flex",
+
               justifyContent: "space-between",
+
               alignItems: "center",
+
               fontSize: "12px",
+
               color: "var(--muted)",
+
               marginBottom: "24px",
             }}
           >
@@ -607,9 +796,13 @@ export default function ProActivationModal({
           <div
             style={{
               display: "flex",
+
               justifyContent: "space-between",
+
               alignItems: "center",
+
               borderTop: "1px solid var(--border)",
+
               paddingTop: "20px",
             }}
           >
@@ -617,9 +810,13 @@ export default function ProActivationModal({
               className="text-button"
               style={{
                 display: "inline-flex",
+
                 alignItems: "center",
+
                 gap: "6px",
+
                 color: "var(--muted)",
+
                 fontSize: "12px",
               }}
               onClick={() => {

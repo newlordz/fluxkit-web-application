@@ -1100,7 +1100,10 @@ export default function Overview({
                           className="card-format-tag card-pro-pill"
                           title={`Pro Tool · ${getFormattedToolPrice(t.id, undefined, "month")}`}
                         >
-                          PRO{t.formatBadge ? "" : ` · ${getFormattedToolPrice(t.id, undefined, "month")}`}
+                          PRO
+                          {t.formatBadge
+                            ? ""
+                            : ` · ${getFormattedToolPrice(t.id, undefined, "month")}`}
                         </span>
                       ) : (
                         <span className="card-format-tag card-free-pill">
@@ -1108,7 +1111,9 @@ export default function Overview({
                         </span>
                       )}
                       {t.formatBadge && (
-                        <span className="card-format-tag card-badge-pill">{t.formatBadge}</span>
+                        <span className="card-format-tag card-badge-pill">
+                          {t.formatBadge}
+                        </span>
                       )}
                       <button
                         className={`card-fav-btn ${isFav ? "is-fav" : ""}`}
@@ -1138,7 +1143,8 @@ export default function Overview({
                       {t.category}
                       {isToolPro(t.id) && (
                         <span className="card-bottom-price">
-                          {" "}· {getFormattedToolPrice(t.id, undefined, "month")}
+                          {" "}
+                          · {getFormattedToolPrice(t.id, undefined, "month")}
                         </span>
                       )}
                     </span>

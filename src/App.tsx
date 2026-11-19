@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from "react"
+
 import {
   Activity,
   AudioLines,
@@ -38,46 +39,66 @@ import {
   X,
   Zap,
 } from "lucide-react"
+
 import { brand, categories, tools, type Category, type Tool } from "./config"
+
 import MasterfileLogo from "./MasterfileLogo"
+
 import ToolPage from "./ToolPage"
+
 import AudioToText from "./AudioToText"
+
 import AuthPage, { type AuthPageMode } from "./AuthPage"
+
 import Overview from "./Overview"
+
 import ToolBadgeIcon from "./ToolBadgeIcon"
+
 import { useNotify } from "./Notifications"
+
 import {
   getCurrentUser,
   signOut,
   onAuthStateChanged,
   type UserAccount,
 } from "./authService"
+
 import {
   canUserAccessTool,
   isToolPro,
   getFormattedToolPrice,
 } from "./adminService"
+
 import {
   getAdminConfig,
   updateAdminSettings,
   initializeDatabaseSync,
   type DatabaseStatus,
 } from "./adminDbService"
+
 import {
   getActiveCurrency,
   setActiveCurrency,
   type SupportedCurrency,
 } from "./currencyService"
+
 import {
   getCustomPageBySlug,
   getPublishedCustomPages,
 } from "./pageManagerService"
+
 import AdminPanel from "./AdminPanel"
+
 import ProActivationModal from "./ProActivationModal"
+
 import ImageShowcaseViewer from "./ImageShowcaseViewer"
+
 import VisitorPassStudio from "./VisitorPassStudio"
+
 import { GoogleIcon } from "./GoogleAuth"
+
 import { syncCloudApisWithServer } from "./apiPoolService"
+
 import { syncGatewaysWithServer } from "./paymentIntegrationService"
 
 function stored(key: string, fallback: string) {
@@ -87,6 +108,7 @@ function stored(key: string, fallback: string) {
     return fallback
   }
 }
+
 function persist(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
@@ -94,31 +116,46 @@ function persist(key: string, value: string) {
     /* Storage may be unavailable in private browser contexts. */
   }
 }
+
 const navItems = [
   { id: "overview", name: "Overview", icon: LayoutDashboard },
+
   { id: "all", name: "All tools", icon: Grid2X2 },
+
   { id: "files", name: "File tools", icon: FolderOpen },
+
   { id: "qr-tools", name: "QR tools", icon: QrCode },
+
   { id: "ai", name: "AI text tools", icon: Sparkles },
+
   { id: "audio", name: "Audio tools", icon: AudioLines },
 ]
+
 type ActivityItem = {
   name: string
+
   time: string
 }
+
 function getToolThemeClass(tool: Tool) {
   if (tool.category === "File tools") return "theme-blue"
+
   if (tool.category === "QR tools") return "theme-teal"
+
   if (tool.category === "AI text tools") return "theme-violet"
+
   if (tool.category === "Audio tools") return "theme-amber"
+
   return "theme-blue"
 }
 
 function ToolCard({
   tool,
+
   navigate,
 }: {
   tool: Tool
+
   navigate: (id: string) => void
 }) {
   return (
@@ -145,14 +182,21 @@ function ToolCard({
           <span
             style={{
               fontSize: "11px",
+
               padding: "2px 6px",
+
               borderRadius: "4px",
+
               fontWeight: 700,
+
               whiteSpace: "nowrap",
+
               flexShrink: 0,
+
               background: isToolPro(tool.id)
                 ? "rgba(0,201,183,0.15)"
                 : "rgba(16,185,129,0.15)",
+
               color: isToolPro(tool.id) ? "#00C9B7" : "#10b981",
             }}
           >
@@ -181,61 +225,100 @@ function ToolCard({
     </button>
   )
 }
+
 export default function App() {
   const notify = useNotify()
+
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() =>
     getCurrentUser(),
   )
+
   const [page, setPage] = useState(() => {
     const initialUser = getCurrentUser()
+
     if (initialUser?.role === "admin" || initialUser?.role === "sub-admin") {
       return "admin"
     }
+
     return location.hash.slice(1) || "overview"
   })
+
   const [theme, setTheme] = useState(() => {
     const v2 = stored("fluxkit-theme-v2", "")
+
     if (v2) return v2
+
     return "light"
   })
+
   const [collapsed, setCollapsed] = useState(
     () => stored("fluxkit-sidebar", "false") === "true",
   )
+
   const [mobile, setMobile] = useState(false)
+
   const [query, setQuery] = useState("")
+
   const [filter, setFilter] = useState<Category | "All tools">("All tools")
+
   const [activity, setActivity] = useState<ActivityItem[]>([])
+
   const [menu, setMenu] = useState(false)
+
   const [notifications, setNotifications] = useState(false)
+
   const [profile, setProfile] = useState(() => stored("fluxkit-name", "Jamie"))
+
   const [saved, setSaved] = useState(false)
+
   const [activeCurrency, setActiveCurrencyState] =
     useState<SupportedCurrency>(getActiveCurrency)
 
   // Admin & Database Settings State
+
   const [, setAdminConfigState] = useState(() => getAdminConfig())
+
   const [, setDbStatusState] = useState<DatabaseStatus | null>(null)
-  const [adminEditName, setAdminEditName] = useState(() => getAdminConfig().name)
-  const [adminEditEmail, setAdminEditEmail] = useState(() => getAdminConfig().email)
+
+  const [adminEditName, setAdminEditName] = useState(
+    () => getAdminConfig().name,
+  )
+
+  const [adminEditEmail, setAdminEditEmail] = useState(
+    () => getAdminConfig().email,
+  )
+
   const [adminCurrentPassword, setAdminCurrentPassword] = useState("")
+
   const [adminNewPassword, setAdminNewPassword] = useState("")
+
   const [adminConfirmPassword, setAdminConfirmPassword] = useState("")
+
   const [adminShowPass, setAdminShowPass] = useState(false)
+
   const [adminSaveLoading, setAdminSaveLoading] = useState(false)
+
   const [adminSaveMessage, setAdminSaveMessage] = useState<{
     type: "success" | "error"
+
     text: string
   } | null>(null)
 
   useEffect(() => {
     initializeDatabaseSync().then((status) => {
       setDbStatusState(status)
+
       const cfg = getAdminConfig()
+
       setAdminConfigState(cfg)
+
       setAdminEditName(cfg.name)
+
       setAdminEditEmail(cfg.email)
     })
+
     syncCloudApisWithServer().catch(() => null)
+
     syncGatewaysWithServer().catch(() => null)
   }, [])
 
@@ -243,75 +326,112 @@ export default function App() {
     const handleCurr = (e: any) => {
       if (e.detail) setActiveCurrencyState(e.detail)
     }
+
     window.addEventListener("fluxkit-currency-changed", handleCurr)
-    return () => window.removeEventListener("fluxkit-currency-changed", handleCurr)
+
+    return () =>
+      window.removeEventListener("fluxkit-currency-changed", handleCurr)
   }, [])
 
   useEffect(() => {
     return onAuthStateChanged((user) => {
       setCurrentUser(user)
+
       if (user?.name) {
         setProfile(user.name.split(" ")[0])
       }
     })
   }, [])
+
   useEffect(() => {
-    if (typeof window !== "undefined" && "scrollRestoration" in window.history) {
+    if (
+      typeof window !== "undefined" &&
+      "scrollRestoration" in window.history
+    ) {
       window.history.scrollRestoration = "manual"
     }
+
     const change = () => {
       setPage(location.hash.slice(1) || "overview")
     }
+
     window.addEventListener("hashchange", change)
+
     return () => window.removeEventListener("hashchange", change)
   }, [])
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme
+
     const palette = brand.colors[theme === "light" ? "light" : "dark"]
+
     for (const [key, value] of Object.entries({
       "--accent": palette.accent,
+
       "--bg": palette.background,
+
       "--surface": palette.surface,
+
       "--text": palette.text,
     }))
       document.documentElement.style.setProperty(key, value)
+
     document.title = `${brand.name} — High-Performance File & Document Toolkit`
+
     persist("fluxkit-theme", theme)
+
     persist("fluxkit-theme-v2", theme)
   }, [theme])
+
   useEffect(() => {
     persist("fluxkit-sidebar", String(collapsed))
   }, [collapsed])
+
   useEffect(() => {
     if (!mobile) return
+
     const previousFocus = document.activeElement as HTMLElement | null
+
     const sidebar = document.querySelector<HTMLElement>(".sidebar")
+
     const focusable = () =>
       Array.from(
         sidebar?.querySelectorAll<HTMLElement>(
           "button:not(:disabled), a[href]",
         ) || [],
       ).filter((element) => element.getClientRects().length > 0)
+
     focusable()[0]?.focus()
+
     const trap = (event: KeyboardEvent) => {
       if (event.key !== "Tab") return
+
       const items = focusable()
+
       const first = items[0]
+
       const last = items[items.length - 1]
+
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault()
+
         last?.focus()
       } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault()
+
         first?.focus()
       }
     }
+
     document.addEventListener("keydown", trap)
+
     return () => {
       document.removeEventListener("keydown", trap)
+
       previousFocus?.focus()
     }
   }, [mobile])
+
   useEffect(() => {
     const close = (event: PointerEvent) => {
       if (
@@ -319,75 +439,110 @@ export default function App() {
         !event.target.closest(".popover-wrap")
       ) {
         setMenu(false)
+
         setNotifications(false)
       }
     }
+
     document.addEventListener("pointerdown", close)
+
     return () => document.removeEventListener("pointerdown", close)
   }, [])
+
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault()
+
         location.hash = "all"
+
         setPage("all")
+
         setTimeout(() => document.getElementById("catalog-search")?.focus(), 50)
       }
+
       if (event.key === "Escape") {
         setMenu(false)
+
         setNotifications(false)
+
         setMobile(false)
       }
     }
+
     window.addEventListener("keydown", shortcut)
+
     return () => window.removeEventListener("keydown", shortcut)
   }, [])
+
   const pageScrollPositions = useRef<Map<string, number>>(new Map())
+
   const isRestoringScroll = useRef(false)
 
   // Continuously record scroll position of the active page (unless currently restoring)
+
   useEffect(() => {
     if (typeof window === "undefined") return
+
     let ticking = false
+
     const handleScroll = () => {
       if (isRestoringScroll.current) return
+
       if (!ticking) {
         window.requestAnimationFrame(() => {
           if (!isRestoringScroll.current) {
             const currentY =
               window.scrollY || document.documentElement.scrollTop || 0
+
             pageScrollPositions.current.set(page, currentY)
           }
+
           ticking = false
         })
+
         ticking = true
       }
     }
+
     window.addEventListener("scroll", handleScroll, { passive: true })
+
     return () => window.removeEventListener("scroll", handleScroll)
   }, [page])
 
   // Restore scroll position whenever `page` changes
+
   useEffect(() => {
     if (typeof window === "undefined") return
+
     const isTool = tools.some((t) => t.id === page)
+
     if (isTool) {
       isRestoringScroll.current = false
+
       window.scrollTo({ top: 0, behavior: "instant" })
     } else {
       const savedY = pageScrollPositions.current.get(page)
+
       if (typeof savedY === "number" && savedY > 0) {
         isRestoringScroll.current = true
+
         let attempts = 0
+
         const maxAttempts = 8
+
         const restore = () => {
           window.scrollTo({ top: savedY, behavior: "instant" })
+
           const currentY =
             window.scrollY || document.documentElement.scrollTop || 0
+
           attempts++
+
           if (
             Math.abs(currentY - savedY) < 10 ||
-            document.documentElement.scrollHeight >= savedY + window.innerHeight ||
+            document.documentElement.scrollHeight >=
+              savedY + window.innerHeight ||
             attempts >= maxAttempts
           ) {
             requestAnimationFrame(() => {
@@ -397,6 +552,7 @@ export default function App() {
             requestAnimationFrame(restore)
           }
         }
+
         requestAnimationFrame(restore)
       } else {
         isRestoringScroll.current = false
@@ -405,30 +561,44 @@ export default function App() {
   }, [page])
 
   const [stagedFiles, setStagedFiles] = useState<File[]>([])
+
   function navigate(id: string, initialFiles?: File[]) {
     if (typeof window !== "undefined") {
       const currentScroll =
         window.scrollY || document.documentElement.scrollTop || 0
+
       pageScrollPositions.current.set(page, currentScroll)
     }
+
     if (initialFiles && initialFiles.length > 0) {
       setStagedFiles(initialFiles)
     } else {
       setStagedFiles([])
     }
+
     location.hash = id
+
     setPage(id)
+
     setMobile(false)
+
     setMenu(false)
+
     setQuery("")
+
     setFilter("All tools")
   }
+
   const customPage = getCustomPageBySlug(page)
+
   const selected = tools.find((t) => t.id === page)
+
   const isPaywallActive =
     (page === "audio-text" && !canUserAccessTool("audio-text", currentUser)) ||
-    (page === "visitor-pass" && !canUserAccessTool("visitor-pass", currentUser)) ||
+    (page === "visitor-pass" &&
+      !canUserAccessTool("visitor-pass", currentUser)) ||
     Boolean(selected?.available && !canUserAccessTool(selected.id, currentUser))
+
   const heading =
     navItems.find((n) => n.id === page)?.name ||
     (page === "settings"
@@ -442,6 +612,7 @@ export default function App() {
             : customPage?.title ||
               selected?.name ||
               (page === "help" ? "Help & resources" : "Page not found"))
+
   const category: Category | undefined =
     page === "files"
       ? "File tools"
@@ -452,6 +623,7 @@ export default function App() {
           : page === "audio"
             ? "Audio tools"
             : undefined
+
   const filtered = useMemo(
     () =>
       tools.filter(
@@ -459,10 +631,14 @@ export default function App() {
           (category
             ? t.category === category
             : filter === "All tools" || t.category === filter) &&
-          `${t.name} ${t.description}`.toLowerCase().includes(query.toLowerCase()),
+          `${t.name} ${t.description}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
       ),
+
     [category, filter, query],
   )
+
   const activityContent = (
     <section className="panel activity-panel">
       <div className="section-heading">
@@ -507,6 +683,7 @@ export default function App() {
       )}
     </section>
   )
+
   if (["sign-in", "sign-up", "reset-password"].includes(page))
     return (
       <AuthPage
@@ -518,6 +695,7 @@ export default function App() {
         currentUser={currentUser}
         onAuthSuccess={(user) => {
           setCurrentUser(user)
+
           if (user.role === "admin" || user.role === "sub-admin") {
             navigate("admin")
           } else {
@@ -526,6 +704,7 @@ export default function App() {
         }}
       />
     )
+
   if (page.startsWith("showcase") || page.startsWith("image-qr"))
     return (
       <ImageShowcaseViewer
@@ -534,8 +713,10 @@ export default function App() {
         onNavigate={navigate}
       />
     )
+
   const isAdmin =
     currentUser?.role === "admin" || currentUser?.role === "sub-admin"
+
   return (
     <div className={`app-shell ${collapsed ? "is-collapsed" : ""}`}>
       <a
@@ -543,6 +724,7 @@ export default function App() {
         href="#main-content"
         onClick={(event) => {
           event.preventDefault()
+
           document.getElementById("main-content")?.focus()
         }}
       >
@@ -567,11 +749,17 @@ export default function App() {
             onClick={() => navigate(isAdmin ? "admin" : "overview")}
             style={{
               display: "flex",
+
               alignItems: "center",
+
               width: "100%",
+
               textDecoration: "none",
+
               border: "none",
+
               background: "none",
+
               cursor: "pointer",
             }}
           >
@@ -585,7 +773,10 @@ export default function App() {
                   height={30}
                   theme={theme === "light" ? "light" : "dark"}
                 />
-                <span className="workspace-badge" style={{ marginLeft: "auto" }}>
+                <span
+                  className="workspace-badge"
+                  style={{ marginLeft: "auto" }}
+                >
                   {isAdmin
                     ? currentUser?.role === "sub-admin"
                       ? "SUB-ADMIN"
@@ -595,195 +786,206 @@ export default function App() {
               </>
             )}
           </button>
-        <button
-          className="workspace-switch"
-          onClick={() => {
-            if (isAdmin) {
-              navigate("admin")
-            } else {
-              navigate("settings")
-            }
-          }}
-        >
-          <span
-            className="workspace-avatar"
-            style={
-              isAdmin
-                ? {
-                    background:
-                      "linear-gradient(135deg, #06204D 0%, #0A2558 100%)",
-                    color: "#00C9B7",
-                    border: "1.5px solid #00C9B7",
-                    fontWeight: 800,
-                  }
-                : undefined
-            }
-          >
-            M
-          </span>
-          <span>
-            Masterfile Pro Workspace
-            <small>
-              {isAdmin
-                ? currentUser?.role === "sub-admin"
-                  ? "Sub-Administrator"
-                  : "Administrator (Full Access)"
-                : currentUser?.subscriptionTier === "pro"
-                  ? "Pro plan"
-                  : currentUser
-                    ? "Standard plan"
-                    : "Free plan"}
-            </small>
-          </span>
-          <ChevronDown size={15} />
-        </button>
-        <nav>
-          {isAdmin && (
-            <>
-              <div className="nav-label">ADMINISTRATION</div>
-              <button
-                key="admin"
-                className={page === "admin" ? "active" : ""}
-                onClick={() => navigate("admin")}
-                style={{ color: "#00C9B7", fontWeight: 600 }}
-              >
-                <ShieldCheck size={18} />
-                <span>Admin Portal</span>
-              </button>
-              <button
-                key="admin-integrations"
-                className={page === "admin-integrations" ? "active" : ""}
-                onClick={() => navigate("admin-integrations")}
-                style={{ color: "#0ea5e9", fontWeight: 600 }}
-              >
-                <CreditCard size={18} />
-                <span>Payment & APIs</span>
-              </button>
-              <div className="nav-divider" />
-            </>
-          )}
-
-          <div className="nav-label">
-            {isAdmin ? "WORKSTATION" : "WORKSPACE"}
-          </div>
-          {navItems.map((n) => (
-            <button
-              title={collapsed ? n.name : undefined}
-              key={n.id}
-              className={page === n.id ? "active" : ""}
-              onClick={() => navigate(n.id)}
-            >
-              <n.icon size={18} />
-              <span>{n.name}</span>
-              {n.id === "all" && <small>{tools.length}</small>}
-              {n.id === "ai" && <span className="new-label">NEW</span>}
-            </button>
-          ))}
-          <div className="nav-divider" />
-          {[
-            { id: "documents", name: "My documents", icon: FileText },
-            { id: "activity", name: "Activity", icon: Activity },
-          ].map((n) => (
-            <button
-              key={n.id}
-              className={page === n.id ? "active" : ""}
-              onClick={() => navigate(n.id)}
-            >
-              <n.icon size={18} />
-              <span>{n.name}</span>
-            </button>
-          ))}
-          {getPublishedCustomPages()
-            .filter((p) => p.showInNav)
-            .map((p) => (
-              <button
-                key={p.slug}
-                className={page === p.slug ? "active" : ""}
-                onClick={() => navigate(p.slug)}
-              >
-                <FileText size={18} />
-                <span>{p.navTitle || p.title}</span>
-              </button>
-            ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="flow-card">
-            <span className="small-spark">
-              <Sparkles size={17} />
-            </span>
-            <h3>
-              {isAdmin ? "Admin & Tools Ready." : "A little less busywork."}
-            </h3>
-            <p>
-              {isAdmin
-                ? "All workstation tools & gateway integrations at your disposal."
-                : "A little more possibility. Find your next favorite tool."}
-            </p>
-            <button onClick={() => navigate("all")}>
-              Explore the toolkit <ArrowUpRight size={15} />
-            </button>
-          </div>
-          <button className="bottom-nav" onClick={() => navigate("settings")}>
-            <Settings size={18} />
-            <span>Settings</span>
-          </button>
-          <button className="bottom-nav" onClick={() => navigate("help")}>
-            <HelpCircle size={18} />
-            <span>Help & resources</span>
-            <ArrowUpRight size={14} />
-          </button>
           <button
-            className="user-profile"
-            onClick={() => (isAdmin ? navigate("admin") : navigate("settings"))}
+            className="workspace-switch"
+            onClick={() => {
+              if (isAdmin) {
+                navigate("admin")
+              } else {
+                navigate("settings")
+              }
+            }}
           >
             <span
-              className="avatar"
+              className="workspace-avatar"
               style={
                 isAdmin
                   ? {
                       background:
                         "linear-gradient(135deg, #06204D 0%, #0A2558 100%)",
+
                       color: "#00C9B7",
+
                       border: "1.5px solid #00C9B7",
+
                       fontWeight: 800,
                     }
                   : undefined
               }
             >
-              {isAdmin ||
-              currentUser?.name?.includes("FluxKit") ||
-              currentUser?.name?.includes("Masterfilepro")
-                ? "M"
-                : currentUser
-                  ? currentUser.name.slice(0, 1).toUpperCase()
-                  : "M"}
+              M
             </span>
             <span>
-              {isAdmin ||
-              currentUser?.name?.includes("FluxKit") ||
-              currentUser?.name?.includes("Masterfilepro") ||
-              currentUser?.name?.includes("Masterfile Pro")
-                ? currentUser?.name &&
-                  !currentUser.name.includes("FluxKit") &&
-                  !currentUser.name.includes("Masterfilepro")
-                  ? currentUser.name
-                  : "Masterfile Pro Administrator"
-                : currentUser
-                  ? currentUser.name
-                  : "Masterfile Pro User"}
+              Masterfile Pro Workspace
               <small>
                 {isAdmin
                   ? currentUser?.role === "sub-admin"
                     ? "Sub-Administrator"
-                    : "Administrator"
-                  : currentUser
-                    ? currentUser.email
-                    : "Personal account"}
+                    : "Administrator (Full Access)"
+                  : currentUser?.subscriptionTier === "pro"
+                    ? "Pro plan"
+                    : currentUser
+                      ? "Standard plan"
+                      : "Free plan"}
               </small>
             </span>
             <ChevronDown size={15} />
           </button>
-        </div>
+          <nav>
+            {isAdmin && (
+              <>
+                <div className="nav-label">ADMINISTRATION</div>
+                <button
+                  key="admin"
+                  className={page === "admin" ? "active" : ""}
+                  onClick={() => navigate("admin")}
+                  style={{ color: "#00C9B7", fontWeight: 600 }}
+                >
+                  <ShieldCheck size={18} />
+                  <span>Admin Portal</span>
+                </button>
+                <button
+                  key="admin-integrations"
+                  className={page === "admin-integrations" ? "active" : ""}
+                  onClick={() => navigate("admin-integrations")}
+                  style={{ color: "#0ea5e9", fontWeight: 600 }}
+                >
+                  <CreditCard size={18} />
+                  <span>Payment & APIs</span>
+                </button>
+                <div className="nav-divider" />
+              </>
+            )}
+
+            <div className="nav-label">
+              {isAdmin ? "WORKSTATION" : "WORKSPACE"}
+            </div>
+            {navItems.map((n) => (
+              <button
+                title={collapsed ? n.name : undefined}
+                key={n.id}
+                className={page === n.id ? "active" : ""}
+                onClick={() => navigate(n.id)}
+              >
+                <n.icon size={18} />
+                <span>{n.name}</span>
+                {n.id === "all" && <small>{tools.length}</small>}
+                {n.id === "ai" && <span className="new-label">NEW</span>}
+              </button>
+            ))}
+            <div className="nav-divider" />
+            {[
+              { id: "documents", name: "My documents", icon: FileText },
+
+              { id: "activity", name: "Activity", icon: Activity },
+            ].map((n) => (
+              <button
+                key={n.id}
+                className={page === n.id ? "active" : ""}
+                onClick={() => navigate(n.id)}
+              >
+                <n.icon size={18} />
+                <span>{n.name}</span>
+              </button>
+            ))}
+            {getPublishedCustomPages()
+
+              .filter((p) => p.showInNav)
+
+              .map((p) => (
+                <button
+                  key={p.slug}
+                  className={page === p.slug ? "active" : ""}
+                  onClick={() => navigate(p.slug)}
+                >
+                  <FileText size={18} />
+                  <span>{p.navTitle || p.title}</span>
+                </button>
+              ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="flow-card">
+              <span className="small-spark">
+                <Sparkles size={17} />
+              </span>
+              <h3>
+                {isAdmin ? "Admin & Tools Ready." : "A little less busywork."}
+              </h3>
+              <p>
+                {isAdmin
+                  ? "All workstation tools & gateway integrations at your disposal."
+                  : "A little more possibility. Find your next favorite tool."}
+              </p>
+              <button onClick={() => navigate("all")}>
+                Explore the toolkit <ArrowUpRight size={15} />
+              </button>
+            </div>
+            <button className="bottom-nav" onClick={() => navigate("settings")}>
+              <Settings size={18} />
+              <span>Settings</span>
+            </button>
+            <button className="bottom-nav" onClick={() => navigate("help")}>
+              <HelpCircle size={18} />
+              <span>Help & resources</span>
+              <ArrowUpRight size={14} />
+            </button>
+            <button
+              className="user-profile"
+              onClick={() =>
+                isAdmin ? navigate("admin") : navigate("settings")
+              }
+            >
+              <span
+                className="avatar"
+                style={
+                  isAdmin
+                    ? {
+                        background:
+                          "linear-gradient(135deg, #06204D 0%, #0A2558 100%)",
+
+                        color: "#00C9B7",
+
+                        border: "1.5px solid #00C9B7",
+
+                        fontWeight: 800,
+                      }
+                    : undefined
+                }
+              >
+                {isAdmin ||
+                currentUser?.name?.includes("FluxKit") ||
+                currentUser?.name?.includes("Masterfilepro")
+                  ? "M"
+                  : currentUser
+                    ? currentUser.name.slice(0, 1).toUpperCase()
+                    : "M"}
+              </span>
+              <span>
+                {isAdmin ||
+                currentUser?.name?.includes("FluxKit") ||
+                currentUser?.name?.includes("Masterfilepro") ||
+                currentUser?.name?.includes("Masterfile Pro")
+                  ? currentUser?.name &&
+                    !currentUser.name.includes("FluxKit") &&
+                    !currentUser.name.includes("Masterfilepro")
+                    ? currentUser.name
+                    : "Masterfile Pro Administrator"
+                  : currentUser
+                    ? currentUser.name
+                    : "Masterfile Pro User"}
+                <small>
+                  {isAdmin
+                    ? currentUser?.role === "sub-admin"
+                      ? "Sub-Administrator"
+                      : "Administrator"
+                    : currentUser
+                      ? currentUser.email
+                      : "Personal account"}
+                </small>
+              </span>
+              <ChevronDown size={15} />
+            </button>
+          </div>
         </div>
         <button
           className="collapse-control"
@@ -821,8 +1023,10 @@ export default function App() {
               className="top-search"
               onClick={() => {
                 navigate("all")
+
                 setTimeout(
                   () => document.getElementById("catalog-search")?.focus(),
+
                   50,
                 )
               }}
@@ -837,15 +1041,25 @@ export default function App() {
                 onClick={() => navigate("admin")}
                 style={{
                   display: "inline-flex",
+
                   alignItems: "center",
+
                   gap: "6px",
+
                   padding: "5px 12px",
+
                   borderRadius: "20px",
+
                   background: "rgba(0, 201, 183, 0.12)",
+
                   color: "#00C9B7",
+
                   fontSize: "12px",
+
                   fontWeight: 600,
+
                   border: "1px solid rgba(0, 201, 183, 0.25)",
+
                   cursor: "pointer",
                 }}
                 title="Open Admin Dashboard"
@@ -860,11 +1074,17 @@ export default function App() {
               className="currency-header-switch"
               style={{
                 display: "inline-flex",
+
                 alignItems: "center",
+
                 background: "var(--surface)",
+
                 border: "1px solid var(--border)",
+
                 borderRadius: "20px",
+
                 padding: "2px",
+
                 gap: "2px",
               }}
               title="Change platform currency (USD / Ghanaian Cedi)"
@@ -873,22 +1093,31 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setActiveCurrency("USD")
+
                   setActiveCurrencyState("USD")
                 }}
                 style={{
                   padding: "3px 8px",
+
                   borderRadius: "16px",
+
                   border: "none",
+
                   background:
-                    activeCurrency === "USD"
-                      ? "var(--accent)"
-                      : "transparent",
+                    activeCurrency === "USD" ? "var(--accent)" : "transparent",
+
                   color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+
                   cursor: "pointer",
+
                   fontSize: "11px",
+
                   fontWeight: 700,
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "4px",
                 }}
               >
@@ -899,22 +1128,31 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setActiveCurrency("GHS")
+
                   setActiveCurrencyState("GHS")
                 }}
                 style={{
                   padding: "3px 8px",
+
                   borderRadius: "16px",
+
                   border: "none",
+
                   background:
-                    activeCurrency === "GHS"
-                      ? "var(--accent)"
-                      : "transparent",
+                    activeCurrency === "GHS" ? "var(--accent)" : "transparent",
+
                   color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+
                   cursor: "pointer",
+
                   fontSize: "11px",
+
                   fontWeight: 700,
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "4px",
                 }}
               >
@@ -998,6 +1236,7 @@ export default function App() {
                       className="popover-google-btn"
                       onClick={() => {
                         setMenu(false)
+
                         navigate("sign-in")
                       }}
                     >
@@ -1020,6 +1259,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setMenu(false)
+
                         navigate("admin")
                       }}
                     >
@@ -1043,10 +1283,15 @@ export default function App() {
                         className="popover-signout"
                         onClick={() => {
                           signOut()
+
                           setCurrentUser(null)
+
                           setMenu(false)
+
                           notify("Signed out of administrator account.", "info")
+
                           location.hash = "sign-in"
+
                           setPage("sign-in")
                         }}
                       >
@@ -1097,6 +1342,7 @@ export default function App() {
                 <div className="category-tabs">
                   {["All tools", ...categories].map((c) => {
                     const isSelected = filter === c
+
                     const tabColor = isSelected
                       ? c === "File tools"
                         ? "selected tab-blue"
@@ -1108,6 +1354,7 @@ export default function App() {
                               ? "selected tab-amber"
                               : "selected tab-popular"
                       : ""
+
                     return (
                       <button
                         key={c}
@@ -1138,6 +1385,7 @@ export default function App() {
                     className="primary"
                     onClick={() => {
                       setQuery("")
+
                       setFilter("All tools")
                     }}
                   >
@@ -1164,6 +1412,7 @@ export default function App() {
                       )
                     ) {
                       setActivity([])
+
                       notify("Session activity cleared.")
                     }
                   }}
@@ -1190,11 +1439,17 @@ export default function App() {
                         </>
                       ) : isAdmin ? (
                         <>
-                          <ShieldCheck size={16} color="#00C9B7" /> Administrator Account (Pro)
+                          <ShieldCheck size={16} color="#00C9B7" />{" "}
+                          Administrator Account (Pro)
                         </>
                       ) : (
                         <>
-                          <ShieldCheck size={16} color="#3b82f6" /> Email Account ({currentUser.subscriptionTier === "pro" ? "Pro" : "Standard"})
+                          <ShieldCheck size={16} color="#3b82f6" /> Email
+                          Account (
+                          {currentUser.subscriptionTier === "pro"
+                            ? "Pro"
+                            : "Standard"}
+                          )
                         </>
                       )}
                     </h3>
@@ -1210,8 +1465,12 @@ export default function App() {
                     </div>
                     <div className="settings-account-row">
                       <span>Role & Privileges</span>
-                      <strong style={{ color: isAdmin ? "#00C9B7" : "inherit" }}>
-                        {isAdmin ? "Root Administrator" : currentUser.role || "User"}
+                      <strong
+                        style={{ color: isAdmin ? "#00C9B7" : "inherit" }}
+                      >
+                        {isAdmin
+                          ? "Root Administrator"
+                          : currentUser.role || "User"}
                       </strong>
                     </div>
                     <div className="settings-account-row">
@@ -1223,7 +1482,9 @@ export default function App() {
                       className="settings-signout-btn"
                       onClick={() => {
                         signOut()
+
                         setCurrentUser(null)
+
                         notify("Signed out of session.")
                       }}
                     >
@@ -1234,10 +1495,18 @@ export default function App() {
                   <div className="settings-account-card">
                     <h3>Guest Mode (Local Only)</h3>
                     <p>
-                      Sign in with your email or Google account to access your workspace,
-                      save your preferences, and access premium tools.
+                      Sign in with your email or Google account to access your
+                      workspace, save your preferences, and access premium
+                      tools.
                     </p>
-                    <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        marginTop: "12px",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <button
                         type="button"
                         className="google-direct-btn"
@@ -1266,47 +1535,80 @@ export default function App() {
                       className="settings-account-card"
                       style={{
                         marginTop: "20px",
+
                         border: "1px solid rgba(168, 85, 247, 0.35)",
+
                         background: "rgba(168, 85, 247, 0.04)",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           justifyContent: "space-between",
+
                           alignItems: "flex-start",
+
                           flexWrap: "wrap",
+
                           gap: "10px",
                         }}
                       >
                         <div>
-                          <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                          <h3
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              margin: 0,
+                            }}
+                          >
                             <Database size={17} color="#00C9B7" />
                             <span>Administrator Security & Database</span>
                           </h3>
-                          <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0 0" }}>
-                            Modify root administrator email, name, or password at any time. All updates are automatically saved to the database.
+                          <p
+                            style={{
+                              fontSize: "12px",
+                              color: "var(--muted)",
+                              margin: "4px 0 0 0",
+                            }}
+                          >
+                            Modify root administrator email, name, or password
+                            at any time. All updates are automatically saved to
+                            the database.
                           </p>
                         </div>
                         <div
                           style={{
                             display: "inline-flex",
+
                             alignItems: "center",
+
                             gap: "6px",
+
                             padding: "4px 10px",
+
                             borderRadius: "12px",
+
                             fontSize: "11px",
+
                             fontWeight: 600,
+
                             background: "rgba(16, 185, 129, 0.12)",
+
                             color: "#10b981",
+
                             border: "1px solid rgba(16, 185, 129, 0.3)",
                           }}
                         >
                           <span
                             style={{
                               width: "6px",
+
                               height: "6px",
+
                               borderRadius: "50%",
+
                               background: "#10b981",
                             }}
                           />
@@ -1317,48 +1619,98 @@ export default function App() {
                       <form
                         onSubmit={async (e) => {
                           e.preventDefault()
+
                           setAdminSaveLoading(true)
+
                           setAdminSaveMessage(null)
+
                           try {
-                            if (adminNewPassword && adminNewPassword !== adminConfirmPassword) {
-                              throw new Error("New password and confirmation do not match.")
+                            if (
+                              adminNewPassword &&
+                              adminNewPassword !== adminConfirmPassword
+                            ) {
+                              throw new Error(
+                                "New password and confirmation do not match.",
+                              )
                             }
-                            if (adminNewPassword && adminNewPassword.length < 8) {
-                              throw new Error("New password must be at least 8 characters long.")
+
+                            if (
+                              adminNewPassword &&
+                              adminNewPassword.length < 8
+                            ) {
+                              throw new Error(
+                                "New password must be at least 8 characters long.",
+                              )
                             }
 
                             const result = await updateAdminSettings({
                               newName: adminEditName,
+
                               newEmail: adminEditEmail,
+
                               currentPassword: adminCurrentPassword,
+
                               newPassword: adminNewPassword || undefined,
+
                               overrideAuthCheck: isAdmin,
                             })
 
-                            setAdminSaveMessage({ type: "success", text: result.message })
-                            notify("Admin credentials successfully saved to database!", "success")
+                            setAdminSaveMessage({
+                              type: "success",
+                              text: result.message,
+                            })
+
+                            notify(
+                              "Admin credentials successfully saved to database!",
+                              "success",
+                            )
+
                             setAdminCurrentPassword("")
+
                             setAdminNewPassword("")
+
                             setAdminConfirmPassword("")
                           } catch (err: any) {
                             setAdminSaveMessage({
                               type: "error",
-                              text: err.message || "Failed to update admin credentials.",
+
+                              text:
+                                err.message ||
+                                "Failed to update admin credentials.",
                             })
-                            notify(err.message || "Failed to update admin credentials.", "error")
+
+                            notify(
+                              err.message ||
+                                "Failed to update admin credentials.",
+                              "error",
+                            )
                           } finally {
                             setAdminSaveLoading(false)
                           }
                         }}
-                        style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}
+                        style={{
+                          marginTop: "16px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px",
+                        }}
                       >
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "12px",
+                          }}
+                        >
                           <div>
                             <label
                               style={{
                                 fontSize: "11.5px",
+
                                 color: "var(--muted)",
+
                                 display: "block",
+
                                 marginBottom: "4px",
                               }}
                             >
@@ -1372,11 +1724,17 @@ export default function App() {
                               placeholder="e.g. Masterfile Pro Administrator"
                               style={{
                                 width: "100%",
+
                                 padding: "8px 10px",
+
                                 fontSize: "12.5px",
+
                                 borderRadius: "6px",
+
                                 background: "var(--bg)",
+
                                 border: "1px solid var(--border)",
+
                                 color: "var(--text)",
                               }}
                             />
@@ -1385,8 +1743,11 @@ export default function App() {
                             <label
                               style={{
                                 fontSize: "11.5px",
+
                                 color: "var(--muted)",
+
                                 display: "block",
+
                                 marginBottom: "4px",
                               }}
                             >
@@ -1396,28 +1757,45 @@ export default function App() {
                               required
                               type="email"
                               value={adminEditEmail}
-                              onChange={(e) => setAdminEditEmail(e.target.value)}
+                              onChange={(e) =>
+                                setAdminEditEmail(e.target.value)
+                              }
                               placeholder="e.g. admin@masterfilepro.com"
                               style={{
                                 width: "100%",
+
                                 padding: "8px 10px",
+
                                 fontSize: "12.5px",
+
                                 borderRadius: "6px",
+
                                 background: "var(--bg)",
+
                                 border: "1px solid var(--border)",
+
                                 color: "var(--text)",
                               }}
                             />
                           </div>
                         </div>
 
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "12px",
+                          }}
+                        >
                           <div>
                             <label
                               style={{
                                 fontSize: "11.5px",
+
                                 color: "var(--muted)",
+
                                 display: "block",
+
                                 marginBottom: "4px",
                               }}
                             >
@@ -1426,15 +1804,23 @@ export default function App() {
                             <input
                               type={adminShowPass ? "text" : "password"}
                               value={adminNewPassword}
-                              onChange={(e) => setAdminNewPassword(e.target.value)}
+                              onChange={(e) =>
+                                setAdminNewPassword(e.target.value)
+                              }
                               placeholder="Leave blank to keep current"
                               style={{
                                 width: "100%",
+
                                 padding: "8px 10px",
+
                                 fontSize: "12.5px",
+
                                 borderRadius: "6px",
+
                                 background: "var(--bg)",
+
                                 border: "1px solid var(--border)",
+
                                 color: "var(--text)",
                               }}
                             />
@@ -1443,8 +1829,11 @@ export default function App() {
                             <label
                               style={{
                                 fontSize: "11.5px",
+
                                 color: "var(--muted)",
+
                                 display: "block",
+
                                 marginBottom: "4px",
                               }}
                             >
@@ -1453,15 +1842,23 @@ export default function App() {
                             <input
                               type={adminShowPass ? "text" : "password"}
                               value={adminConfirmPassword}
-                              onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                              onChange={(e) =>
+                                setAdminConfirmPassword(e.target.value)
+                              }
                               placeholder="Re-type new password"
                               style={{
                                 width: "100%",
+
                                 padding: "8px 10px",
+
                                 fontSize: "12.5px",
+
                                 borderRadius: "6px",
+
                                 background: "var(--bg)",
+
                                 border: "1px solid var(--border)",
+
                                 color: "var(--text)",
                               }}
                             />
@@ -1471,8 +1868,11 @@ export default function App() {
                         <div
                           style={{
                             display: "flex",
+
                             justifyContent: "space-between",
+
                             alignItems: "center",
+
                             marginTop: "4px",
                           }}
                         >
@@ -1481,18 +1881,32 @@ export default function App() {
                             onClick={() => setAdminShowPass(!adminShowPass)}
                             style={{
                               background: "none",
+
                               border: "none",
+
                               color: "var(--muted)",
+
                               cursor: "pointer",
+
                               fontSize: "11.5px",
+
                               display: "inline-flex",
+
                               alignItems: "center",
+
                               gap: "4px",
+
                               padding: 0,
                             }}
                           >
-                            {adminShowPass ? <EyeOff size={13} /> : <Eye size={13} />}
-                            {adminShowPass ? "Hide Passwords" : "Show Passwords"}
+                            {adminShowPass ? (
+                              <EyeOff size={13} />
+                            ) : (
+                              <Eye size={13} />
+                            )}
+                            {adminShowPass
+                              ? "Hide Passwords"
+                              : "Show Passwords"}
                           </button>
 
                           <div style={{ display: "flex", gap: "8px" }}>
@@ -1502,15 +1916,22 @@ export default function App() {
                               className="primary"
                               style={{
                                 fontSize: "12px",
+
                                 padding: "7px 16px",
+
                                 borderRadius: "6px",
+
                                 display: "inline-flex",
+
                                 alignItems: "center",
+
                                 gap: "6px",
                               }}
                             >
                               <Save size={13} />
-                              {adminSaveLoading ? "Saving to Database..." : "Save Admin Credentials"}
+                              {adminSaveLoading
+                                ? "Saving to Database..."
+                                : "Save Admin Credentials"}
                             </button>
                           </div>
                         </div>
@@ -1519,20 +1940,28 @@ export default function App() {
                           <div
                             style={{
                               marginTop: "8px",
+
                               padding: "8px 12px",
+
                               borderRadius: "6px",
+
                               fontSize: "12px",
+
                               background:
                                 adminSaveMessage.type === "success"
                                   ? "rgba(16, 185, 129, 0.12)"
                                   : "rgba(239, 68, 68, 0.12)",
+
                               border: `1px solid ${
                                 adminSaveMessage.type === "success"
                                   ? "rgba(16, 185, 129, 0.3)"
                                   : "rgba(239, 68, 68, 0.3)"
                               }`,
+
                               color:
-                                adminSaveMessage.type === "success" ? "#10b981" : "#ef4444",
+                                adminSaveMessage.type === "success"
+                                  ? "#10b981"
+                                  : "#ef4444",
                             }}
                           >
                             {adminSaveMessage.text}
@@ -1545,60 +1974,107 @@ export default function App() {
                     <div
                       style={{
                         background: "var(--surface)",
+
                         border: "1px solid var(--border)",
+
                         borderRadius: "12px",
+
                         padding: "20px 24px",
+
                         marginBottom: "24px",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           justifyContent: "space-between",
+
                           marginBottom: "10px",
+
                           flexWrap: "wrap",
+
                           gap: "10px",
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
                           <Cpu size={18} color="#00C9B7" />
-                          <h2 style={{ margin: 0, fontSize: "16px" }}>PDF & Cloud APIs Failover Pipeline</h2>
+                          <h2 style={{ margin: 0, fontSize: "16px" }}>
+                            PDF & Cloud APIs Failover Pipeline
+                          </h2>
                         </div>
                         <span
                           style={{
                             fontSize: "11px",
+
                             padding: "3px 8px",
+
                             borderRadius: "12px",
+
                             background: "rgba(16, 185, 129, 0.15)",
+
                             color: "#10b981",
+
                             fontWeight: 600,
                           }}
                         >
                           Priority Failover Active
                         </span>
                       </div>
-                      <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 14px 0", lineHeight: 1.5 }}>
-                        Masterfile Pro dynamically processes PDF compressions and conversions through a multi-engine priority pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔ <strong>Priority #2 iLovePDF</strong> ➔ <strong>Priority #3 Local WebAssembly Engine</strong>. If monthly credits run out or an API error occurs, requests fail over automatically with zero user interruption.
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--muted)",
+                          margin: "0 0 14px 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Masterfile Pro dynamically processes PDF compressions
+                        and conversions through a multi-engine priority
+                        pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔{" "}
+                        <strong>Priority #2 iLovePDF</strong> ➔{" "}
+                        <strong>Priority #3 Local WebAssembly Engine</strong>.
+                        If monthly credits run out or an API error occurs,
+                        requests fail over automatically with zero user
+                        interruption.
                       </p>
                       <button
                         type="button"
                         onClick={() => navigate("admin-apis")}
                         style={{
                           fontSize: "12px",
+
                           padding: "8px 14px",
+
                           borderRadius: "6px",
+
                           background: "rgba(0, 201, 183, 0.15)",
+
                           color: "#00C9B7",
+
                           border: "1px solid rgba(0, 201, 183, 0.3)",
+
                           fontWeight: 600,
+
                           cursor: "pointer",
+
                           display: "inline-flex",
+
                           alignItems: "center",
+
                           gap: "6px",
                         }}
                       >
-                        <Cpu size={14} /> Configure PDF API Priorities in Admin Panel →
+                        <Cpu size={14} /> Configure PDF API Priorities in Admin
+                        Panel →
                       </button>
                     </div>
                   </>
@@ -1607,8 +2083,11 @@ export default function App() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
+
                     persist("fluxkit-name", profile.trim() || "Jamie")
+
                     setSaved(true)
+
                     notify("Preferences saved in this browser.", "success")
                   }}
                 >
@@ -1621,6 +2100,7 @@ export default function App() {
                       value={profile}
                       onChange={(e) => {
                         setProfile(e.target.value)
+
                         setSaved(false)
                       }}
                     />
@@ -1648,7 +2128,9 @@ export default function App() {
                 </form>
               </div>
             </div>
-          ) : page === "admin" || page === "admin-integrations" || page === "admin-apis" ? (
+          ) : page === "admin" ||
+            page === "admin-integrations" ||
+            page === "admin-apis" ? (
             <AdminPanel
               currentUser={currentUser}
               navigate={navigate}
@@ -1674,9 +2156,13 @@ export default function App() {
                 className="panel"
                 style={{
                   marginTop: "20px",
+
                   padding: "24px",
+
                   lineHeight: 1.8,
+
                   fontSize: "14px",
+
                   whiteSpace: "pre-wrap",
                 }}
               >
@@ -1701,11 +2187,14 @@ export default function App() {
                   setActivity((a) => [
                     {
                       name: "Audio to Text",
+
                       time: new Date().toLocaleTimeString([], {
                         hour: "2-digit",
+
                         minute: "2-digit",
                       }),
                     },
+
                     ...a,
                   ])
                 }
@@ -1728,11 +2217,14 @@ export default function App() {
                   setActivity((a) => [
                     {
                       name: "Visitor Pass & Badges",
+
                       time: new Date().toLocaleTimeString([], {
                         hour: "2-digit",
+
                         minute: "2-digit",
                       }),
                     },
+
                     ...a,
                   ])
                 }
@@ -1758,11 +2250,14 @@ export default function App() {
                   setActivity((a) => [
                     {
                       name,
+
                       time: new Date().toLocaleTimeString([], {
                         hour: "2-digit",
+
                         minute: "2-digit",
                       }),
                     },
+
                     ...a,
                   ])
                 }

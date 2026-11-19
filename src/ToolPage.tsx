@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect, type FormEvent } from "react"
+
 import DocumentPreviewModal from "./DocumentPreviewModal"
+
 import QRCodeStudioModal from "./QRCodeStudioModal"
+
 import MergeLoadingModal from "./MergeLoadingModal"
+
 import ImageShowcaseDesigner, {
   ShowcaseMobileMockup,
   type ShowcaseMobileMockupProps,
 } from "./ImageShowcaseDesigner"
+
 import {
   Activity,
   ArrowDown,
@@ -68,8 +73,11 @@ import {
   Workflow,
   X,
 } from "lucide-react"
+
 import type { Tool } from "./config"
+
 import { useNotify } from "./Notifications"
+
 import {
   download,
   generateQR,
@@ -151,6 +159,7 @@ import {
   type SessionDocument,
   type MeetingState,
 } from "./services"
+
 import {
   parseEDI,
   convertEDIToJSON,
@@ -173,300 +182,568 @@ import {
   convertBatchToPython,
   generateBatchTemplate,
 } from "./dataConversionService"
+
 import { getCurrentUser } from "./authService"
 
 const STOPWORDS = new Set([
   "a",
+
   "about",
+
   "above",
+
   "after",
+
   "again",
+
   "against",
+
   "all",
+
   "am",
+
   "an",
+
   "and",
+
   "any",
+
   "are",
+
   "as",
+
   "at",
+
   "be",
+
   "because",
+
   "been",
+
   "before",
+
   "being",
+
   "below",
+
   "between",
+
   "both",
+
   "but",
+
   "by",
+
   "could",
+
   "did",
+
   "do",
+
   "does",
+
   "doing",
+
   "down",
+
   "during",
+
   "each",
+
   "few",
+
   "for",
+
   "from",
+
   "further",
+
   "had",
+
   "has",
+
   "have",
+
   "having",
+
   "he",
+
   "her",
+
   "here",
+
   "hers",
+
   "herself",
+
   "him",
+
   "himself",
+
   "his",
+
   "how",
+
   "i",
+
   "if",
+
   "in",
+
   "into",
+
   "is",
+
   "it",
+
   "its",
+
   "itself",
+
   "just",
+
   "me",
+
   "more",
+
   "most",
+
   "my",
+
   "myself",
+
   "no",
+
   "nor",
+
   "not",
+
   "now",
+
   "of",
+
   "off",
+
   "on",
+
   "once",
+
   "only",
+
   "or",
+
   "other",
+
   "our",
+
   "ours",
+
   "ourselves",
+
   "out",
+
   "over",
+
   "own",
+
   "same",
+
   "she",
+
   "should",
+
   "so",
+
   "some",
+
   "such",
+
   "than",
+
   "that",
+
   "the",
+
   "their",
+
   "theirs",
+
   "them",
+
   "themselves",
+
   "then",
+
   "there",
+
   "these",
+
   "they",
+
   "this",
+
   "those",
+
   "through",
+
   "to",
+
   "too",
+
   "under",
+
   "until",
+
   "up",
+
   "very",
+
   "was",
+
   "we",
+
   "were",
+
   "what",
+
   "when",
+
   "where",
+
   "which",
+
   "while",
+
   "who",
+
   "whom",
+
   "why",
+
   "with",
+
   "would",
+
   "you",
+
   "your",
+
   "yours",
+
   "yourself",
+
   "yourselves",
 ])
 
 const POSITIVE_WORDS = new Set([
   "great",
+
   "good",
+
   "excellent",
+
   "positive",
+
   "best",
+
   "love",
+
   "amazing",
+
   "wonderful",
+
   "fantastic",
+
   "superb",
+
   "happy",
+
   "fast",
+
   "easy",
+
   "clean",
+
   "reliable",
+
   "efficient",
+
   "helpful",
+
   "delightful",
+
   "perfect",
+
   "innovative",
+
   "clear",
+
   "smooth",
+
   "strong",
+
   "benefit",
+
   "success",
+
   "achieve",
+
   "impressive",
+
   "outstanding",
+
   "valuable",
+
   "brilliant",
+
   "favorite",
+
   "secure",
+
   "intuitive",
 ])
 
 const NEGATIVE_WORDS = new Set([
   "bad",
+
   "poor",
+
   "terrible",
+
   "awful",
+
   "negative",
+
   "worst",
+
   "hate",
+
   "slow",
+
   "hard",
+
   "difficult",
+
   "ugly",
+
   "buggy",
+
   "broken",
+
   "error",
+
   "fault",
+
   "problem",
+
   "fail",
+
   "failure",
+
   "issue",
+
   "risk",
+
   "danger",
+
   "warning",
+
   "trouble",
+
   "flaw",
+
   "defect",
+
   "annoying",
+
   "sad",
+
   "weak",
+
   "complicated",
+
   "confusing",
+
   "useless",
 ])
 
 const TRANSLATION_MAPS: Record<string, Record<string, string>> = {
   Spanish: {
     hello: "hola",
+
     welcome: "bienvenido",
+
     document: "documento",
+
     file: "archivo",
+
     project: "proyecto",
+
     summary: "resumen",
+
     email: "correo electrónico",
+
     team: "equipo",
+
     work: "trabajo",
+
     meeting: "reunión",
+
     report: "informe",
+
     notes: "notas",
+
     results: "resultados",
+
     important: "importante",
+
     success: "éxito",
+
     future: "futuro",
+
     solution: "solución",
+
     today: "hoy",
+
     thank: "gracias",
+
     please: "por favor",
   },
+
   French: {
     hello: "bonjour",
+
     welcome: "bienvenue",
+
     document: "document",
+
     file: "fichier",
+
     project: "projet",
+
     summary: "résumé",
+
     email: "courriel",
+
     team: "équipe",
+
     work: "travail",
+
     meeting: "réunion",
+
     report: "rapport",
+
     notes: "notes",
+
     results: "résultats",
+
     important: "important",
+
     success: "succès",
+
     future: "avenir",
+
     solution: "solution",
+
     today: "aujourd'hui",
+
     thank: "merci",
+
     please: "s'il vous plaît",
   },
+
   German: {
     hello: "hallo",
+
     welcome: "willkommen",
+
     document: "Dokument",
+
     file: "Datei",
+
     project: "Projekt",
+
     summary: "Zusammenfassung",
+
     email: "E-Mail",
+
     team: "Team",
+
     work: "Arbeit",
+
     meeting: "Meeting",
+
     report: "Bericht",
+
     notes: "Notizen",
+
     results: "Ergebnisse",
+
     important: "wichtig",
+
     success: "Erfolg",
+
     future: "Zukunft",
+
     solution: "Lösung",
+
     today: "heute",
+
     thank: "danke",
+
     please: "bitte",
   },
+
   Japanese: {
     hello: "こんにちは",
+
     welcome: "ようこそ",
+
     document: "ドキュメント",
+
     file: "ファイル",
+
     project: "プロジェクト",
+
     summary: "要約",
+
     email: "メール",
+
     team: "チーム",
+
     work: "作業",
+
     meeting: "ミーティング",
+
     report: "レポート",
+
     notes: "メモ",
+
     results: "結果",
+
     important: "重要",
+
     success: "成功",
+
     future: "未来",
+
     solution: "解決策",
+
     today: "今日",
+
     thank: "ありがとう",
+
     please: "お願いします",
   },
 }
 
 function formatDisplayTimer(seconds: number): string {
   const safeSeconds = Math.max(0, seconds)
+
   const m = Math.floor(safeSeconds / 60)
+
   const s = Math.floor(safeSeconds % 60)
+
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
@@ -476,102 +753,168 @@ function safeFormatByteSize(bytes: number): string {
       return formatByteSize(bytes)
     } catch {}
   }
+
   if (bytes < 1024) return `${bytes} B`
+
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export default function ToolPage({
   tool,
+
   onComplete,
+
   initialFiles,
+
   navigate,
 }: {
   tool: Tool
+
   onComplete: (name: string) => void
+
   initialFiles?: File[]
+
   navigate?: (id: string) => void
 }) {
   const notify = useNotify()
 
   // State
+
   const [files, setFiles] = useState<File[]>(() => initialFiles || [])
+
   const [error, setError] = useState("")
+
   const [status, setStatus] = useState<JobStatus>("idle")
+
   const [result, setResultState] = useState<OutputResult>()
+
   const [qr, setQr] = useState("")
+
   const [showQRStudio, setShowQRStudio] = useState(false)
+
   const [rawQrPayload, setRawQrPayload] = useState("")
+
   const [kind, setKind] = useState("URL")
+
   const [value, setValue] = useState("")
+
   const [extra, setExtra] = useState("")
+
   const [showcasePreviewData, setShowcasePreviewData] =
     useState<ShowcaseMobileMockupProps>({
       theme: "glassmorphism",
+
       title: "",
+
       description: "",
+
       badgeText: "",
+
       imageDataUrl: "",
+
       downloadAllowed: true,
+
       ctaEnabled: false,
+
       ctaLabel: "Visit Website",
     })
+
   const [showcaseResultTab, setShowcaseResultTab] = useState<"qr" | "preview">(
     "qr",
   )
+
   const [title, setTitle] = useState("")
+
   const [textOutput, setTextOutput] = useState("")
+
   const [optionA, setOptionA] = useState("")
+
   const [optionB, setOptionB] = useState("")
 
   // Document Preview Modal
+
   const [showPreviewModal, setShowPreviewModal] = useState(false)
-  const [mergeProgress, setMergeProgress] = useState<MergePDFProgress | null>(null)
+
+  const [mergeProgress, setMergeProgress] = useState<MergePDFProgress | null>(
+    null,
+  )
+
   const fileDragIndexRef = useRef<number | null>(null)
 
   // Drag & Drop Feedback State
+
   const [isDropzoneDragging, setIsDropzoneDragging] = useState(false)
+
   const [dropSuccessState, setDropSuccessState] = useState<{
     count: number
+
     names: string[]
   } | null>(null)
+
   const dropSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const previewModalMode = ((): "merge" | "split" | "rotate" | "arrange" => {
     if (tool.id === "split-pdf" || tool.id === "split-compress") return "split"
+
     if (tool.id === "rotate-pdf") return "rotate"
+
     return "merge"
   })()
 
   // Milestone 4 State
+
   const [zipMode, setZipMode] = useState<"create" | "extract">("create")
+
   const [extractedFiles, setExtractedFiles] = useState<ExtractedZipFile[]>([])
+
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null)
+
   const [pipelineStep, setPipelineStep] = useState<{
     current: number
+
     total: number
+
     label: string
   } | null>(null)
+
   const [pipelineMetrics, setPipelineMetrics] =
     useState<PipelineMetricsResult | null>(null)
+
   const [ocrContrast, setOcrContrast] = useState(true)
+
   const [ocrInvert, setOcrInvert] = useState(false)
+
   const [ocrClean, setOcrClean] = useState(true)
+
   const [stripMeta, setStripMeta] = useState(true)
+
   const [copiedText, setCopiedText] = useState(false)
-  const [downloadSuccessName, setDownloadSuccessName] = useState<string | null>(null)
+
+  const [downloadSuccessName, setDownloadSuccessName] = useState<string | null>(
+    null,
+  )
+
   const [isZipping, setIsZipping] = useState(false)
 
   // In-Browser Storage Vault State
+
   const [isSavedInVault, setIsSavedInVault] = useState(false)
 
   const handleSaveResultToBrowserVault = (res: OutputResult) => {
     if (!res || !res.blob) return
+
     const saved = saveSessionDocument({
       name: res.name,
+
       toolSource: tool.name,
+
       blob: res.blob,
+
       rawSize: res.blob.size,
     })
+
     if (
       saved &&
       typeof isDatabaseSupported === "function" &&
@@ -580,7 +923,9 @@ export default function ToolPage({
     ) {
       dbSaveDocument(saved).catch(() => {})
     }
+
     setIsSavedInVault(true)
+
     if (typeof getSessionDocuments === "function") {
       setSessionDocs(getSessionDocuments())
     }
@@ -588,19 +933,29 @@ export default function ToolPage({
 
   const handleDownload = (res: OutputResult) => {
     download(res)
+
     setDownloadSuccessName(res.name)
-    notify.success(`"${res.name}" downloaded! Check your browser's Downloads folder.`)
+
+    notify.success(
+      `"${res.name}" downloaded! Check your browser's Downloads folder.`,
+    )
+
     setTimeout(() => setDownloadSuccessName(null), 3500)
   }
 
   const handleDownloadAsZip = async (res: OutputResult) => {
     try {
       setIsZipping(true)
+
       const zipRes = await zipFiles([{ name: res.name, data: res.blob }], {
         archiveName: `${res.name.replace(/\.[^/.]+$/, "")}.zip`,
       })
+
       download(zipRes)
-      notify.success(`"${zipRes.name}" ZIP archive downloaded! Check your Downloads folder.`)
+
+      notify.success(
+        `"${zipRes.name}" ZIP archive downloaded! Check your Downloads folder.`,
+      )
     } catch (err: any) {
       notify(err?.message || "Failed to package as ZIP.", "error")
     } finally {
@@ -609,99 +964,160 @@ export default function ToolPage({
   }
 
   // Milestone 5 AI Text Suite State
+
   const [summaryMode, setSummaryMode] = useState<"sentences" | "percentage">(
     "sentences",
   )
+
   const [summaryLength, setSummaryLength] = useState(3)
+
   const [summaryFormat, setSummaryFormat] =
     useState<"bullet" | "narrative" | "executive">("bullet")
+
   const [rewriteTone, setRewriteTone] = useState<RewriteTone>("Professional")
+
   const [transSourceLang, setTransSourceLang] =
     useState<SupportedLanguage | "auto">("auto")
+
   const [transTargetLang, setTransTargetLang] =
     useState<SupportedLanguage>("Spanish")
+
   const [askQuestion, setAskQuestion] = useState("")
+
   const [keywordMax, setKeywordMax] = useState(10)
+
   const [keywordNgrams, setKeywordNgrams] = useState(true)
+
   const [sentimentDetailed, setSentimentDetailed] = useState(false)
+
   const [compareGranularity, setCompareGranularity] =
     useState<"lines" | "words" | "characters">("lines")
+
   const [compareIgnoreWhitespace, setCompareIgnoreWhitespace] = useState(false)
+
   const [emailPurpose, setEmailPurpose] = useState<EmailPurpose>("follow-up")
+
   const [emailTone, setEmailTone] = useState<EmailTone>("professional")
+
   const [emailRecipient, setEmailRecipient] = useState("")
+
   const [emailSubject, setEmailSubject] = useState("")
+
   const [emailCTA, setEmailCTA] = useState("")
+
   const [loadedDocName, setLoadedDocName] = useState("")
+
   const [extractingPdf, setExtractingPdf] = useState(false)
 
   // Rich AI text results state
+
   const [aiSummarizeResult, setAiSummarizeResult] =
     useState<SummarizeResult | null>(null)
+
   const [aiRewriteResult, setAiRewriteResult] = useState<RewriteResult | null>(
     null,
   )
+
   const [aiTranslationResult, setAiTranslationResult] =
     useState<TranslationResult | null>(null)
+
   const [aiAskResult, setAiAskResult] = useState<AskDocumentResult | null>(null)
+
   const [aiKeywordResult, setAiKeywordResult] = useState<KeywordResult | null>(
     null,
   )
+
   const [aiSentimentResult, setAiSentimentResult] =
     useState<SentimentResult | null>(null)
+
   const [aiCompareResult, setAiCompareResult] = useState<CompareResult | null>(
     null,
   )
+
   const [aiEmailResult, setAiEmailResult] = useState<EmailResult | null>(null)
 
   // Interactive Whiteboard state
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
   const isDrawingRef = useRef(false)
+
   const [brushColor, setBrushColor] = useState("#0f172a")
+
   const [brushSize, setBrushSize] = useState(5)
+
   const [activeShapeTool, setActiveShapeTool] =
     useState<"pen" | "eraser" | "line" | "rect" | "circle" | "text">("pen")
+
   const whiteboardHistoryRef = useRef<any>(
     typeof createWhiteboardHistory === "function"
       ? createWhiteboardHistory(30)
       : {
           push: () => {},
+
           undo: () => null,
+
           redo: () => null,
+
           canUndo: () => false,
+
           canRedo: () => false,
+
           clear: () => {},
+
           getDepth: () => 0,
         },
   )
+
   const [canUndo, setCanUndo] = useState(false)
+
   const [canRedo, setCanRedo] = useState(false)
+
   const snapshotRef = useRef<ImageData | null>(null)
+
   interface WhiteboardPoint {
     x: number
+
     y: number
   }
+
   const startPosRef = useRef<WhiteboardPoint | null>(null)
+
   const whiteboardRenderSeqRef = useRef<number>(0)
 
   // Interactive Signature Pad state for sign-pdf
+
   const sigCanvasRef = useRef<HTMLCanvasElement | null>(null)
+
   const isSigDrawingRef = useRef(false)
+
   const [sigHasDrawn, setSigHasDrawn] = useState(false)
+
   const [sigInkColor, setSigInkColor] = useState("#0f172a")
 
   // Interactive Meetings state
+
   const [inMeeting, setInMeeting] = useState(false)
+
   const [micMuted, setMicMuted] = useState(false)
+
   const [cameraOff, setCameraOff] = useState(false)
+
   const [isScreenSharing, setIsScreenSharing] = useState(false)
+
   const [meetingTimer, setMeetingTimer] = useState(0)
+
   const [meetingRoomKey, setMeetingRoomKey] = useState("masterfile-room-844")
+
   const [sidebarTab, setSidebarTab] = useState<"chat" | "participants">("chat")
+
   const [chatMessages, setChatMessages] = useState<Array<{
     id: string
+
     sender: string
+
     text: string
+
     time: string
   }>>(() => {
     if (typeof createMeetingState === "function") {
@@ -709,93 +1125,147 @@ export default function ToolPage({
         return createMeetingState().chatMessages
       } catch {}
     }
+
     return [
       {
         id: "msg-1",
+
         sender: "System",
+
         text: "Room connected with peer-to-peer browser encryption.",
+
         time: "10:30 AM",
       },
+
       {
         id: "msg-2",
+
         sender: "Sarah Chen",
+
         text: "Hey team! Ready to review the document conversions and whiteboard.",
+
         time: "10:31 AM",
       },
+
       {
         id: "msg-3",
+
         sender: "Marcus Vance",
+
         text: "Audio transcription engine is running smoothly. Sharing notes shortly.",
+
         time: "10:32 AM",
       },
     ]
   })
+
   const [chatInput, setChatInput] = useState("")
 
   // Stored session documents for `documents`
+
   const [sessionDocs, setSessionDocs] = useState<SessionDocument[]>(() => {
     if (typeof getSessionDocuments === "function") {
       try {
         return getSessionDocuments()
       } catch {}
     }
+
     return [
       {
         id: "sample-doc-1",
+
         name: "Masterfilepro_Quickstart_Guide.pdf",
+
         size: "245.8 KB",
+
         rawSize: 251658,
+
         time: "10:00 AM",
+
         category: "pdf",
+
         toolSource: "Workspace Guide",
+
         contentSnippet:
           "Welcome to Masterfilepro Workspace. All creative and conversion tools run completely client-side in your browser.",
       },
+
       {
         id: "sample-doc-2",
+
         name: "Quarterly_Financial_Summary.xlsx",
+
         size: "84.2 KB",
+
         rawSize: 86220,
+
         time: "10:15 AM",
+
         category: "sheets",
+
         toolSource: "Excel to PDF",
+
         contentSnippet:
           "Q4 Financial Overview: Revenue grew 28% QoQ with operational margin expansion across all digital product lines.",
       },
+
       {
         id: "sample-doc-3",
+
         name: "Architecture_Design_Notes.docx",
+
         size: "112.5 KB",
+
         rawSize: 115200,
+
         time: "10:30 AM",
+
         category: "docs",
+
         toolSource: "PDF to Word",
+
         contentSnippet:
           "System Architecture & Security: Zero external API requirements, instant in-browser WebAssembly and Web Worker pipelines.",
       },
+
       {
         id: "sample-doc-4",
+
         name: "System_Architecture_Diagram.png",
+
         size: "320.0 KB",
+
         rawSize: 327680,
+
         time: "10:45 AM",
+
         category: "images",
+
         toolSource: "Whiteboards",
+
         contentSnippet:
           "PNG graphic export of collaboration whiteboard architecture diagram with multi-tiered client-side data flows.",
       },
     ]
   })
+
   const [docSearch, setDocSearch] = useState("")
+
   const [docCategory, setDocCategory] = useState("all")
+
   const [docViewMode, setDocViewMode] = useState<"table" | "grid">("table")
+
   const [previewDoc, setPreviewDoc] = useState<SessionDocument | null>(null)
+
   const [dbStats, setDbStats] = useState<DatabaseStats | null>(null)
+
   const [deleteConfirmDoc, setDeleteConfirmDoc] =
     useState<SessionDocument | null>(null)
+
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   // Hydrate documents and storage stats from persistent IndexedDB database on mount
+
   useEffect(() => {
     if (
       tool.id === "documents" &&
@@ -805,6 +1275,7 @@ export default function ToolPage({
       typeof dbGetAllDocuments === "function"
     ) {
       dbGetAllDocuments()
+
         .then((docs) => {
           if (Array.isArray(docs)) {
             if (docs.length > 0) {
@@ -818,44 +1289,70 @@ export default function ToolPage({
             }
           }
         })
+
         .catch(() => {})
 
       if (typeof dbGetStorageStats === "function") {
         dbGetStorageStats()
+
           .then((stats) => {
             setDbStats(stats)
           })
+
           .catch(() => {})
       }
     }
   }, [tool.id])
 
   // Pre-load staged files from quick-launch or routing
+
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
       const isFileTool = [
         "merge-pdf",
+
         "split-pdf",
+
         "compress",
+
         "rotate-pdf",
+
         "watermark",
+
         "password",
+
         "sign-pdf",
+
         "edit-pdf",
+
         "pdf-to-word",
+
         "pdf-to-ppt",
+
         "pdf-to-excel",
+
         "word-to-pdf",
+
         "ppt-to-pdf",
+
         "excel-to-pdf",
+
         "pdf-to-jpg",
+
         "jpg-to-pdf",
+
         "zip",
+
         "ocr",
+
         "convert",
+
         "convert-compress",
+
         "merge-compress",
+
         "split-compress",
+
         "documents",
       ].includes(tool.id)
 
@@ -863,21 +1360,33 @@ export default function ToolPage({
         setFiles(initialFiles)
       } else if (tool.category === "AI text tools") {
         const file = initialFiles[0]
+
         if (file) {
           setLoadedDocName(file.name)
+
           if (file.name.toLowerCase().endsWith(".pdf")) {
             setExtractingPdf(true)
+
             file
+
               .arrayBuffer()
+
               .then((buf) => extractPDFPages(buf))
+
               .then((pages) => {
                 const fullText = pages
+
                   .map((p) => p.fullText)
+
                   .filter(Boolean)
+
                   .join("\n\n")
+
                 if (fullText.trim()) setValue(fullText)
               })
+
               .catch(console.error)
+
               .finally(() => setExtractingPdf(false))
           } else if (
             file.type.startsWith("text/") ||
@@ -885,8 +1394,11 @@ export default function ToolPage({
             file.name.endsWith(".md")
           ) {
             file
+
               .text()
+
               .then((text) => setValue(text))
+
               .catch(console.error)
           }
         }
@@ -895,26 +1407,39 @@ export default function ToolPage({
   }, [initialFiles, tool.id])
 
   // Timer for active meeting
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>
+
     if (inMeeting) {
       interval = setInterval(() => setMeetingTimer((t) => t + 1), 1000)
     }
+
     return () => clearInterval(interval)
   }, [inMeeting])
 
   // Whiteboard canvas setup
+
   useEffect(() => {
     if (tool.id !== "whiteboards") return
+
     const canvas = canvasRef.current
+
     if (!canvas || typeof canvas.getContext !== "function") return
+
     const ctx = canvas.getContext("2d")
+
     if (!ctx) return
+
     ctx.lineCap = "round"
+
     ctx.lineJoin = "round"
+
     if (whiteboardHistoryRef.current.getDepth() === 0) {
       ctx.fillStyle = "#ffffff"
+
       ctx.fillRect(0, 0, canvas.width, canvas.height)
+
       try {
         whiteboardHistoryRef.current.push(canvas.toDataURL("image/png"))
       } catch {}
@@ -922,11 +1447,14 @@ export default function ToolPage({
   }, [tool.id])
 
   // Whiteboard keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+
   useEffect(() => {
     if (tool.id !== "whiteboards") return
+
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
         e.preventDefault()
+
         if (e.shiftKey) {
           handleWhiteboardRedo()
         } else {
@@ -934,81 +1462,124 @@ export default function ToolPage({
         }
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "y" || e.key === "Y")) {
         e.preventDefault()
+
         handleWhiteboardRedo()
       }
     }
+
     window.addEventListener("keydown", handleKeyDown)
+
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [tool.id])
 
   function handleWhiteboardUndo() {
     const canvas = canvasRef.current
+
     if (!canvas) return
+
     const ctx = canvas.getContext("2d")
+
     if (!ctx) return
+
     const prev = whiteboardHistoryRef.current.undo()
+
     if (prev && typeof window !== "undefined" && window.Image) {
       const renderSeq = ++whiteboardRenderSeqRef.current
+
       const img = new window.Image()
+
       img.onload = () => {
         if (renderSeq !== whiteboardRenderSeqRef.current) return
+
         ctx.clearRect(0, 0, canvas.width, canvas.height)
+
         ctx.drawImage(img, 0, 0)
       }
+
       img.src = prev
     }
+
     setCanUndo(whiteboardHistoryRef.current.canUndo())
+
     setCanRedo(whiteboardHistoryRef.current.canRedo())
   }
 
   function handleWhiteboardRedo() {
     const canvas = canvasRef.current
+
     if (!canvas) return
+
     const ctx = canvas.getContext("2d")
+
     if (!ctx) return
+
     const next = whiteboardHistoryRef.current.redo()
+
     if (next && typeof window !== "undefined" && window.Image) {
       const renderSeq = ++whiteboardRenderSeqRef.current
+
       const img = new window.Image()
+
       img.onload = () => {
         if (renderSeq !== whiteboardRenderSeqRef.current) return
+
         ctx.clearRect(0, 0, canvas.width, canvas.height)
+
         ctx.drawImage(img, 0, 0)
       }
+
       img.src = next
     }
+
     setCanUndo(whiteboardHistoryRef.current.canUndo())
+
     setCanRedo(whiteboardHistoryRef.current.canRedo())
   }
 
   function handleSendMeetingChat(text: string) {
     const trimmed = text.trim()
+
     if (!trimmed) return
+
     try {
       if (typeof sendChatMessage === "function") {
         const currentState: MeetingState = {
           roomKey: meetingRoomKey,
+
           inMeeting,
+
           micMuted,
+
           cameraOff,
+
           isScreenSharing,
+
           activeSidebarTab: sidebarTab,
+
           chatMessages,
+
           participants: [],
         }
+
         const updated = sendChatMessage(currentState, "You", trimmed)
+
         setChatMessages(updated.chatMessages)
+
         setChatInput("")
 
         setTimeout(() => {
           setChatMessages((prev) => {
             const replyState: MeetingState = {
               ...currentState,
+
               chatMessages: prev,
             }
+
             return sendChatMessage(
               replyState,
+
               "Sarah Chen",
+
               "Received! Looking over the document conversions right now.",
             ).chatMessages
           })
@@ -1016,25 +1587,37 @@ export default function ToolPage({
       } else {
         const userMsg = {
           id: `msg-${Date.now()}`,
+
           sender: "You",
+
           text: trimmed,
+
           time: new Date().toLocaleTimeString([], {
             hour: "2-digit",
+
             minute: "2-digit",
           }),
         }
+
         setChatMessages((prev) => [...prev, userMsg])
+
         setChatInput("")
+
         setTimeout(() => {
           const replyMsg = {
             id: `msg-${Date.now() + 1}`,
+
             sender: "Sarah Chen",
+
             text: "Received! Looking over the document conversions right now.",
+
             time: new Date().toLocaleTimeString([], {
               hour: "2-digit",
+
               minute: "2-digit",
             }),
           }
+
           setChatMessages((prev) => [...prev, replyMsg])
         }, 1000)
       }
@@ -1042,23 +1625,34 @@ export default function ToolPage({
   }
 
   // Signature canvas setup
+
   useEffect(() => {
     if (tool.id !== "sign-pdf") return
+
     const canvas = sigCanvasRef.current
+
     if (!canvas || typeof canvas.getContext !== "function") return
-    const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1
+
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+
     if (dpr > 1) {
       canvas.width = Math.round(360 * dpr)
+
       canvas.height = Math.round(120 * dpr)
     }
+
     const ctx = canvas.getContext("2d")
+
     if (!ctx) return
+
     ctx.lineCap = "round"
+
     ctx.lineJoin = "round"
   }, [tool.id])
 
   function getAcceptedFileTypes(): string {
     const id = tool.id
+
     if (
       id === "pdf-to-word" ||
       id === "pdf-to-ppt" ||
@@ -1067,76 +1661,108 @@ export default function ToolPage({
     ) {
       return ".pdf,application/pdf"
     }
+
     if (id === "word-to-pdf") {
       return ".docx,.doc,.txt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
     }
+
     if (id === "ppt-to-pdf") {
       return ".pptx,.ppt,.txt,text/plain,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint"
     }
+
     if (id === "excel-to-pdf") {
       return ".xlsx,.xls,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
     }
+
     if (id === "jpg-to-pdf") {
       return ".jpg,.jpeg,.png,.webp,image/*"
     }
+
     if (id.includes("jpg") || id.includes("image")) {
       return ".jpg,.jpeg,.png,.webp,image/*,.pdf,application/pdf"
     }
+
     if (id.includes("word") || id.includes("doc")) {
       return ".docx,.doc,.pdf,application/*"
     }
+
     if (id.includes("ppt")) {
       return ".pptx,.ppt,.pdf,application/*"
     }
+
     if (id.includes("excel")) {
       return ".xlsx,.xls,.csv,.pdf,application/*"
     }
+
     if (id === "zip") {
       return zipMode === "extract"
         ? ".zip,application/zip,application/x-zip-compressed"
         : "*/*"
     }
+
     if (id === "ocr") {
       return ".pdf,.jpg,.jpeg,.png,.webp,image/*,application/pdf"
     }
+
     if (id === "edi-convert") {
       return ".edi,.x12,.edi.txt,.edifact,.txt,text/plain,application/octet-stream,*/*"
     }
+
     if (id === "csv-convert") {
       return ".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
     }
+
     if (id === "batch-convert") {
       return ".bat,.cmd,.sh,.ps1,.txt,text/plain,application/x-bat,application/x-msdos-program,*/*"
     }
+
     if (id === "convert" || id === "convert-compress") {
       return ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.csv,.tsv,.txt,.jpg,.jpeg,.png,.webp,image/*,application/*,text/*"
     }
+
     if (id === "merge-compress" || id === "split-compress") {
       return ".pdf,application/pdf"
     }
+
     if (id === "documents") {
       return "*/*"
     }
+
     return ".pdf,application/pdf"
   }
 
   function addFiles(incoming: FileList | null) {
     if (!incoming) return
+
     const accepted: File[] = []
+
     const errors: string[] = []
+
     const isStrictPdf = [
       "merge-pdf",
+
       "split-pdf",
+
       "rotate-pdf",
+
       "watermark",
+
       "password",
+
       "sign-pdf",
+
       "compress",
+
       "pdf-to-word",
+
       "pdf-to-ppt",
+
       "pdf-to-excel",
+
       "pdf-to-jpg",
+
       "merge-compress",
+
       "split-compress",
     ].includes(tool.id)
 
@@ -1156,25 +1782,33 @@ export default function ToolPage({
 
     if (tool.id === "zip" && accepted.length > 0) {
       const hasZip = accepted.some((f) => f.name.toLowerCase().endsWith(".zip"))
+
       if (hasZip && accepted.length === 1) {
         setZipMode("extract")
       }
     }
 
     setFiles((current) => [...current, ...accepted])
+
     setError(errors.join(" "))
+
     setResultState(undefined)
+
     setTextOutput("")
+
     setStatus("idle")
 
     if (accepted.length > 0) {
       if (dropSuccessTimerRef.current) {
         clearTimeout(dropSuccessTimerRef.current)
       }
+
       setDropSuccessState({
         count: accepted.length,
+
         names: accepted.map((f) => f.name),
       })
+
       dropSuccessTimerRef.current = setTimeout(() => {
         setDropSuccessState(null)
       }, 2500)
@@ -1182,32 +1816,46 @@ export default function ToolPage({
   }
 
   // --- Client-Side AI & NLP Engine ---
+
   async function handleDocumentUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
+
     if (!file) return
+
     try {
       setExtractingPdf(true)
+
       setLoadedDocName(file.name)
+
       if (file.name.toLowerCase().endsWith(".pdf")) {
         const pages = await extractPDFPages(await file.arrayBuffer())
+
         const fullText = pages
+
           .map((p) => p.fullText)
+
           .filter(Boolean)
+
           .join("\n\n")
+
         if (!fullText.trim()) {
           notify(
             "No embedded text found in PDF. Scanned PDFs require OCR Scanner (#ocr).",
+
             "warning",
           )
         } else {
           setValue(fullText)
+
           notify.success(
             `Extracted text from ${file.name} (${pages.length} pages).`,
           )
         }
       } else {
         const text = await file.text()
+
         setValue(text)
+
         notify.success(`Loaded text from ${file.name}.`)
       }
     } catch (err: any) {
@@ -1219,52 +1867,71 @@ export default function ToolPage({
 
   function executeAIProcessing(text: string): string {
     const t = text.trim()
+
     if (!t) return ""
 
     if (tool.id === "summarize") {
       const res = summarizeDocument(t, {
         mode: summaryMode,
+
         targetLength: summaryLength,
+
         format: summaryFormat,
       })
+
       setAiSummarizeResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "rewrite") {
       const toneToUse = optionA as RewriteTone || rewriteTone || "Professional"
+
       const res = rewriteContent(t, {
         tone: toneToUse,
       })
+
       setAiRewriteResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "translate") {
       const targetLang =
         optionA as SupportedLanguage || transTargetLang || "Spanish"
+
       const res = translateText(t, {
         targetLanguage: targetLang,
+
         sourceLanguage: transSourceLang,
       })
+
       setAiTranslationResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "ask") {
       const q = askQuestion.trim() || extra.trim()
+
       if (!q) throw new Error("Please enter a question to ask the document.")
+
       const res = askDocumentAI(t, { question: q })
+
       setAiAskResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "keywords") {
       const res = extractKeywords(t, {
         maxKeywords: keywordMax,
+
         includeNgrams: keywordNgrams,
       })
+
       setAiKeywordResult(res)
+
       return res.formattedReport
     }
 
@@ -1272,29 +1939,41 @@ export default function ToolPage({
       const res = analyzeSentiment(t, {
         detailed: sentimentDetailed,
       })
+
       setAiSentimentResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "compare") {
       const compText = extra !== undefined ? extra : ""
+
       const res = compareTexts(t, compText, {
         granularity: compareGranularity,
+
         ignoreWhitespace: compareIgnoreWhitespace,
       })
+
       setAiCompareResult(res)
+
       return res.formattedReport
     }
 
     if (tool.id === "email") {
       const res = generateEmail(t, {
         purpose: emailPurpose,
+
         tone: emailTone,
+
         recipient: emailRecipient || optionA || "Team",
+
         subjectTopic: emailSubject || extra,
+
         callToAction: emailCTA,
       })
+
       setAiEmailResult(res)
+
       return res.formattedReport
     }
 
@@ -1302,73 +1981,98 @@ export default function ToolPage({
   }
 
   // --- Interactive Form Submit ---
+
   async function submit(e: FormEvent) {
     e.preventDefault()
+
     setError("")
+
     setResultState(undefined)
+
     setTextOutput("")
+
     setQr("")
+
     setStatus("processing")
 
     let out: any = undefined
+
     const setResult = (res: OutputResult | undefined) => {
       out = res
+
       setResultState(res)
     }
 
     try {
       // 1. QR Code Studio
+
       if (tool.id === "qr") {
         let content = value.trim()
+
         if (!content) throw new Error("Enter content for your QR code.")
 
         if (kind === "URL") {
           let urlStr = content
+
           if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(urlStr)) {
             try {
               const parsed = new URL(urlStr)
+
               if (!["http:", "https:"].includes(parsed.protocol)) {
                 throw new Error("Use a valid https:// or http:// URL.")
               }
+
               content = urlStr
             } catch {
               throw new Error("Use a valid https:// or http:// URL.")
             }
           } else {
             urlStr = `https://${urlStr}`
+
             try {
               const parsed = new URL(urlStr)
+
               if (!["http:", "https:"].includes(parsed.protocol)) {
                 throw new Error("Use a valid https:// or http:// URL.")
               }
+
               content = urlStr
             } catch {
               throw new Error("Use a valid https:// or http:// URL.")
             }
           }
         }
+
         if (kind === "WhatsApp") {
           if (!/^\+?\d{7,15}$/.test(content)) {
             throw new Error(
               "Enter a phone number with country code (7–15 digits).",
             )
           }
+
           content = `https://wa.me/${content.replace("+", "")}?text=${encodeURIComponent(extra)}`
         }
+
         if (kind === "Wi-Fi") {
           const cleanSSID = content.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 64)
+
           const cleanPass = extra.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 128)
+
           const escape = (s: string) => s.replace(/([\\;,:"])/g, "\\$1")
+
           content = `WIFI:T:WPA;S:${escape(cleanSSID)};P:${escape(cleanPass)};;`
         }
+
         if (kind === "Email") {
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(content)) {
             throw new Error("Enter a valid email address.")
           }
+
           content = `mailto:${content}?subject=${encodeURIComponent(extra)}`
         }
 
         setRawQrPayload(content)
+
         if (typeof generateQR === "function") {
           setQr(await generateQR(content))
         }
@@ -1377,26 +2081,40 @@ export default function ToolPage({
       else if (tool.id === "merge-pdf") {
         if (files.length < 2)
           throw new Error("Choose at least two PDFs to merge.")
+
         setMergeProgress({
           current: 1,
+
           total: files.length,
+
           currentFileName: files[0]?.name || "Document 1",
+
           percentage: 12,
+
           stage: `Initializing merge engine for ${files.length} documents...`,
         })
+
         try {
           const [mergedRes] = await Promise.all([
             mergePDFs(files, (p) => setMergeProgress(p)),
+
             new Promise((resolve) => setTimeout(resolve, 800)),
           ])
+
           setMergeProgress({
             current: files.length,
+
             total: files.length,
+
             currentFileName: "Done",
+
             percentage: 100,
+
             stage: "All files successfully stitched!",
           })
+
           await new Promise((resolve) => setTimeout(resolve, 450))
+
           setResult(mergedRes)
         } finally {
           setMergeProgress(null)
@@ -1404,98 +2122,140 @@ export default function ToolPage({
       } else if (tool.id === "rotate-pdf") {
         if (files.length < 1)
           throw new Error("Choose at least one PDF to rotate.")
+
         const angle = parseInt(optionA || "90", 10) || 90
+
         setResult(await rotatePDF(files[0], angle))
       } else if (tool.id === "text-pdf") {
         if (!value.trim())
           throw new Error("Add some text to create your document.")
+
         setResult(await textToPDF(value, title))
       } else if (tool.id === "split-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to split.")
+
         setResult(await splitPDF(files[0], extra))
       } else if (tool.id === "compress") {
         if (files.length < 1) throw new Error("Select a PDF to compress.")
-        const level = (optionA as "standard" | "high" | "extreme") || "standard"
+
+        const level = optionA as "standard" | "high" | "extreme" || "standard"
+
         setResult(await compressPDF(files[0], { level }))
       } else if (tool.id === "edit-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to annotate.")
+
         const pageNum = parseInt(optionB || "1", 10) || 1
+
         const type = optionA as "note" | "highlight" | "callout" || "note"
+
         setResult(
           await editPDF(files[0], {
             annotation: extra,
+
             pageNumber: pageNum,
+
             type,
           }),
         )
       } else if (tool.id === "watermark") {
         if (files.length < 1) throw new Error("Select a PDF to watermark.")
+
         const opacity = parseFloat(optionA || "0.35") || 0.35
+
         const rotation = parseInt(optionB || "45", 10) ?? 45
+
         setResult(
           await watermarkPDF(files[0], {
             text: extra || "CONFIDENTIAL",
+
             opacity,
+
             rotation,
           }),
         )
       } else if (tool.id === "sign-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to sign.")
+
         let signatureImageBytes: Uint8Array | undefined
+
         if (sigCanvasRef.current && sigHasDrawn) {
           const dataUrl = sigCanvasRef.current.toDataURL("image/png")
+
           const base64 = dataUrl.split(",")[1]
+
           if (base64) {
             const binary = atob(base64)
+
             const bytes = new Uint8Array(binary.length)
+
             for (let i = 0; i < binary.length; i++)
               bytes[i] = binary.charCodeAt(i)
+
             signatureImageBytes = bytes
           }
         }
+
         const pageNum = optionA === "first" ? 1 : undefined
+
         setResult(
           await signPDF(files[0], {
             signerName: extra || "Digitally Signed",
+
             signatureImageBytes,
+
             pageNumber: pageNum,
           }),
         )
       } else if (tool.id === "password") {
         if (files.length < 1)
           throw new Error("Select a PDF to protect or unlock.")
+
         const action = optionA as "lock" | "unlock" || "lock"
+
         if (action === "lock") {
           if (!extra || extra.length < 4) {
             throw new Error("Security password must be at least 4 characters.")
           }
+
           if (optionB && extra !== optionB) {
             throw new Error("Passwords do not match.")
           }
         }
+
         setResult(await securePDF(files[0], { action, password: extra }))
       }
       // 2.5 Milestone 3 Document & Format Conversions
       else if (tool.id === "pdf-to-word") {
         if (files.length < 1)
           throw new Error("Select a PDF to convert to Word.")
+
         const format = optionA as "docx" | "doc" | "txt" || "docx"
+
         const layout = optionB as "standard" | "clean" | "compact" || "standard"
+
         setResult(await pdfToWord(files[0], { format, layout }))
       } else if (tool.id === "pdf-to-ppt") {
         if (files.length < 1)
           throw new Error("Select a PDF to convert to PowerPoint.")
-        const aspectRatio = (optionA as "16:9" | "4:3") || "16:9"
+
+        const aspectRatio = optionA as "16:9" | "4:3" || "16:9"
+
         const theme =
-          (optionB as "fluxkit-dark" | "minimal-white" | "corporate-blue") ||
+          optionB as "fluxkit-dark" | "minimal-white" | "corporate-blue" ||
           "fluxkit-dark"
-        const layout = (extra as "auto" | "editable-text" | "high-fidelity") || "auto"
+
+        const layout =
+          extra as "auto" | "editable-text" | "high-fidelity" || "auto"
+
         setResult(await pdfToPPT(files[0], { aspectRatio, theme, layout }))
       } else if (tool.id === "pdf-to-excel") {
         if (files.length < 1)
           throw new Error("Select a PDF to extract into Excel.")
+
         const format = optionA as "xlsx" | "csv" | "tsv" || "xlsx"
+
         const strategy = optionB as "auto" | "whitespace" | "lines" || "auto"
+
         setResult(await pdfToExcel(files[0], { format, strategy }))
       } else if (tool.id === "word-to-pdf") {
         if (files.length < 1 && !value.trim()) {
@@ -1503,9 +2263,12 @@ export default function ToolPage({
             "Select a Word document or enter text to convert to PDF.",
           )
         }
+
         const margins =
           optionA as "standard" | "compact" | "spacious" || "standard"
+
         const font = optionB as "helvetica" | "times" | "courier" || "helvetica"
+
         if (files.length > 0) {
           setResult(await wordToPDF(files[0], { margins, font, title }))
         } else {
@@ -1517,14 +2280,19 @@ export default function ToolPage({
             "Select a presentation file or enter outline text to convert to PDF.",
           )
         }
+
         const orientation =
           optionA as "landscape-16-9" | "landscape-4-3" | "portrait" ||
           "landscape-16-9"
+
         const slidesPerPage = parseInt(optionB || "1", 10) || 1
+
         setResult(
           await pptToPDF(files[0] || value, {
             orientation,
+
             slidesPerPage,
+
             title,
           }),
         )
@@ -1532,36 +2300,50 @@ export default function ToolPage({
         if (files.length < 1 && !value.trim()) {
           throw new Error("Select an Excel or CSV file to convert to PDF.")
         }
+
         const orientation = optionA as "landscape" | "portrait" || "landscape"
+
         const tableTheme =
           optionB as "grid-indigo" | "zebra" | "minimal" || "grid-indigo"
+
         setResult(
           await excelToPDF(files[0] || value, {
             orientation,
+
             theme: tableTheme,
+
             title,
           }),
         )
       } else if (tool.id === "pdf-to-jpg") {
         if (files.length < 1) throw new Error("Select a PDF to convert to JPG.")
+
         const quality = optionA as "high" | "standard" | "compact" || "high"
+
         const pageSelection = optionB as "first" | "all" | "custom" || "first"
+
         const pageNum = parseInt(extra || "1", 10) || 1
+
         setResult(
           await pdfToJPG(files[0], {
             quality,
+
             pageSelection,
+
             pageNumber: pageNum,
           }),
         )
       } else if (tool.id === "jpg-to-pdf") {
         if (files.length < 1)
           throw new Error("Select at least one image to convert to PDF.")
+
         const orientation =
           optionA as "auto" | "portrait" | "landscape" || "auto"
+
         const margins =
           optionB as "fit-margins" | "no-margins" | "center-original" ||
           "fit-margins"
+
         setResult(await jpgToPDF(files, { orientation, margins, title }))
       } else if (tool.id === "zip") {
         if (files.length < 1) {
@@ -1571,410 +2353,646 @@ export default function ToolPage({
               : "Select at least one file to archive.",
           )
         }
+
         if (zipMode === "extract") {
           setPipelineStep({
             current: 1,
+
             total: 1,
+
             label: "Extracting archive...",
           })
+
           const extracted = await extractZipArchive(files[0])
+
           setExtractedFiles(extracted)
+
           setPipelineStep(null)
+
           notify.success(
             `Extracted ${extracted.length} files from ${files[0].name}.`,
           )
+
           onComplete(`${files[0].name} (Extracted)`)
+
           setStatus("completed")
+
           return
         } else {
           setPipelineStep({
             current: 1,
+
             total: 1,
+
             label: "Packaging ZIP archive...",
           })
+
           const compLevel =
             optionA === "store" ? 0 : optionA === "maximum" ? 9 : 6
+
           const archName = extra.trim()
             ? extra.endsWith(".zip")
               ? extra
               : `${extra}.zip`
             : undefined
+
           const zipRes = await zipFiles(
             files.map((f) => ({ name: f.name, data: f })),
+
             {
               compressionLevel: compLevel,
+
               archiveName: archName,
             },
           )
+
           setResult({ name: zipRes.name, blob: zipRes.blob })
+
           setPipelineMetrics({
             blob: zipRes.blob,
+
             name: zipRes.name,
+
             filename: zipRes.name,
+
             originalSize: zipRes.uncompressedSize,
+
             finalSize: zipRes.compressedSize,
+
             savedPercentage: Math.round(zipRes.compressionRatio * 100),
           })
+
           setPipelineStep(null)
+
           notify.success(`Created ZIP archive with ${zipRes.totalFiles} files.`)
+
           onComplete(zipRes.name)
+
           setStatus("completed")
+
           return
         }
       } else if (tool.id === "ocr") {
         if (files.length < 1) {
           throw new Error("Select an image or PDF document to scan.")
         }
+
         setPipelineStep({
           current: 1,
+
           total: 1,
+
           label: "Scanning document & recognizing text...",
         })
+
         const ocr = await scanOCR(files[0], {
           language: optionA || "en",
+
           enhanceContrast: ocrContrast,
+
           invertColors: ocrInvert,
+
           cleanBackground: ocrClean,
         })
+
         setOcrResult(ocr)
+
         setTextOutput(ocr.text)
+
         const baseName = files[0].name.replace(/\.[^/.]+$/, "")
+
         const txtBlob = new Blob([ocr.text], {
           type: "text/plain;charset=utf-8",
         })
+
         setResult({ name: `${baseName}-ocr.txt`, blob: txtBlob })
+
         setPipelineStep(null)
+
         notify.success(
           `OCR complete: ${ocr.wordCount} words recognized (${Math.round(ocr.confidence * 100)}% confidence).`,
         )
+
         onComplete(`${baseName}-ocr.txt`)
+
         setStatus("completed")
+
         return
       } else if (tool.id === "convert") {
         if (files.length < 1) {
           throw new Error("Select a file to convert.")
         }
+
         const targetFormat =
           optionA ||
           (files[0].name.toLowerCase().endsWith(".pdf") ? "docx" : "pdf")
+
         setPipelineStep({
           current: 1,
+
           total: 1,
+
           label: `Converting to ${targetFormat.toUpperCase()}...`,
         })
+
         const conv = await universalConvert(files[0], { targetFormat })
+
         setResult(conv)
+
         setPipelineStep(null)
+
         notify.success(
           `Converted ${files[0].name} to ${targetFormat.toUpperCase()}.`,
         )
+
         onComplete(conv.name)
+
         setStatus("completed")
+
         return
       } else if (tool.id === "edi-convert") {
         let rawEdi = ""
+
         let baseName = "edi-document"
+
         if (files.length > 0) {
           rawEdi = await files[0].text()
+
           baseName = files[0].name.replace(/\.[^/.]+$/, "")
         } else if (value.trim()) {
           rawEdi = value.trim()
+
           baseName = "pasted-edi"
         } else {
           throw new Error("Please upload an EDI file or paste EDI content.")
         }
 
         const targetFormat = optionA || "json"
+
         setPipelineStep({
           current: 1,
+
           total: 1,
+
           label: `Converting EDI to ${targetFormat.toUpperCase()}...`,
         })
 
         if (targetFormat === "json") {
           const jsonStr = convertEDIToJSON(rawEdi, true)
+
           const blob = new Blob([jsonStr], { type: "application/json" })
+
           const outName = `${baseName}.json`
+
           setResult({ name: outName, blob, extractedText: jsonStr })
+
           onComplete(outName)
         } else if (targetFormat === "csv") {
           const csvStr = convertEDIToCSV(rawEdi)
+
           const blob = new Blob([csvStr], { type: "text/csv" })
+
           const outName = `${baseName}.csv`
+
           setResult({ name: outName, blob, extractedText: csvStr })
+
           onComplete(outName)
         } else if (targetFormat === "xlsx") {
           const excelRes = await convertEDIToExcel(rawEdi, `${baseName}-edi`)
+
           setResult({ name: excelRes.name, blob: excelRes.blob })
+
           onComplete(excelRes.name)
         } else if (targetFormat === "xml") {
           const xmlStr = convertEDIToXML(rawEdi)
+
           const blob = new Blob([xmlStr], { type: "application/xml" })
+
           const outName = `${baseName}.xml`
+
           setResult({ name: outName, blob, extractedText: xmlStr })
+
           onComplete(outName)
         } else if (targetFormat === "report") {
           const reportStr = convertEDIToReadableReport(rawEdi)
+
           const blob = new Blob([reportStr], { type: "text/plain" })
+
           const outName = `${baseName}-report.txt`
+
           setResult({ name: outName, blob, extractedText: reportStr })
+
           onComplete(outName)
         } else if (targetFormat === "reverse_edi") {
-          const isJson = rawEdi.trim().startsWith("{") || rawEdi.trim().startsWith("[")
+          const isJson =
+            rawEdi.trim().startsWith("{") || rawEdi.trim().startsWith("[")
+
           const ediStr = convertDataToEDIX12(rawEdi, isJson ? "json" : "csv")
+
           const blob = new Blob([ediStr], { type: "application/octet-stream" })
+
           const outName = `${baseName}.x12.edi`
+
           setResult({ name: outName, blob, extractedText: ediStr })
+
           onComplete(outName)
         }
 
         setPipelineStep(null)
-        notify.success(`EDI conversion to ${targetFormat.toUpperCase()} completed.`)
+
+        notify.success(
+          `EDI conversion to ${targetFormat.toUpperCase()} completed.`,
+        )
+
         setStatus("completed")
+
         return
       } else if (tool.id === "csv-convert") {
         let rawCsv = ""
+
         let baseName = "data"
+
         if (files.length > 0) {
           rawCsv = await files[0].text()
+
           baseName = files[0].name.replace(/\.[^/.]+$/, "")
         } else if (value.trim()) {
           rawCsv = value.trim()
+
           baseName = "pasted-table"
         } else {
-          throw new Error("Please upload a CSV / TSV file or paste tabular data.")
+          throw new Error(
+            "Please upload a CSV / TSV file or paste tabular data.",
+          )
         }
 
         const targetFormat = optionA || "xlsx"
+
         setPipelineStep({
           current: 1,
+
           total: 1,
+
           label: `Converting CSV to ${targetFormat.toUpperCase()}...`,
         })
 
         if (targetFormat === "xlsx") {
-          const excelRes = await convertCSVToExcel(rawCsv, `${baseName}-spreadsheet`)
+          const excelRes = await convertCSVToExcel(
+            rawCsv,
+            `${baseName}-spreadsheet`,
+          )
+
           setResult({ name: excelRes.name, blob: excelRes.blob })
+
           onComplete(excelRes.name)
         } else if (targetFormat === "json") {
           const jsonStr = convertCSVToJSON(rawCsv, "objects")
+
           const blob = new Blob([jsonStr], { type: "application/json" })
+
           const outName = `${baseName}.json`
+
           setResult({ name: outName, blob, extractedText: jsonStr })
+
           onComplete(outName)
         } else if (targetFormat === "pdf") {
           const pdfRes = await convertCSVToPDF(rawCsv, `${baseName}-table`)
+
           setResult({ name: pdfRes.name, blob: pdfRes.blob })
+
           onComplete(pdfRes.name)
         } else if (targetFormat === "xml") {
           const xmlStr = convertCSVToXML(rawCsv)
+
           const blob = new Blob([xmlStr], { type: "application/xml" })
+
           const outName = `${baseName}.xml`
+
           setResult({ name: outName, blob, extractedText: xmlStr })
+
           onComplete(outName)
         } else if (targetFormat === "sql") {
-          const sqlStr = convertCSVToSQL(rawCsv, baseName.replace(/[^a-zA-Z0-9_]/g, "_"))
+          const sqlStr = convertCSVToSQL(
+            rawCsv,
+            baseName.replace(/[^a-zA-Z0-9_]/g, "_"),
+          )
+
           const blob = new Blob([sqlStr], { type: "text/plain" })
+
           const outName = `${baseName}.sql`
+
           setResult({ name: outName, blob, extractedText: sqlStr })
+
           onComplete(outName)
         } else if (targetFormat === "markdown") {
           const mdStr = convertCSVToMarkdown(rawCsv)
+
           const blob = new Blob([mdStr], { type: "text/markdown" })
+
           const outName = `${baseName}.md`
+
           setResult({ name: outName, blob, extractedText: mdStr })
+
           onComplete(outName)
         } else if (targetFormat === "reformat") {
-          const targetDelim = (optionB as "," | ";" | "\t" | "|") || ";"
+          const targetDelim = optionB as "," | ";" | "\t" | "|" || ";"
+
           const reformatted = reformatCSVDelimiter(rawCsv, targetDelim)
+
           const blob = new Blob([reformatted], { type: "text/csv" })
+
           const outName = `${baseName}-reformatted.csv`
+
           setResult({ name: outName, blob, extractedText: reformatted })
+
           onComplete(outName)
         }
 
         setPipelineStep(null)
-        notify.success(`Spreadsheet converted to ${targetFormat.toUpperCase()}.`)
+
+        notify.success(
+          `Spreadsheet converted to ${targetFormat.toUpperCase()}.`,
+        )
+
         setStatus("completed")
+
         return
       } else if (tool.id === "batch-convert") {
         let batText = ""
+
         let baseName = "script"
+
         const mode = optionA || "ps1"
 
         if (mode === "template") {
-          const tType = (optionB as "backup" | "cleanup" | "launcher" | "system_info") || "backup"
+          const tType =
+            optionB as "backup" | "cleanup" | "launcher" | "system_info" ||
+            "backup"
+
           const templateCode = generateBatchTemplate(tType)
+
           const blob = new Blob([templateCode], { type: "application/x-bat" })
+
           const outName = `masterfilepro-${tType}.bat`
+
           setResult({ name: outName, blob, extractedText: templateCode })
+
           onComplete(outName)
+
           notify.success(`Batch automation script created (${tType}).`)
+
           setStatus("completed")
+
           return
         }
 
         if (files.length > 0) {
           batText = await files[0].text()
+
           baseName = files[0].name.replace(/\.[^/.]+$/, "")
         } else if (value.trim()) {
           batText = value.trim()
+
           baseName = "batch-script"
         } else {
-          throw new Error("Please upload a .bat/.cmd file or paste batch script code.")
+          throw new Error(
+            "Please upload a .bat/.cmd file or paste batch script code.",
+          )
         }
 
         setPipelineStep({
           current: 1,
+
           total: 1,
+
           label: `Transpiling Batch script...`,
         })
 
         if (mode === "ps1") {
           const psCode = convertBatchToPowerShell(batText)
+
           const blob = new Blob([psCode], { type: "text/plain" })
+
           const outName = `${baseName}.ps1`
+
           setResult({ name: outName, blob, extractedText: psCode })
+
           onComplete(outName)
         } else if (mode === "sh") {
           const shCode = convertBatchToBash(batText)
+
           const blob = new Blob([shCode], { type: "text/plain" })
+
           const outName = `${baseName}.sh`
+
           setResult({ name: outName, blob, extractedText: shCode })
+
           onComplete(outName)
         } else if (mode === "py") {
           const pyCode = convertBatchToPython(batText)
+
           const blob = new Blob([pyCode], { type: "text/plain" })
+
           const outName = `${baseName}.py`
+
           setResult({ name: outName, blob, extractedText: pyCode })
+
           onComplete(outName)
         } else if (mode === "analyze") {
           const analysis = analyzeBatchScript(batText)
+
           const report = [
             `=======================================================`,
+
             `MASTERFILE PRO BATCH SCRIPT AUDIT REPORT`,
+
             `=======================================================`,
+
             `Total Lines    : ${analysis.lineCount}`,
+
             `Total Commands : ${analysis.commandCount}`,
+
             `Has Loops (for): ${analysis.hasLoops ? "YES" : "NO"}`,
+
             `Has Conditionals: ${analysis.hasConditionals ? "YES" : "NO"}`,
+
             `Destructive Commands Detected: ${analysis.dangerousCommands.length}`,
+
             `-------------------------------------------------------`,
+
             ...(analysis.dangerousCommands.length > 0
               ? analysis.dangerousCommands.map((d) => `[!] ${d}`)
               : [`[✓] No destructive or high-risk system commands detected.`]),
+
             `-------------------------------------------------------`,
+
             ...(analysis.warnings.length > 0
               ? analysis.warnings.map((w) => `Warning: ${w}`)
               : []),
           ].join("\n")
 
           const blob = new Blob([report], { type: "text/plain" })
+
           const outName = `${baseName}-audit-report.txt`
+
           setResult({ name: outName, blob, extractedText: report })
+
           onComplete(outName)
         }
 
         setPipelineStep(null)
+
         notify.success(`Batch script transpilation completed.`)
+
         setStatus("completed")
+
         return
       } else if (tool.id === "convert-compress") {
         if (files.length < 1) {
           throw new Error("Select a file to convert and compress.")
         }
+
         const targetFormat = optionA || "pdf"
+
         const compressLevel =
           optionB as "standard" | "high" | "low" | "extreme" || "standard"
+
         const res = await convertAndCompress(files[0], {
           targetFormat,
+
           compressLevel,
+
           onProgress: (evt) => {
             const stepNum = evt.stage === "converting" ? 1 : 2
+
             setPipelineStep({
               current: stepNum,
+
               total: 2,
+
               label: evt.message || `Step ${stepNum}: ${evt.stage}...`,
             })
           },
         })
+
         setResult({ name: res.name, blob: res.blob })
+
         setPipelineMetrics(res)
+
         setPipelineStep(null)
+
         notify.success(`Converted & compressed: saved ${res.savedPercentage}%.`)
+
         onComplete(res.name)
+
         setStatus("completed")
+
         return
       } else if (tool.id === "merge-compress") {
         if (files.length < 2) {
           throw new Error("Choose at least two PDFs to merge and compress.")
         }
+
         const compressLevel =
           optionA as "standard" | "high" | "low" | "extreme" || "standard"
+
         const res = await mergeAndCompress(files, {
           compressLevel,
+
           stripMetadata: stripMeta,
+
           onProgress: (evt) => {
             const stepNum = evt.stage === "merging" ? 1 : 2
+
             setPipelineStep({
               current: stepNum,
+
               total: 2,
+
               label: evt.message || `Step ${stepNum}: ${evt.stage}...`,
             })
           },
         })
+
         setResult({ name: res.name, blob: res.blob })
+
         setPipelineMetrics(res)
+
         setPipelineStep(null)
+
         notify.success(
           `Merged & compressed ${files.length} PDFs: saved ${res.savedPercentage}%.`,
         )
+
         onComplete(res.name)
+
         setStatus("completed")
+
         return
       } else if (tool.id === "split-compress") {
         if (files.length < 1) {
           throw new Error("Select a PDF to split and compress.")
         }
+
         const splitMode =
           optionA as "ranges" | "range" | "all" | "all-pages" || "ranges"
+
         const compressLevel =
           optionB as "standard" | "high" | "low" | "extreme" || "standard"
+
         const res = await splitAndCompress(files[0], {
           splitMode,
+
           pageRange: extra,
+
           compressLevel,
+
           onProgress: (evt) => {
             const total =
               splitMode === "all" || splitMode === "all-pages" ? 3 : 2
+
             const stepNum =
               evt.stage === "splitting"
                 ? 1
                 : evt.stage === "compressing"
                   ? 2
                   : 3
+
             setPipelineStep({
               current: stepNum,
+
               total,
+
               label: evt.message || `Step ${stepNum}: ${evt.stage}...`,
             })
           },
         })
+
         setResult({ name: res.name, blob: res.blob })
+
         setPipelineMetrics(res)
+
         setPipelineStep(null)
+
         notify.success(`Split & compressed PDF: saved ${res.savedPercentage}%.`)
+
         onComplete(res.name)
+
         setStatus("completed")
+
         return
       }
       // 3. AI Text Tools
       else if (tool.category === "AI text tools") {
         if (!value.trim())
           throw new Error("Enter some text or document content to process.")
+
         const output = executeAIProcessing(value)
+
         setTextOutput(output)
+
         setStatus("completed")
+
         return
       }
       // 4. File Tools (client-side processing)
@@ -1983,7 +3001,9 @@ export default function ToolPage({
           throw new Error(`Select or drop a file to process with ${tool.name}.`)
         } else if (files.length > 0) {
           // General conversion / document packaging
+
           const original = files[0]
+
           const targetExt = tool.id.includes("word")
             ? "docx"
             : tool.id.includes("ppt")
@@ -1995,16 +3015,20 @@ export default function ToolPage({
                   : tool.id.includes("zip")
                     ? "zip"
                     : "pdf"
+
           const outputName = `${original.name.replace(/\.[^/.]+$/, "")}-converted.${targetExt}`
+
           const blob = new Blob([await original.arrayBuffer()], {
             type:
               targetExt === "pdf"
                 ? "application/pdf"
                 : "application/octet-stream",
           })
+
           setResult({ name: outputName, blob })
         } else {
           // Text-based fallback creation
+
           setResult(await textToPDF(value, title || tool.name))
         }
       }
@@ -2014,24 +3038,34 @@ export default function ToolPage({
           files.forEach((f) => {
             saveSessionDocument({
               name: f.name,
+
               toolSource: "Direct Upload",
+
               blob: f,
+
               rawSize: f.size,
             })
           })
+
           setSessionDocs(getSessionDocuments())
+
           setFiles([])
         }
       }
 
       if (out) {
         setIsSavedInVault(true)
+
         const saved = saveSessionDocument({
           name: out.name,
+
           toolSource: tool.name,
+
           blob: out.blob,
+
           rawSize: out.blob?.size,
         })
+
         if (
           saved &&
           typeof isDatabaseSupported === "function" &&
@@ -2043,10 +3077,13 @@ export default function ToolPage({
       }
 
       setStatus("completed")
+
       onComplete(tool.name)
+
       notify(`${tool.name} completed. Your result is ready.`, "success")
     } catch (err) {
       setStatus("failed")
+
       setError(
         err instanceof Error
           ? err.message
@@ -2059,16 +3096,23 @@ export default function ToolPage({
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const fileList = e.target.files
+
     if (!fileList || !fileList.length) return
+
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i]
+
       if (typeof saveSessionDocument === "function") {
         const saved = saveSessionDocument({
           name: file.name,
+
           toolSource: "Direct Upload",
+
           blob: file,
+
           rawSize: file.size,
         })
+
         if (
           saved &&
           typeof isDatabaseSupported === "function" &&
@@ -2079,26 +3123,33 @@ export default function ToolPage({
         }
       }
     }
+
     if (
       typeof isDatabaseSupported === "function" &&
       isDatabaseSupported() &&
       typeof dbGetAllDocuments === "function"
     ) {
       const updated = await dbGetAllDocuments()
+
       setSessionDocs(updated)
+
       if (typeof dbGetStorageStats === "function") {
         const stats = await dbGetStorageStats()
+
         setDbStats(stats)
       }
     } else if (typeof getSessionDocuments === "function") {
       setSessionDocs(getSessionDocuments())
     }
+
     notify(
       `Saved ${fileList.length} document${
         fileList.length > 1 ? "s" : ""
       } to database.`,
+
       "success",
     )
+
     e.target.value = ""
   }
 
@@ -2106,18 +3157,23 @@ export default function ToolPage({
     if (typeof deleteSessionDocument === "function") {
       deleteSessionDocument(docToDelete.id)
     }
+
     if (
       typeof isDatabaseSupported === "function" &&
       isDatabaseSupported() &&
       typeof dbDeleteDocument === "function"
     ) {
       await dbDeleteDocument(docToDelete.id)
+
       if (typeof dbGetAllDocuments === "function") {
         const updated = await dbGetAllDocuments()
+
         setSessionDocs(updated)
       }
+
       if (typeof dbGetStorageStats === "function") {
         const stats = await dbGetStorageStats()
+
         setDbStats(stats)
       }
     } else if (typeof getSessionDocuments === "function") {
@@ -2125,10 +3181,13 @@ export default function ToolPage({
     } else {
       setSessionDocs((prev) => prev.filter((d) => d.id !== docToDelete.id))
     }
+
     setDeleteConfirmDoc(null)
+
     if (previewDoc?.id === docToDelete.id) {
       setPreviewDoc(null)
     }
+
     notify(`Permanently deleted ${docToDelete.name} from database.`, "info")
   }
 
@@ -2136,42 +3195,53 @@ export default function ToolPage({
     if (typeof clearSessionDocuments === "function") {
       clearSessionDocuments()
     }
+
     if (
       typeof isDatabaseSupported === "function" &&
       isDatabaseSupported() &&
       typeof dbClearAllDocuments === "function"
     ) {
       await dbClearAllDocuments()
+
       if (typeof markDatabaseInitialized === "function") {
         await markDatabaseInitialized()
       }
     }
+
     setSessionDocs([])
+
     setDbStats({ count: 0, totalBytes: 0, formattedSize: "0 B" })
+
     setShowClearConfirm(false)
+
     notify("Database cleared. All files permanently deleted.", "info")
   }
 
   const handleRestoreSamples = async () => {
     if (typeof reloadSampleDocuments === "function") {
       const samples = await reloadSampleDocuments()
+
       setSessionDocs(samples)
+
       if (
         typeof isDatabaseSupported === "function" &&
         isDatabaseSupported() &&
         typeof dbGetStorageStats === "function"
       ) {
         const stats = await dbGetStorageStats()
+
         setDbStats(stats)
       }
     } else if (typeof getSampleDocuments === "function") {
       setSessionDocs(getSampleDocuments())
     }
+
     notify("Sample starter documents restored to database.", "success")
   }
 
   const handleDownloadDoc = async (doc: SessionDocument) => {
     let blob = doc.blob
+
     if (
       !blob &&
       typeof isDatabaseSupported === "function" &&
@@ -2179,20 +3249,25 @@ export default function ToolPage({
       typeof dbGetDocument === "function"
     ) {
       const dbDoc = await dbGetDocument(doc.id)
+
       if (dbDoc?.blob) blob = dbDoc.blob
     }
+
     if (!blob) {
       blob = new Blob(
         [
           doc.contentSnippet ||
             `Masterfile Pro Saved Document: ${doc.name}\nSource: ${doc.toolSource}\nCategory: ${doc.category}`,
         ],
+
         { type: "application/octet-stream" },
       )
     }
+
     if (typeof download === "function") {
       download({ name: doc.name, blob })
     }
+
     notify(`Downloading ${doc.name}`, "success")
   }
 
@@ -2211,14 +3286,23 @@ export default function ToolPage({
           }}
           style={{
             display: "inline-flex",
+
             alignItems: "center",
+
             gap: "6px",
+
             color: "var(--muted)",
+
             fontSize: "12px",
+
             cursor: "pointer",
+
             marginBottom: "12px",
+
             padding: "4px 0",
+
             background: "none",
+
             border: "none",
           }}
           aria-label="Back to workspace"
@@ -2250,10 +3334,15 @@ export default function ToolPage({
                   <span
                     style={{
                       width: 6,
+
                       height: 6,
+
                       borderRadius: "50%",
+
                       background: inMeeting ? "#10b981" : "#94a3b8",
+
                       display: "inline-block",
+
                       animation: inMeeting ? "pulse 1.2s infinite" : "none",
                     }}
                   />
@@ -2268,15 +3357,25 @@ export default function ToolPage({
             <div
               style={{
                 background: "#080c14",
+
                 borderRadius: "10px",
+
                 height: "280px",
+
                 display: "flex",
+
                 flexDirection: "column",
+
                 alignItems: "center",
+
                 justifyContent: "center",
+
                 border: "1px solid var(--border)",
+
                 position: "relative",
+
                 overflow: "hidden",
+
                 color: "#e2e8f0",
               }}
             >
@@ -2284,13 +3383,21 @@ export default function ToolPage({
                 <div
                   style={{
                     width: "100%",
+
                     height: "100%",
+
                     background: "#0f172a",
+
                     display: "flex",
+
                     flexDirection: "column",
+
                     alignItems: "center",
+
                     justifyContent: "center",
+
                     padding: "20px",
+
                     textAlign: "center",
                   }}
                 >
@@ -2306,14 +3413,20 @@ export default function ToolPage({
                     className="text-button"
                     style={{
                       marginTop: "12px",
+
                       background: "#ef444422",
+
                       color: "#f87171",
+
                       border: "1px solid #ef444455",
+
                       padding: "4px 10px",
+
                       borderRadius: "4px",
                     }}
                     onClick={() => {
                       setIsScreenSharing(false)
+
                       notify("Screen sharing stopped.")
                     }}
                   >
@@ -2325,12 +3438,19 @@ export default function ToolPage({
                   <div
                     style={{
                       width: 64,
+
                       height: 64,
+
                       borderRadius: "50%",
+
                       background: "#1e293b",
+
                       display: "grid",
+
                       placeItems: "center",
+
                       margin: "0 auto 10px",
+
                       border: "1px solid #334155",
                     }}
                   >
@@ -2345,29 +3465,47 @@ export default function ToolPage({
                 <div
                   style={{
                     width: "100%",
+
                     height: "100%",
+
                     display: "flex",
+
                     flexDirection: "column",
+
                     alignItems: "center",
+
                     justifyContent: "center",
+
                     background:
                       "radial-gradient(ellipse at center, #1e1b4b 0%, #080c14 70%)",
+
                     position: "relative",
                   }}
                 >
                   <div
                     style={{
                       width: 72,
+
                       height: 72,
+
                       borderRadius: "50%",
+
                       background: "#06204D",
+
                       border: "2px solid #00C9B7",
+
                       display: "grid",
+
                       placeItems: "center",
+
                       color: "#00E5D2",
+
                       fontSize: "20px",
+
                       fontWeight: 700,
+
                       boxShadow: "0 0 25px rgba(0, 201, 183, 0.4)",
+
                       marginBottom: 10,
                     }}
                   >
@@ -2384,9 +3522,13 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         alignItems: "flex-end",
+
                         gap: 3,
+
                         height: 16,
+
                         marginTop: 10,
                       }}
                     >
@@ -2395,10 +3537,15 @@ export default function ToolPage({
                           key={i}
                           style={{
                             width: 3,
+
                             height: h,
+
                             backgroundColor: "#10b981",
+
                             borderRadius: 1,
+
                             animation: "pulse 0.8s infinite ease-in-out",
+
                             animationDelay: `${i * 0.15}s`,
                           }}
                         />
@@ -2413,14 +3560,23 @@ export default function ToolPage({
                 <div
                   style={{
                     position: "absolute",
+
                     top: "12px",
+
                     left: "12px",
+
                     background: "rgba(16, 185, 129, 0.25)",
+
                     border: "1px solid rgba(16, 185, 129, 0.5)",
+
                     color: "#10b981",
+
                     padding: "3px 8px",
+
                     borderRadius: "4px",
+
                     fontSize: "11px",
+
                     fontWeight: 600,
                   }}
                 >
@@ -2433,9 +3589,13 @@ export default function ToolPage({
             <div
               style={{
                 display: "flex",
+
                 flexWrap: "wrap",
+
                 gap: "8px",
+
                 marginTop: "14px",
+
                 alignItems: "center",
               }}
             >
@@ -2444,14 +3604,20 @@ export default function ToolPage({
                 className="text-button"
                 style={{
                   border: "1px solid var(--border)",
+
                   padding: "8px 12px",
+
                   borderRadius: "6px",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "6px",
                 }}
                 onClick={() => {
                   setMicMuted((m) => !m)
+
                   notify(micMuted ? "Microphone unmuted." : "Microphone muted.")
                 }}
               >
@@ -2468,14 +3634,20 @@ export default function ToolPage({
                 className="text-button"
                 style={{
                   border: "1px solid var(--border)",
+
                   padding: "8px 12px",
+
                   borderRadius: "6px",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "6px",
                 }}
                 onClick={() => {
                   setCameraOff((c) => !c)
+
                   notify(cameraOff ? "Camera turned on." : "Camera turned off.")
                 }}
               >
@@ -2492,18 +3664,26 @@ export default function ToolPage({
                 className="text-button"
                 style={{
                   border: "1px solid var(--border)",
+
                   padding: "8px 12px",
+
                   borderRadius: "6px",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "6px",
+
                   background: isScreenSharing
                     ? "rgba(99, 102, 241, 0.15)"
                     : "transparent",
+
                   color: isScreenSharing ? "#818cf8" : "inherit",
                 }}
                 onClick={() => {
                   setIsScreenSharing((s) => !s)
+
                   notify(
                     !isScreenSharing
                       ? "Screen sharing started."
@@ -2533,14 +3713,19 @@ export default function ToolPage({
               className="primary"
               style={{
                 marginTop: "14px",
+
                 width: "100%",
+
                 background: inMeeting ? "#ef4444" : "#4f46e5",
+
                 color: "#ffffff",
               }}
               onClick={() => {
                 setInMeeting(!inMeeting)
+
                 if (!inMeeting) {
                   onComplete("Video Meetings")
+
                   notify("Connected to video meeting room.", "success")
                 } else {
                   notify("Left meeting room.")
@@ -2591,6 +3776,7 @@ export default function ToolPage({
                       `https://masterfilepro.com/#meetings?room=${meetingRoomKey}`,
                     )
                   }
+
                   notify("Meeting link copied to clipboard!", "success")
                 }}
               >
@@ -2612,12 +3798,16 @@ export default function ToolPage({
                       key={msg.id}
                       style={{
                         padding: "8px 10px",
+
                         borderRadius: "6px",
+
                         background:
                           msg.sender === "You"
                             ? "rgba(99, 102, 241, 0.15)"
                             : "var(--surface-hover)",
+
                         fontSize: "12px",
+
                         border: "1px solid var(--border)",
                       }}
                     >
@@ -2635,7 +3825,9 @@ export default function ToolPage({
                       <p
                         style={{
                           margin: 0,
+
                           color: "var(--text)",
+
                           lineHeight: "1.4",
                         }}
                       >
@@ -2652,17 +3844,24 @@ export default function ToolPage({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault()
+
                         handleSendMeetingChat(chatInput)
                       }
                     }}
                     placeholder="Type a message..."
                     style={{
                       flex: 1,
+
                       padding: "8px 10px",
+
                       borderRadius: "6px",
+
                       border: "1px solid var(--border)",
+
                       background: "var(--bg)",
+
                       color: "var(--text)",
+
                       fontSize: "12px",
                     }}
                   />
@@ -2681,26 +3880,41 @@ export default function ToolPage({
                 {[
                   {
                     name: "You (Host)",
+
                     role: "Host",
+
                     mic: !micMuted,
+
                     cam: !cameraOff,
                   },
+
                   {
                     name: "Sarah Chen (Design Lead)",
+
                     role: "Collaborator",
+
                     mic: true,
+
                     cam: true,
                   },
+
                   {
                     name: "Marcus Vance (Engineer)",
+
                     role: "Collaborator",
+
                     mic: false,
+
                     cam: true,
                   },
+
                   {
                     name: "Elena Rostova (PM)",
+
                     role: "Collaborator",
+
                     mic: true,
+
                     cam: false,
                   },
                 ].map((p, idx) => (
@@ -2709,6 +3923,7 @@ export default function ToolPage({
                     className="flex items-center justify-between p-2 rounded border"
                     style={{
                       borderColor: "var(--border)",
+
                       background: "var(--surface-hover)",
                     }}
                   >
@@ -2747,11 +3962,17 @@ export default function ToolPage({
             <div
               style={{
                 display: "flex",
+
                 flexWrap: "wrap",
+
                 alignItems: "center",
+
                 gap: "10px",
+
                 marginBottom: "14px",
+
                 paddingBottom: "12px",
+
                 borderBottom: "1px solid var(--border)",
               }}
             >
@@ -2759,10 +3980,15 @@ export default function ToolPage({
               <div style={{ display: "flex", gap: "4px" }}>
                 {[
                   { id: "pen", label: "Pen", icon: PenTool },
+
                   { id: "line", label: "Line", icon: Minus },
+
                   { id: "rect", label: "Rect", icon: Square },
+
                   { id: "circle", label: "Circle", icon: Circle },
+
                   { id: "eraser", label: "Eraser", icon: Trash2 },
+
                   { id: "text", label: "Text", icon: Type },
                 ].map((t) => (
                   <button
@@ -2773,9 +3999,13 @@ export default function ToolPage({
                     }
                     style={{
                       padding: "5px 9px",
+
                       fontSize: "12px",
+
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: 4,
                     }}
                     onClick={() => setActiveShapeTool(t.id as any)}
@@ -2789,21 +4019,33 @@ export default function ToolPage({
               <div
                 style={{
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "5px",
+
                   marginLeft: "6px",
                 }}
               >
                 {[
                   "#0f172a",
+
                   "#4f46e5",
+
                   "#059669",
+
                   "#dc2626",
+
                   "#d97706",
+
                   "#0284c7",
+
                   "#9333ea",
+
                   "#ec4899",
+
                   "#64748b",
+
                   "#ffffff",
                 ].map((c) => (
                   <button
@@ -2811,20 +4053,28 @@ export default function ToolPage({
                     type="button"
                     style={{
                       width: "20px",
+
                       height: "20px",
+
                       borderRadius: "50%",
+
                       background: c,
+
                       border:
                         brushColor === c
                           ? "2px solid #ffffff"
                           : "1px solid #475569",
+
                       boxShadow:
                         brushColor === c ? "0 0 0 2px #6366f1" : "none",
+
                       cursor: "pointer",
+
                       padding: 0,
                     }}
                     onClick={() => {
                       setBrushColor(c)
+
                       if (activeShapeTool === "eraser")
                         setActiveShapeTool("pen")
                     }}
@@ -2837,9 +4087,13 @@ export default function ToolPage({
               <div
                 style={{
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "6px",
+
                   marginLeft: "8px",
+
                   fontSize: "11px",
                 }}
               >
@@ -2885,19 +4139,27 @@ export default function ToolPage({
                   style={{ padding: "4px 8px", fontSize: "12px" }}
                   onClick={() => {
                     whiteboardRenderSeqRef.current++
+
                     const canvas = canvasRef.current
+
                     if (canvas) {
                       const ctx = canvas.getContext("2d")
+
                       if (ctx) {
                         ctx.fillStyle = "#ffffff"
+
                         ctx.fillRect(0, 0, canvas.width, canvas.height)
+
                         whiteboardHistoryRef.current.push(
                           canvas.toDataURL("image/png"),
                         )
+
                         setCanUndo(whiteboardHistoryRef.current.canUndo())
+
                         setCanRedo(whiteboardHistoryRef.current.canRedo())
                       }
                     }
+
                     notify("Whiteboard canvas cleared.")
                   }}
                 >
@@ -2913,22 +4175,35 @@ export default function ToolPage({
                   style={{ fontSize: "12px", padding: "6px 12px" }}
                   onClick={() => {
                     const canvas = canvasRef.current
+
                     if (canvas) {
                       const dataUrl = canvas.toDataURL("image/png")
+
                       const a = document.createElement("a")
+
                       a.href = dataUrl
+
                       a.download = `masterfilepro-whiteboard-${Date.now()}.png`
+
                       a.click()
+
                       saveSessionDocument({
                         name: a.download,
+
                         toolSource: "Whiteboards",
+
                         category: "images",
+
                         dataUrl,
                       })
+
                       setSessionDocs(getSessionDocuments())
+
                       onComplete("Whiteboards")
+
                       notify(
                         "Whiteboard exported as PNG and saved to My Documents.",
+
                         "success",
                       )
                     }
@@ -2941,37 +4216,60 @@ export default function ToolPage({
                   className="text-button"
                   style={{
                     fontSize: "12px",
+
                     padding: "6px 10px",
+
                     border: "1px solid var(--border)",
+
                     borderRadius: "6px",
                   }}
                   onClick={() => {
                     const canvas = canvasRef.current
+
                     if (canvas) {
                       const offscreen = document.createElement("canvas")
+
                       offscreen.width = canvas.width
+
                       offscreen.height = canvas.height
+
                       const offCtx = offscreen.getContext("2d")
+
                       if (offCtx) {
                         offCtx.fillStyle = "#ffffff"
+
                         offCtx.fillRect(0, 0, offscreen.width, offscreen.height)
+
                         offCtx.drawImage(canvas, 0, 0)
                       }
+
                       const dataUrl = offscreen.toDataURL("image/jpeg", 0.95)
+
                       const a = document.createElement("a")
+
                       a.href = dataUrl
+
                       a.download = `masterfilepro-whiteboard-${Date.now()}.jpg`
+
                       a.click()
+
                       saveSessionDocument({
                         name: a.download,
+
                         toolSource: "Whiteboards",
+
                         category: "images",
+
                         dataUrl,
                       })
+
                       setSessionDocs(getSessionDocuments())
+
                       onComplete("Whiteboards")
+
                       notify(
                         "Whiteboard exported as JPEG and saved to My Documents.",
+
                         "success",
                       )
                     }
@@ -2989,120 +4287,188 @@ export default function ToolPage({
               height={650}
               style={{
                 width: "100%",
+
                 height: "auto",
+
                 background: "#ffffff",
+
                 borderRadius: "8px",
+
                 border: "1px solid var(--border)",
+
                 cursor: activeShapeTool === "text" ? "text" : "crosshair",
+
                 touchAction: "none",
               }}
               onPointerDown={(e) => {
                 const canvas = canvasRef.current
+
                 if (!canvas) return
+
                 const ctx = canvas.getContext("2d")
+
                 if (!ctx) return
+
                 const rect = canvas.getBoundingClientRect()
+
                 const scaleX = canvas.width / rect.width
+
                 const scaleY = canvas.height / rect.height
+
                 const x = (e.clientX - rect.left) * scaleX
+
                 const y = (e.clientY - rect.top) * scaleY
 
                 if (activeShapeTool === "text") {
                   const input = window.prompt(
                     "Enter text annotation to place on whiteboard:",
+
                     "Note: ",
                   )
+
                   if (input) {
                     ctx.font = `bold ${Math.max(16, brushSize * 3)}px 'DM Sans', sans-serif`
+
                     ctx.fillStyle = brushColor
+
                     ctx.fillText(input, x, y)
+
                     whiteboardHistoryRef.current.push(
                       canvas.toDataURL("image/png"),
                     )
+
                     setCanUndo(whiteboardHistoryRef.current.canUndo())
+
                     setCanRedo(whiteboardHistoryRef.current.canRedo())
                   }
+
                   return
                 }
 
                 isDrawingRef.current = true
+
                 startPosRef.current = { x, y }
+
                 snapshotRef.current = ctx.getImageData(
                   0,
+
                   0,
+
                   canvas.width,
+
                   canvas.height,
                 )
 
                 ctx.lineWidth = brushSize
+
                 ctx.strokeStyle =
                   activeShapeTool === "eraser" ? "#ffffff" : brushColor
+
                 ctx.fillStyle = brushColor
+
                 ctx.beginPath()
+
                 ctx.moveTo(x, y)
               }}
               onPointerMove={(e) => {
                 if (!isDrawingRef.current) return
+
                 const canvas = canvasRef.current
+
                 if (!canvas) return
+
                 const ctx = canvas.getContext("2d")
+
                 if (!ctx) return
+
                 const rect = canvas.getBoundingClientRect()
+
                 const scaleX = canvas.width / rect.width
+
                 const scaleY = canvas.height / rect.height
+
                 const currentX = (e.clientX - rect.left) * scaleX
+
                 const currentY = (e.clientY - rect.top) * scaleY
 
                 if (activeShapeTool === "pen" || activeShapeTool === "eraser") {
                   ctx.lineWidth =
                     activeShapeTool === "eraser" ? brushSize * 2 : brushSize
+
                   ctx.strokeStyle =
                     activeShapeTool === "eraser" ? "#ffffff" : brushColor
+
                   ctx.lineTo(currentX, currentY)
+
                   ctx.stroke()
                 } else if (snapshotRef.current && startPosRef.current) {
                   ctx.putImageData(snapshotRef.current, 0, 0)
+
                   ctx.lineWidth = brushSize
+
                   ctx.strokeStyle = brushColor
+
                   const startX = startPosRef.current.x
+
                   const startY = startPosRef.current.y
 
                   if (activeShapeTool === "line") {
                     ctx.beginPath()
+
                     ctx.moveTo(startX, startY)
+
                     ctx.lineTo(currentX, currentY)
+
                     ctx.stroke()
                   } else if (activeShapeTool === "rect") {
                     const w = currentX - startX
+
                     const h = currentY - startY
+
                     ctx.strokeRect(startX, startY, w, h)
                   } else if (activeShapeTool === "circle") {
                     const radius = Math.hypot(
                       currentX - startX,
+
                       currentY - startY,
                     )
+
                     ctx.beginPath()
+
                     ctx.arc(startX, startY, radius, 0, 2 * Math.PI)
+
                     ctx.stroke()
                   }
                 }
               }}
               onPointerUp={() => {
                 if (!isDrawingRef.current) return
+
                 isDrawingRef.current = false
+
                 const canvas = canvasRef.current
+
                 if (!canvas) return
+
                 whiteboardHistoryRef.current.push(canvas.toDataURL("image/png"))
+
                 setCanUndo(whiteboardHistoryRef.current.canUndo())
+
                 setCanRedo(whiteboardHistoryRef.current.canRedo())
               }}
               onPointerLeave={() => {
                 if (!isDrawingRef.current) return
+
                 isDrawingRef.current = false
+
                 const canvas = canvasRef.current
+
                 if (!canvas) return
+
                 whiteboardHistoryRef.current.push(canvas.toDataURL("image/png"))
+
                 setCanUndo(whiteboardHistoryRef.current.canUndo())
+
                 setCanRedo(whiteboardHistoryRef.current.canRedo())
               }}
             />
@@ -3115,36 +4481,57 @@ export default function ToolPage({
             <div
               style={{
                 borderRadius: "12px",
+
                 border: "1px solid rgba(16, 185, 129, 0.35)",
+
                 background:
                   "linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)",
+
                 padding: "16px 20px",
+
                 marginBottom: "18px",
+
                 display: "flex",
+
                 flexDirection: "column",
+
                 gap: "12px",
               }}
             >
               <div
                 style={{
                   display: "flex",
+
                   justifyContent: "space-between",
+
                   alignItems: "center",
+
                   flexWrap: "wrap",
+
                   gap: "12px",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "12px" }}
+                >
                   <div
                     style={{
                       width: "42px",
+
                       height: "42px",
+
                       borderRadius: "10px",
+
                       background: "var(--surface)",
+
                       display: "flex",
+
                       alignItems: "center",
+
                       justifyContent: "center",
+
                       border: "1px solid var(--border)",
+
                       boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
                     }}
                   >
@@ -3154,12 +4541,19 @@ export default function ToolPage({
                     <h3
                       style={{
                         margin: 0,
+
                         fontSize: "15px",
+
                         fontWeight: 700,
+
                         color: "var(--text)",
+
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "8px",
+
                         flexWrap: "wrap",
                       }}
                     >
@@ -3167,11 +4561,17 @@ export default function ToolPage({
                       <span
                         style={{
                           fontSize: "11px",
+
                           padding: "2px 8px",
+
                           borderRadius: "10px",
+
                           background: "rgba(16, 185, 129, 0.15)",
+
                           color: "#10b981",
+
                           fontWeight: 650,
+
                           border: "1px solid rgba(16, 185, 129, 0.3)",
                         }}
                       >
@@ -3181,36 +4581,61 @@ export default function ToolPage({
                     <p
                       style={{
                         margin: "3px 0 0 0",
+
                         fontSize: "12px",
+
                         color: "var(--muted)",
                       }}
                     >
-                      All files and conversions exist strictly inside your personal browser&apos;s local IndexedDB storage. No other user or external server can ever see or access your documents.
+                      All files and conversions exist strictly inside your
+                      personal browser&apos;s local IndexedDB storage. No other
+                      user or external server can ever see or access your
+                      documents.
                     </p>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
                   <span
                     style={{
                       fontSize: "12px",
+
                       color: "var(--muted)",
+
                       display: "inline-flex",
+
                       alignItems: "center",
+
                       gap: "6px",
+
                       background: "var(--surface)",
+
                       padding: "6px 12px",
+
                       borderRadius: "8px",
+
                       border: "1px solid var(--border)",
                     }}
                   >
                     <span
                       style={{
                         width: "8px",
+
                         height: "8px",
+
                         borderRadius: "50%",
+
                         background: "#10b981",
+
                         display: "inline-block",
+
                         boxShadow: "0 0 6px #10b981",
                       }}
                     />
@@ -3224,23 +4649,36 @@ export default function ToolPage({
             <div
               style={{
                 display: "flex",
+
                 flexWrap: "wrap",
+
                 alignItems: "center",
+
                 justifyContent: "space-between",
+
                 padding: "14px 18px",
+
                 borderRadius: "8px",
+
                 background: "var(--surface-hover)",
+
                 border: "1px solid var(--border)",
+
                 marginBottom: "16px",
+
                 gap: "12px",
               }}
             >
               <div
                 style={{
                   display: "flex",
+
                   flexWrap: "wrap",
+
                   gap: "20px",
+
                   fontSize: "13.5px",
+
                   alignItems: "center",
                 }}
               >
@@ -3267,19 +4705,28 @@ export default function ToolPage({
                   <span
                     style={{
                       display: "inline-flex",
+
                       alignItems: "center",
+
                       gap: "6px",
+
                       color: "#34d399",
+
                       fontWeight: 600,
                     }}
                   >
                     <span
                       style={{
                         width: "8px",
+
                         height: "8px",
+
                         borderRadius: "50%",
+
                         background: "#10b981",
+
                         display: "inline-block",
+
                         boxShadow: "0 0 6px #10b981",
                       }}
                     />
@@ -3298,6 +4745,7 @@ export default function ToolPage({
                               (d.blob
                                 ? d.blob.size
                                 : d.contentSnippet?.length || 1024)),
+
                           0,
                         ),
                       )}
@@ -3313,11 +4761,17 @@ export default function ToolPage({
                   className="primary"
                   style={{
                     padding: "8px 14px",
+
                     fontSize: "13.5px",
+
                     cursor: "pointer",
+
                     margin: 0,
+
                     display: "inline-flex",
+
                     alignItems: "center",
+
                     gap: "6px",
                   }}
                 >
@@ -3336,9 +4790,13 @@ export default function ToolPage({
                     className="text-button"
                     style={{
                       padding: "7px 12px",
+
                       border: "1px solid var(--border)",
+
                       borderRadius: "6px",
+
                       fontSize: "12.5px",
+
                       color: "#f87171",
                     }}
                     onClick={() => setShowClearConfirm(true)}
@@ -3353,9 +4811,13 @@ export default function ToolPage({
             <div
               style={{
                 display: "flex",
+
                 flexWrap: "wrap",
+
                 alignItems: "center",
+
                 gap: "10px",
+
                 marginBottom: "16px",
               }}
             >
@@ -3363,12 +4825,19 @@ export default function ToolPage({
               <div
                 style={{
                   display: "flex",
+
                   alignItems: "center",
+
                   gap: "9px",
+
                   background: "var(--bg)",
+
                   border: "1px solid var(--border)",
+
                   borderRadius: "7px",
+
                   padding: "8px 14px",
+
                   flex: "1 1 240px",
                 }}
               >
@@ -3379,10 +4848,15 @@ export default function ToolPage({
                   placeholder="Search documents by name or tool source..."
                   style={{
                     background: "none",
+
                     border: "none",
+
                     outline: "none",
+
                     color: "var(--text)",
+
                     fontSize: "13.5px",
+
                     width: "100%",
                   }}
                 />
@@ -3401,11 +4875,17 @@ export default function ToolPage({
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
                 {[
                   { id: "all", label: "All" },
+
                   { id: "pdf", label: "PDFs" },
+
                   { id: "sheets", label: "Sheets" },
+
                   { id: "slides", label: "Slides" },
+
                   { id: "images", label: "Images" },
+
                   { id: "audio-text", label: "Audio / Text" },
+
                   { id: "docs", label: "Documents" },
                 ].map((cat) => (
                   <button
@@ -3416,8 +4896,11 @@ export default function ToolPage({
                     }
                     style={{
                       padding: "6px 12px",
+
                       fontSize: "12.5px",
+
                       borderRadius: "6px",
+
                       border:
                         docCategory === cat.id
                           ? "none"
@@ -3464,20 +4947,28 @@ export default function ToolPage({
                       (d) =>
                         (!docSearch ||
                           d.name
+
                             .toLowerCase()
+
                             .includes(docSearch.toLowerCase())) &&
                         (docCategory === "all" || d.category === docCategory),
                     )
+
               if (displayed.length === 0) {
                 if (sessionDocs.length === 0) {
                   return (
                     <div
                       style={{
                         padding: "48px 24px",
+
                         textAlign: "center",
+
                         color: "var(--muted)",
+
                         border: "1px dashed var(--border)",
+
                         borderRadius: "8px",
+
                         marginTop: "16px",
                       }}
                     >
@@ -3485,14 +4976,18 @@ export default function ToolPage({
                         size={40}
                         style={{
                           margin: "0 auto 12px",
+
                           opacity: 0.6,
+
                           color: "var(--accent)",
                         }}
                       />
                       <h3
                         style={{
                           fontSize: "16px",
+
                           color: "var(--text)",
+
                           marginBottom: "6px",
                         }}
                       >
@@ -3501,8 +4996,11 @@ export default function ToolPage({
                       <p
                         style={{
                           fontSize: "13px",
+
                           maxWidth: "440px",
+
                           margin: "0 auto 18px",
+
                           lineHeight: "1.5",
                         }}
                       >
@@ -3513,8 +5011,11 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "flex",
+
                           justifyContent: "center",
+
                           gap: "10px",
+
                           flexWrap: "wrap",
                         }}
                       >
@@ -3522,11 +5023,17 @@ export default function ToolPage({
                           className="primary"
                           style={{
                             padding: "8px 16px",
+
                             fontSize: "13px",
+
                             cursor: "pointer",
+
                             margin: 0,
+
                             display: "inline-flex",
+
                             alignItems: "center",
+
                             gap: "6px",
                           }}
                         >
@@ -3543,11 +5050,17 @@ export default function ToolPage({
                           className="text-button"
                           style={{
                             border: "1px solid var(--border)",
+
                             borderRadius: "6px",
+
                             padding: "8px 16px",
+
                             fontSize: "13px",
+
                             display: "inline-flex",
+
                             alignItems: "center",
+
                             gap: "6px",
                           }}
                           onClick={handleRestoreSamples}
@@ -3563,10 +5076,15 @@ export default function ToolPage({
                   <div
                     style={{
                       padding: "40px",
+
                       textAlign: "center",
+
                       color: "var(--muted)",
+
                       border: "1px dashed var(--border)",
+
                       borderRadius: "8px",
+
                       marginTop: "16px",
                     }}
                   >
@@ -3589,6 +5107,7 @@ export default function ToolPage({
                         style={{ marginTop: "12px", color: "var(--accent)" }}
                         onClick={() => {
                           setDocSearch("")
+
                           setDocCategory("all")
                         }}
                       >
@@ -3605,8 +5124,11 @@ export default function ToolPage({
                     <table
                       style={{
                         width: "100%",
+
                         borderCollapse: "collapse",
+
                         fontSize: "13.5px",
+
                         textAlign: "left",
                       }}
                     >
@@ -3614,9 +5136,13 @@ export default function ToolPage({
                         <tr
                           style={{
                             borderBottom: "1px solid var(--border)",
+
                             color: "var(--muted)",
+
                             fontSize: "12.5px",
+
                             fontWeight: 650,
+
                             letterSpacing: "0.02em",
                           }}
                         >
@@ -3640,6 +5166,7 @@ export default function ToolPage({
                             key={doc.id}
                             style={{
                               borderBottom: "1px solid var(--border)",
+
                               transition: "background 0.15s ease",
                             }}
                             onMouseEnter={(e) => {
@@ -3653,14 +5180,18 @@ export default function ToolPage({
                             <td
                               style={{
                                 padding: "13px 14px",
+
                                 fontWeight: 550,
+
                                 color: "var(--text)",
                               }}
                             >
                               <div
                                 style={{
                                   display: "flex",
+
                                   alignItems: "center",
+
                                   gap: "10px",
                                 }}
                               >
@@ -3670,12 +5201,20 @@ export default function ToolPage({
                                   <span
                                     style={{
                                       fontSize: "10px",
+
                                       padding: "1px 6px",
+
                                       borderRadius: "4px",
+
                                       background: "rgba(245, 158, 11, 0.15)",
+
                                       color: "#f59e0b",
-                                      border: "1px solid rgba(245, 158, 11, 0.3)",
+
+                                      border:
+                                        "1px solid rgba(245, 158, 11, 0.3)",
+
                                       fontWeight: 700,
+
                                       whiteSpace: "nowrap",
                                     }}
                                   >
@@ -3687,7 +5226,9 @@ export default function ToolPage({
                             <td
                               style={{
                                 padding: "13px 14px",
+
                                 color: "var(--muted)",
+
                                 fontSize: "13px",
                               }}
                             >
@@ -3697,11 +5238,17 @@ export default function ToolPage({
                               <span
                                 style={{
                                   fontSize: "11px",
+
                                   padding: "3px 8px",
+
                                   borderRadius: "5px",
+
                                   background: "rgba(99, 102, 241, 0.15)",
+
                                   color: "#a5b4fc",
+
                                   textTransform: "uppercase",
+
                                   fontWeight: 650,
                                 }}
                               >
@@ -3711,7 +5258,9 @@ export default function ToolPage({
                             <td
                               style={{
                                 padding: "13px 14px",
+
                                 color: "var(--muted)",
+
                                 fontSize: "13px",
                               }}
                             >
@@ -3720,7 +5269,9 @@ export default function ToolPage({
                             <td
                               style={{
                                 padding: "13px 14px",
+
                                 color: "var(--muted)",
+
                                 fontSize: "13px",
                               }}
                             >
@@ -3729,13 +5280,16 @@ export default function ToolPage({
                             <td
                               style={{
                                 padding: "13px 14px",
+
                                 textAlign: "right",
                               }}
                             >
                               <div
                                 style={{
                                   display: "inline-flex",
+
                                   alignItems: "center",
+
                                   gap: "6px",
                                 }}
                               >
@@ -3744,6 +5298,7 @@ export default function ToolPage({
                                   className="text-button"
                                   style={{
                                     padding: "5px 10px",
+
                                     fontSize: "12.5px",
                                   }}
                                   onClick={() => setPreviewDoc(doc)}
@@ -3756,6 +5311,7 @@ export default function ToolPage({
                                   className="text-button"
                                   style={{
                                     padding: "5px 10px",
+
                                     fontSize: "12.5px",
                                   }}
                                   onClick={() => handleDownloadDoc(doc)}
@@ -3768,7 +5324,9 @@ export default function ToolPage({
                                   className="text-button"
                                   style={{
                                     padding: "5px 10px",
+
                                     fontSize: "12.5px",
+
                                     color: "#f87171",
                                   }}
                                   onClick={() => setDeleteConfirmDoc(doc)}
@@ -3790,9 +5348,12 @@ export default function ToolPage({
                 <div
                   style={{
                     display: "grid",
+
                     gridTemplateColumns:
                       "repeat(auto-fill, minmax(260px, 1fr))",
+
                     gap: "14px",
+
                     marginTop: "14px",
                   }}
                 >
@@ -3801,25 +5362,35 @@ export default function ToolPage({
                       key={doc.id}
                       style={{
                         background: "var(--surface-hover)",
+
                         border: "1px solid var(--border)",
+
                         borderRadius: "8px",
+
                         padding: "14px",
+
                         display: "flex",
+
                         flexDirection: "column",
+
                         gap: "10px",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           alignItems: "flex-start",
+
                           justifyContent: "space-between",
                         }}
                       >
                         <div
                           style={{
                             display: "flex",
+
                             alignItems: "center",
+
                             gap: "9px",
                           }}
                         >
@@ -3827,10 +5398,15 @@ export default function ToolPage({
                           <strong
                             style={{
                               fontSize: "13.5px",
+
                               color: "var(--text)",
+
                               maxWidth: "160px",
+
                               overflow: "hidden",
+
                               textOverflow: "ellipsis",
+
                               whiteSpace: "nowrap",
                             }}
                             title={doc.name}
@@ -3841,12 +5417,19 @@ export default function ToolPage({
                             <span
                               style={{
                                 fontSize: "9px",
+
                                 padding: "1px 5px",
+
                                 borderRadius: "4px",
+
                                 background: "rgba(245, 158, 11, 0.15)",
+
                                 color: "#f59e0b",
+
                                 border: "1px solid rgba(245, 158, 11, 0.3)",
+
                                 fontWeight: 700,
+
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -3857,11 +5440,17 @@ export default function ToolPage({
                         <span
                           style={{
                             fontSize: "11px",
+
                             padding: "3px 8px",
+
                             borderRadius: "5px",
+
                             background: "rgba(99, 102, 241, 0.2)",
+
                             color: "#a5b4fc",
+
                             textTransform: "uppercase",
+
                             fontWeight: 650,
                           }}
                         >
@@ -3872,7 +5461,9 @@ export default function ToolPage({
                       <div
                         style={{
                           fontSize: "12.5px",
+
                           color: "var(--muted)",
+
                           lineHeight: "1.45",
                         }}
                       >
@@ -3886,10 +5477,15 @@ export default function ToolPage({
                           <p
                             style={{
                               margin: "6px 0 0",
+
                               fontSize: "11px",
+
                               color: "var(--text)",
+
                               fontStyle: "italic",
+
                               maxHeight: "36px",
+
                               overflow: "hidden",
                             }}
                           >
@@ -3901,10 +5497,15 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           justifyContent: "space-between",
+
                           marginTop: "auto",
+
                           paddingTop: "10px",
+
                           borderTop: "1px solid var(--border)",
                         }}
                       >
@@ -3931,7 +5532,9 @@ export default function ToolPage({
                             className="text-button"
                             style={{
                               fontSize: "11px",
+
                               padding: "4px 6px",
+
                               color: "#f87171",
                             }}
                             onClick={() => setDeleteConfirmDoc(doc)}
@@ -3952,41 +5555,62 @@ export default function ToolPage({
               <div
                 style={{
                   position: "fixed",
+
                   inset: 0,
+
                   background: "rgba(0, 0, 0, 0.75)",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   justifyContent: "center",
+
                   zIndex: 9999,
+
                   padding: "20px",
                 }}
               >
                 <div
                   style={{
                     background: "var(--surface)",
+
                     border: "1px solid var(--border)",
+
                     borderRadius: "10px",
+
                     maxWidth: "600px",
+
                     width: "100%",
+
                     padding: "24px",
+
                     color: "var(--text)",
+
                     boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       justifyContent: "space-between",
+
                       marginBottom: "16px",
+
                       borderBottom: "1px solid var(--border)",
+
                       paddingBottom: "12px",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "8px",
                       }}
                     >
@@ -4008,7 +5632,9 @@ export default function ToolPage({
                   <div
                     style={{
                       fontSize: "12px",
+
                       color: "var(--muted)",
+
                       marginBottom: "14px",
                     }}
                   >
@@ -4034,10 +5660,15 @@ export default function ToolPage({
                     <div
                       style={{
                         maxHeight: "240px",
+
                         overflow: "hidden",
+
                         borderRadius: "6px",
+
                         border: "1px solid var(--border)",
+
                         marginBottom: "16px",
+
                         textAlign: "center",
                       }}
                     >
@@ -4046,7 +5677,9 @@ export default function ToolPage({
                         alt={previewDoc.name}
                         style={{
                           maxWidth: "100%",
+
                           maxHeight: "240px",
+
                           objectFit: "contain",
                         }}
                       />
@@ -4055,14 +5688,23 @@ export default function ToolPage({
                     <div
                       style={{
                         padding: "16px",
+
                         background: "var(--bg)",
+
                         borderRadius: "6px",
+
                         border: "1px solid var(--border)",
+
                         fontSize: "12px",
+
                         lineHeight: "1.6",
+
                         maxHeight: "180px",
+
                         overflowY: "auto",
+
                         marginBottom: "16px",
+
                         color: "var(--text)",
                       }}
                     >
@@ -4074,8 +5716,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "flex",
+
                       justifyContent: "space-between",
+
                       alignItems: "center",
+
                       gap: "10px",
                     }}
                   >
@@ -4100,8 +5745,10 @@ export default function ToolPage({
                               `Document: ${previewDoc.name} | Size: ${previewDoc.size} | Source: ${previewDoc.toolSource}`,
                             )
                           }
+
                           notify(
                             "Document info copied to clipboard!",
+
                             "success",
                           )
                         }}
@@ -4126,44 +5773,68 @@ export default function ToolPage({
               <div
                 style={{
                   position: "fixed",
+
                   inset: 0,
+
                   background: "rgba(0, 0, 0, 0.75)",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   justifyContent: "center",
+
                   zIndex: 10000,
+
                   padding: "20px",
                 }}
               >
                 <div
                   style={{
                     background: "var(--surface)",
+
                     border: "1px solid var(--border)",
+
                     borderRadius: "10px",
+
                     maxWidth: "460px",
+
                     width: "100%",
+
                     padding: "24px",
+
                     color: "var(--text)",
+
                     boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "12px",
+
                       marginBottom: "16px",
                     }}
                   >
                     <div
                       style={{
                         width: "40px",
+
                         height: "40px",
+
                         borderRadius: "8px",
+
                         background: "rgba(239, 68, 68, 0.15)",
+
                         display: "flex",
+
                         alignItems: "center",
+
                         justifyContent: "center",
+
                         color: "#ef4444",
                       }}
                     >
@@ -4173,7 +5844,9 @@ export default function ToolPage({
                       <h3
                         style={{
                           fontSize: "16px",
+
                           margin: 0,
+
                           fontWeight: 650,
                         }}
                       >
@@ -4187,8 +5860,11 @@ export default function ToolPage({
                   <p
                     style={{
                       fontSize: "13.5px",
+
                       lineHeight: "1.5",
+
                       color: "var(--muted)",
+
                       marginBottom: "20px",
                     }}
                   >
@@ -4202,7 +5878,9 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "flex",
+
                       justifyContent: "flex-end",
+
                       gap: "10px",
                     }}
                   >
@@ -4218,15 +5896,25 @@ export default function ToolPage({
                       type="button"
                       style={{
                         padding: "8px 16px",
+
                         fontSize: "13px",
+
                         background: "#ef4444",
+
                         color: "#fff",
+
                         border: "none",
+
                         borderRadius: "6px",
+
                         fontWeight: 600,
+
                         cursor: "pointer",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
                       }}
                       onClick={() => handleDeleteDocument(deleteConfirmDoc)}
@@ -4243,44 +5931,68 @@ export default function ToolPage({
               <div
                 style={{
                   position: "fixed",
+
                   inset: 0,
+
                   background: "rgba(0, 0, 0, 0.75)",
+
                   display: "flex",
+
                   alignItems: "center",
+
                   justifyContent: "center",
+
                   zIndex: 10000,
+
                   padding: "20px",
                 }}
               >
                 <div
                   style={{
                     background: "var(--surface)",
+
                     border: "1px solid var(--border)",
+
                     borderRadius: "10px",
+
                     maxWidth: "460px",
+
                     width: "100%",
+
                     padding: "24px",
+
                     color: "var(--text)",
+
                     boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "12px",
+
                       marginBottom: "16px",
                     }}
                   >
                     <div
                       style={{
                         width: "40px",
+
                         height: "40px",
+
                         borderRadius: "8px",
+
                         background: "rgba(239, 68, 68, 0.15)",
+
                         display: "flex",
+
                         alignItems: "center",
+
                         justifyContent: "center",
+
                         color: "#ef4444",
                       }}
                     >
@@ -4290,7 +6002,9 @@ export default function ToolPage({
                       <h3
                         style={{
                           fontSize: "16px",
+
                           margin: 0,
+
                           fontWeight: 650,
                         }}
                       >
@@ -4304,8 +6018,11 @@ export default function ToolPage({
                   <p
                     style={{
                       fontSize: "13.5px",
+
                       lineHeight: "1.5",
+
                       color: "var(--muted)",
+
                       marginBottom: "20px",
                     }}
                   >
@@ -4320,7 +6037,9 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "flex",
+
                       justifyContent: "flex-end",
+
                       gap: "10px",
                     }}
                   >
@@ -4336,15 +6055,25 @@ export default function ToolPage({
                       type="button"
                       style={{
                         padding: "8px 16px",
+
                         fontSize: "13px",
+
                         background: "#ef4444",
+
                         color: "#fff",
+
                         border: "none",
+
                         borderRadius: "6px",
+
                         fontWeight: 600,
+
                         cursor: "pointer",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
                       }}
                       onClick={handleClearDatabase}
@@ -4359,6 +6088,7 @@ export default function ToolPage({
         </div>
       ) : (
         /* --- GENERAL TOOL WORKSPACE (FILE, AI, QR) --- */
+
         <div className="tool-layout">
           <form className="panel input-panel" onSubmit={submit}>
             <h2>
@@ -4380,17 +6110,25 @@ export default function ToolPage({
                     value={kind}
                     onChange={(e) => {
                       setKind(e.target.value)
+
                       setValue("")
+
                       setExtra("")
+
                       setQr("")
                     }}
                   >
                     {[
                       "URL",
+
                       "Image / Photo Showcase",
+
                       "Text",
+
                       "WhatsApp",
+
                       "Wi-Fi",
+
                       "Email",
                     ].map((k) => (
                       <option key={k}>{k}</option>
@@ -4404,16 +6142,24 @@ export default function ToolPage({
                       onPreviewChange={setShowcasePreviewData}
                       onGenerated={async ({ url }) => {
                         setValue(url)
+
                         setRawQrPayload(url)
+
                         setStatus("processing")
+
                         setShowcaseResultTab("qr")
+
                         try {
                           if (typeof generateQR === "function") {
                             const qrImg = await generateQR(url)
+
                             setQr(qrImg)
+
                             setStatus("completed")
+
                             notify(
                               "Image Showcase QR Code generated! Anyone who scans it will see your custom landing page.",
+
                               "success",
                             )
                           }
@@ -4421,6 +6167,7 @@ export default function ToolPage({
                           setError(
                             err?.message || "Failed to generate QR code.",
                           )
+
                           setStatus("idle")
                         }
                       }}
@@ -4469,29 +6216,44 @@ export default function ToolPage({
               </>
             ) : tool.category === "AI text tools" ? (
               /* 2. AI Text Tools Inputs */
+
               <>
                 {/* Document Upload Bar */}
                 <div
                   style={{
                     display: "flex",
+
                     alignItems: "center",
+
                     justifyContent: "space-between",
+
                     padding: "10px 14px",
+
                     background: "var(--card-bg, rgba(255, 255, 255, 0.05))",
+
                     borderRadius: "8px",
+
                     border: "1px dashed var(--border)",
+
                     marginBottom: "12px",
                   }}
                 >
                   <label
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "8px",
+
                       cursor: "pointer",
+
                       fontSize: "13px",
+
                       fontWeight: 500,
+
                       color: "var(--primary, #3b82f6)",
+
                       margin: 0,
                     }}
                   >
@@ -4512,11 +6274,17 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "6px",
+
                         fontSize: "12px",
+
                         padding: "3px 8px",
+
                         borderRadius: "12px",
+
                         background: "var(--badge-bg, rgba(59, 130, 246, 0.15))",
                       }}
                     >
@@ -4526,12 +6294,16 @@ export default function ToolPage({
                         type="button"
                         onClick={() => {
                           setLoadedDocName("")
+
                           setValue("")
                         }}
                         style={{
                           background: "none",
+
                           border: "none",
+
                           cursor: "pointer",
+
                           padding: 0,
                         }}
                       >
@@ -4546,8 +6318,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr 1fr",
+
                       gap: "12px",
+
                       marginBottom: "12px",
                     }}
                   >
@@ -4557,7 +6332,9 @@ export default function ToolPage({
                         value={summaryMode}
                         onChange={(e) => {
                           const m = e.target.value as "sentences" | "percentage"
+
                           setSummaryMode(m)
+
                           if (m === "percentage" && summaryLength <= 10) {
                             setSummaryLength(25)
                           } else if (m === "sentences" && summaryLength > 10) {
@@ -4622,6 +6399,7 @@ export default function ToolPage({
                       value={optionA || rewriteTone}
                       onChange={(e) => {
                         setOptionA(e.target.value)
+
                         setRewriteTone(e.target.value as RewriteTone)
                       }}
                     >
@@ -4641,9 +6419,13 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr auto 1fr",
+
                       gap: "8px",
+
                       alignItems: "end",
+
                       marginBottom: "12px",
                     }}
                   >
@@ -4674,19 +6456,28 @@ export default function ToolPage({
                       onClick={() => {
                         if (transSourceLang !== "auto") {
                           const prevSrc = transSourceLang
+
                           const prevTgt =
                             optionA as SupportedLanguage || transTargetLang
+
                           setTransSourceLang(prevTgt)
+
                           setTransTargetLang(prevSrc)
+
                           setOptionA(prevSrc)
                         }
                       }}
                       style={{
                         padding: "10px",
+
                         borderRadius: "8px",
+
                         border: "1px solid var(--border)",
+
                         background: "var(--card-bg)",
+
                         cursor: "pointer",
+
                         marginBottom: "2px",
                       }}
                     >
@@ -4698,6 +6489,7 @@ export default function ToolPage({
                         value={optionA || transTargetLang}
                         onChange={(e) => {
                           setOptionA(e.target.value)
+
                           setTransTargetLang(
                             e.target.value as SupportedLanguage,
                           )
@@ -4729,6 +6521,7 @@ export default function ToolPage({
                         value={askQuestion || extra}
                         onChange={(e) => {
                           setAskQuestion(e.target.value)
+
                           setExtra(e.target.value)
                         }}
                       />
@@ -4736,15 +6529,20 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         gap: "6px",
+
                         flexWrap: "wrap",
+
                         marginTop: "6px",
                       }}
                     >
                       <span
                         style={{
                           fontSize: "11px",
+
                           color: "var(--muted)",
+
                           alignSelf: "center",
                         }}
                       >
@@ -4752,8 +6550,11 @@ export default function ToolPage({
                       </span>
                       {[
                         "What is the main summary?",
+
                         "What are the deadlines?",
+
                         "Who leads the team?",
+
                         "What are the key metrics?",
                       ].map((prompt) => (
                         <button
@@ -4761,15 +6562,21 @@ export default function ToolPage({
                           type="button"
                           onClick={() => {
                             setAskQuestion(prompt)
+
                             setExtra(prompt)
                           }}
                           style={{
                             fontSize: "11px",
+
                             padding: "3px 8px",
+
                             borderRadius: "12px",
+
                             border: "1px solid var(--border)",
+
                             background:
                               "var(--badge-bg, rgba(255,255,255,0.06))",
+
                             cursor: "pointer",
                           }}
                         >
@@ -4785,8 +6592,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginBottom: "12px",
                     }}
                   >
@@ -4805,9 +6615,13 @@ export default function ToolPage({
                     <label
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "8px",
+
                         marginTop: "24px",
+
                         cursor: "pointer",
                       }}
                     >
@@ -4827,8 +6641,11 @@ export default function ToolPage({
                     <label
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "8px",
+
                         cursor: "pointer",
                       }}
                     >
@@ -4851,8 +6668,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginBottom: "12px",
                       }}
                     >
@@ -4876,9 +6696,13 @@ export default function ToolPage({
                       <label
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           marginTop: "24px",
+
                           cursor: "pointer",
                         }}
                       >
@@ -4910,8 +6734,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginBottom: "8px",
                       }}
                     >
@@ -4961,8 +6788,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginBottom: "8px",
                       }}
                     >
@@ -4973,6 +6803,7 @@ export default function ToolPage({
                           value={emailRecipient || optionA}
                           onChange={(e) => {
                             setEmailRecipient(e.target.value)
+
                             setOptionA(e.target.value)
                           }}
                         />
@@ -4984,6 +6815,7 @@ export default function ToolPage({
                           value={emailSubject || extra}
                           onChange={(e) => {
                             setEmailSubject(e.target.value)
+
                             setExtra(e.target.value)
                           }}
                         />
@@ -5022,6 +6854,7 @@ export default function ToolPage({
               </>
             ) : tool.id === "text-pdf" ? (
               /* 3. Text to PDF */
+
               <>
                 <label>
                   Document title
@@ -5046,35 +6879,51 @@ export default function ToolPage({
               </>
             ) : (
               /* 4. File Tools Dropzone & Options */
+
               <>
                 <label
                   className={[
                     "dropzone",
+
                     isDropzoneDragging ? "is-dragging" : "",
+
                     dropSuccessState ? "is-success" : "",
                   ]
+
                     .filter(Boolean)
+
                     .join(" ")}
                   onDragOver={(e) => {
                     e.preventDefault()
+
                     e.stopPropagation()
+
                     setIsDropzoneDragging(true)
                   }}
                   onDragEnter={(e) => {
                     e.preventDefault()
+
                     e.stopPropagation()
+
                     setIsDropzoneDragging(true)
                   }}
                   onDragLeave={(e) => {
                     e.preventDefault()
+
                     e.stopPropagation()
-                    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+
+                    if (e.currentTarget.contains(e.relatedTarget as Node))
+                      return
+
                     setIsDropzoneDragging(false)
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
+
                     e.stopPropagation()
+
                     setIsDropzoneDragging(false)
+
                     addFiles(e.dataTransfer.files)
                   }}
                 >
@@ -5084,7 +6933,10 @@ export default function ToolPage({
                         <span className="dropzone-ring-wave" />
                         <span className="dropzone-ring-wave ring-wave-delayed" />
                         <div className="dropzone-success-icon-badge">
-                          <CheckCircle2 size={36} className="dropzone-check-icon" />
+                          <CheckCircle2
+                            size={36}
+                            className="dropzone-check-icon"
+                          />
                         </div>
                       </div>
                       <strong className="dropzone-feedback-title">
@@ -5129,6 +6981,7 @@ export default function ToolPage({
                     accept={getAcceptedFileTypes()}
                     onChange={(e) => {
                       addFiles(e.target.files)
+
                       e.target.value = ""
                     }}
                   />
@@ -5143,7 +6996,9 @@ export default function ToolPage({
                         draggable={files.length > 1}
                         onDragStart={(e) => {
                           e.dataTransfer.effectAllowed = "move"
+
                           e.dataTransfer.setData("text/plain", `${i}`)
+
                           fileDragIndexRef.current = i
                         }}
                         onDragEnter={() => {
@@ -5152,14 +7007,20 @@ export default function ToolPage({
                             fileDragIndexRef.current === i
                           )
                             return
+
                           setFiles((prev) => {
                             const copy = [...prev]
+
                             const [moved] = copy.splice(
                               fileDragIndexRef.current!,
+
                               1,
                             )
+
                             copy.splice(i, 0, moved)
+
                             fileDragIndexRef.current = i
+
                             return copy
                           })
                         }}
@@ -5167,15 +7028,20 @@ export default function ToolPage({
                           fileDragIndexRef.current = null
                         }}
                         onDragOver={(e) => e.preventDefault()}
-                        style={{ cursor: files.length > 1 ? "grab" : "default" }}
+                        style={{
+                          cursor: files.length > 1 ? "grab" : "default",
+                        }}
                       >
                         {files.length > 1 && (
                           <span
                             title="Grab and move to reorder file"
                             style={{
                               color: "var(--muted)",
+
                               display: "inline-flex",
+
                               alignItems: "center",
+
                               cursor: "grab",
                             }}
                           >
@@ -5206,8 +7072,10 @@ export default function ToolPage({
                                   const copy = [...f]
                                   ;[copy[i - 1], copy[i]] = [
                                     copy[i],
+
                                     copy[i - 1],
                                   ]
+
                                   return copy
                                 })
                               }
@@ -5223,8 +7091,10 @@ export default function ToolPage({
                                   const copy = [...f]
                                   ;[copy[i + 1], copy[i]] = [
                                     copy[i],
+
                                     copy[i + 1],
                                   ]
+
                                   return copy
                                 })
                               }
@@ -5238,8 +7108,11 @@ export default function ToolPage({
                           type="button"
                           onClick={() => {
                             setFiles((f) => f.filter((_, n) => n !== i))
+
                             setResultState(undefined)
+
                             setStatus("idle")
+
                             notify("File removed.")
                           }}
                         >
@@ -5311,8 +7184,11 @@ export default function ToolPage({
                     <small
                       style={{
                         color: "var(--muted)",
+
                         display: "block",
+
                         marginTop: "4px",
+
                         fontSize: "11px",
                       }}
                     >
@@ -5352,7 +7228,8 @@ export default function ToolPage({
                         High Compression (Maximum Stream + Metadata Strip)
                       </option>
                       <option value="extreme">
-                        Extreme Compression (Maximum Downsampling & Metadata Strip)
+                        Extreme Compression (Maximum Downsampling & Metadata
+                        Strip)
                       </option>
                     </select>
                   </label>
@@ -5371,8 +7248,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -5420,8 +7300,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -5460,23 +7343,31 @@ export default function ToolPage({
                     <div
                       style={{
                         border: "1px solid var(--border)",
+
                         borderRadius: "8px",
+
                         background: "#ffffff",
+
                         padding: "8px",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           justifyContent: "space-between",
+
                           alignItems: "center",
+
                           marginBottom: "6px",
                         }}
                       >
                         <div
                           style={{
                             display: "flex",
+
                             gap: "6px",
+
                             alignItems: "center",
                           }}
                         >
@@ -5492,17 +7383,23 @@ export default function ToolPage({
                               aria-label={`Ink color ${c}`}
                               style={{
                                 width: "20px",
+
                                 height: "20px",
+
                                 borderRadius: "50%",
+
                                 background: c,
+
                                 border:
                                   sigInkColor === c
                                     ? "2px solid #ffffff"
                                     : "2px solid transparent",
+
                                 outline:
                                   sigInkColor === c
                                     ? "2px solid var(--accent)"
                                     : "none",
+
                                 cursor: "pointer",
                               }}
                               onClick={() => setSigInkColor(c)}
@@ -5515,11 +7412,15 @@ export default function ToolPage({
                           style={{ fontSize: "11px", padding: "2px 8px" }}
                           onClick={() => {
                             const canvas = sigCanvasRef.current
+
                             if (canvas) {
                               const ctx = canvas.getContext("2d")
+
                               ctx?.clearRect(0, 0, canvas.width, canvas.height)
                             }
+
                             setSigHasDrawn(false)
+
                             notify("Signature canvas cleared.")
                           }}
                         >
@@ -5532,48 +7433,81 @@ export default function ToolPage({
                         height={120}
                         style={{
                           width: "100%",
+
                           height: "120px",
+
                           background: "#f8fafc",
+
                           borderRadius: "6px",
+
                           border: "1px dashed var(--border)",
+
                           cursor: "crosshair",
+
                           touchAction: "none",
                         }}
                         onPointerDown={(e) => {
                           isSigDrawingRef.current = true
+
                           const canvas = sigCanvasRef.current
+
                           if (!canvas) return
+
                           const ctx = canvas.getContext("2d")
+
                           if (!ctx) return
+
                           ctx.lineCap = "round"
+
                           ctx.lineJoin = "round"
+
                           const rect = canvas.getBoundingClientRect()
+
                           const scaleX = canvas.width / rect.width
+
                           const scaleY = canvas.height / rect.height
+
                           ctx.beginPath()
+
                           ctx.moveTo(
                             (e.clientX - rect.left) * scaleX,
+
                             (e.clientY - rect.top) * scaleY,
                           )
                         }}
                         onPointerMove={(e) => {
                           if (!isSigDrawingRef.current) return
+
                           const canvas = sigCanvasRef.current
+
                           if (!canvas) return
+
                           const ctx = canvas.getContext("2d")
+
                           if (!ctx) return
+
                           ctx.lineCap = "round"
+
                           ctx.lineJoin = "round"
+
                           const rect = canvas.getBoundingClientRect()
+
                           const scaleX = canvas.width / rect.width
+
                           const scaleY = canvas.height / rect.height
+
                           ctx.strokeStyle = sigInkColor
+
                           ctx.lineWidth = 2.5 * scaleX
+
                           ctx.lineTo(
                             (e.clientX - rect.left) * scaleX,
+
                             (e.clientY - rect.top) * scaleY,
                           )
+
                           ctx.stroke()
+
                           if (!sigHasDrawn) setSigHasDrawn(true)
                         }}
                         onPointerUp={() => {
@@ -5588,8 +7522,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -5623,7 +7560,9 @@ export default function ToolPage({
                         value={optionA || "lock"}
                         onChange={(e) => {
                           setOptionA(e.target.value)
+
                           setExtra("")
+
                           setOptionB("")
                         }}
                       >
@@ -5647,8 +7586,11 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "grid",
+
                           gridTemplateColumns: "1fr 1fr",
+
                           gap: "12px",
+
                           marginTop: "12px",
                         }}
                       >
@@ -5680,8 +7622,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5724,8 +7669,12 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(200px, 1fr))",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5784,8 +7733,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5824,8 +7776,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5870,8 +7825,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5914,8 +7872,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -5956,8 +7917,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -6012,8 +7976,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -6054,7 +8021,9 @@ export default function ToolPage({
                       <div
                         style={{
                           fontSize: "11px",
+
                           color: "var(--muted)",
+
                           marginTop: "8px",
                         }}
                       >
@@ -6075,7 +8044,9 @@ export default function ToolPage({
                         className={zipMode === "create" ? "primary" : ""}
                         style={{
                           flex: 1,
+
                           padding: "8px 12px",
+
                           fontSize: "13px",
                         }}
                         onClick={() => setZipMode("create")}
@@ -6087,7 +8058,9 @@ export default function ToolPage({
                         className={zipMode === "extract" ? "primary" : ""}
                         style={{
                           flex: 1,
+
                           padding: "8px 12px",
+
                           fontSize: "13px",
                         }}
                         onClick={() => setZipMode("extract")}
@@ -6100,8 +8073,11 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "grid",
+
                           gridTemplateColumns: "1fr 1fr",
+
                           gap: "12px",
+
                           marginTop: "12px",
                         }}
                       >
@@ -6164,20 +8140,30 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         flexDirection: "column",
+
                         gap: "8px",
+
                         marginTop: "12px",
+
                         padding: "10px",
+
                         background: "rgba(255, 255, 255, 0.03)",
+
                         borderRadius: "6px",
                       }}
                     >
                       <label
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           fontSize: "12px",
+
                           cursor: "pointer",
                         }}
                       >
@@ -6193,9 +8179,13 @@ export default function ToolPage({
                       <label
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           fontSize: "12px",
+
                           cursor: "pointer",
                         }}
                       >
@@ -6209,9 +8199,13 @@ export default function ToolPage({
                       <label
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           fontSize: "12px",
+
                           cursor: "pointer",
                         }}
                       >
@@ -6232,7 +8226,9 @@ export default function ToolPage({
                       <div
                         style={{
                           fontSize: "12px",
+
                           color: "var(--muted)",
+
                           marginTop: "8px",
                         }}
                       >
@@ -6245,8 +8241,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -6297,7 +8296,14 @@ export default function ToolPage({
                 )}
 
                 {tool.id === "edi-convert" && (
-                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
                     <label>
                       Export Format
                       <select
@@ -6305,11 +8311,17 @@ export default function ToolPage({
                         onChange={(e) => setOptionA(e.target.value)}
                       >
                         <option value="json">Structured JSON (.json)</option>
-                        <option value="csv">Tabular CSV / Spreadsheet (.csv)</option>
+                        <option value="csv">
+                          Tabular CSV / Spreadsheet (.csv)
+                        </option>
                         <option value="xlsx">Excel Workbook (.xlsx)</option>
                         <option value="xml">Standard XML (.xml)</option>
-                        <option value="report">Human-Readable Business Report (.txt)</option>
-                        <option value="reverse_edi">Reverse: JSON/CSV to EDI X12 (.edi)</option>
+                        <option value="report">
+                          Human-Readable Business Report (.txt)
+                        </option>
+                        <option value="reverse_edi">
+                          Reverse: JSON/CSV to EDI X12 (.edi)
+                        </option>
                       </select>
                     </label>
 
@@ -6330,25 +8342,42 @@ export default function ToolPage({
                       <button
                         type="button"
                         className="text-button"
-                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        style={{
+                          alignSelf: "flex-start",
+                          fontSize: "11.5px",
+                          color: "var(--accent)",
+                        }}
                         onClick={() => {
                           setValue(
                             [
                               `ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~`,
+
                               `GS*PO*FLUXKIT*ACME*20260101*1200*1*X*004010~`,
+
                               `ST*850*0001~`,
+
                               `BEG*00*NE*PO-984321**20260101~`,
+
                               `CUR*BY*USD~`,
+
                               `N1*BY*ACME SUPPLY CORP*92*123456789~`,
+
                               `N3*1200 COMMERCE BLVD~`,
+
                               `N4*AUSTIN*TX*78701*US~`,
+
                               `PO1*1*50*EA*19.99*PE*CB*ITEM-409~`,
+
                               `PID*F****INDUSTRIAL LOGISTICS CONTAINER~`,
+
                               `CTT*1~`,
+
                               `SE*11*0001~`,
+
                               `GE*1*1~`,
+
                               `IEA*1*000000001~`,
-                            ].join("\n")
+                            ].join("\n"),
                           )
                         }}
                       >
@@ -6359,21 +8388,43 @@ export default function ToolPage({
                 )}
 
                 {tool.id === "csv-convert" && (
-                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: optionA === "reformat" ? "1.2fr 1fr" : "1fr", gap: "12px" }}>
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          optionA === "reformat" ? "1.2fr 1fr" : "1fr",
+                        gap: "12px",
+                      }}
+                    >
                       <label>
                         Target Format
                         <select
                           value={optionA || "xlsx"}
                           onChange={(e) => setOptionA(e.target.value)}
                         >
-                          <option value="xlsx">Excel Spreadsheet (.xlsx)</option>
+                          <option value="xlsx">
+                            Excel Spreadsheet (.xlsx)
+                          </option>
                           <option value="json">JSON Objects (.json)</option>
-                          <option value="pdf">Printable PDF Table (.pdf)</option>
+                          <option value="pdf">
+                            Printable PDF Table (.pdf)
+                          </option>
                           <option value="xml">XML Schema (.xml)</option>
-                          <option value="sql">SQL CREATE & INSERT Statements (.sql)</option>
+                          <option value="sql">
+                            SQL CREATE & INSERT Statements (.sql)
+                          </option>
                           <option value="markdown">Markdown Table (.md)</option>
-                          <option value="reformat">Reformat Delimiter (;, \t, |)</option>
+                          <option value="reformat">
+                            Reformat Delimiter (;, \t, |)
+                          </option>
                         </select>
                       </label>
 
@@ -6410,16 +8461,24 @@ export default function ToolPage({
                       <button
                         type="button"
                         className="text-button"
-                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        style={{
+                          alignSelf: "flex-start",
+                          fontSize: "11.5px",
+                          color: "var(--accent)",
+                        }}
                         onClick={() => {
                           setValue(
                             [
                               `ID,Product Name,Category,Unit Price,In Stock,Status`,
+
                               `101,Masterfile Pro Enterprise Hub,Software,499.00,85,Active`,
+
                               `102,Industrial Cable Harness,Hardware,45.50,320,Shipped`,
+
                               `103,Optic Data Gateway,Networking,1250.00,12,In Stock`,
+
                               `104,Precision Sensor Pack,Sensors,89.90,140,Active`,
-                            ].join("\n")
+                            ].join("\n"),
                           )
                         }}
                       >
@@ -6430,19 +8489,41 @@ export default function ToolPage({
                 )}
 
                 {tool.id === "batch-convert" && (
-                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: optionA === "template" ? "1.2fr 1fr" : "1fr", gap: "12px" }}>
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          optionA === "template" ? "1.2fr 1fr" : "1fr",
+                        gap: "12px",
+                      }}
+                    >
                       <label>
                         Conversion Mode / Target
                         <select
                           value={optionA || "ps1"}
                           onChange={(e) => setOptionA(e.target.value)}
                         >
-                          <option value="ps1">Transpile to PowerShell (.ps1)</option>
-                          <option value="sh">Transpile to POSIX Bash (.sh)</option>
+                          <option value="ps1">
+                            Transpile to PowerShell (.ps1)
+                          </option>
+                          <option value="sh">
+                            Transpile to POSIX Bash (.sh)
+                          </option>
                           <option value="py">Transpile to Python (.py)</option>
-                          <option value="analyze">Security & Syntax Audit</option>
-                          <option value="template">Generate Standard Batch (.bat) Template</option>
+                          <option value="analyze">
+                            Security & Syntax Audit
+                          </option>
+                          <option value="template">
+                            Generate Standard Batch (.bat) Template
+                          </option>
                         </select>
                       </label>
 
@@ -6453,10 +8534,18 @@ export default function ToolPage({
                             value={optionB || "backup"}
                             onChange={(e) => setOptionB(e.target.value)}
                           >
-                            <option value="backup">Automated Directory Backup</option>
-                            <option value="cleanup">Temp Files & Cache Cleanup</option>
-                            <option value="launcher">Project Environment Launcher</option>
-                            <option value="system_info">System Diagnostics & Info</option>
+                            <option value="backup">
+                              Automated Directory Backup
+                            </option>
+                            <option value="cleanup">
+                              Temp Files & Cache Cleanup
+                            </option>
+                            <option value="launcher">
+                              Project Environment Launcher
+                            </option>
+                            <option value="system_info">
+                              System Diagnostics & Info
+                            </option>
                           </select>
                         </label>
                       )}
@@ -6479,20 +8568,32 @@ export default function ToolPage({
                       <button
                         type="button"
                         className="text-button"
-                        style={{ alignSelf: "flex-start", fontSize: "11.5px", color: "var(--accent)" }}
+                        style={{
+                          alignSelf: "flex-start",
+                          fontSize: "11.5px",
+                          color: "var(--accent)",
+                        }}
                         onClick={() => {
                           setValue(
                             [
                               `@echo off`,
+
                               `:: Automated Deployment & Backup Script`,
+
                               `setlocal enabledelayedexpansion`,
+
                               `set "TARGET_DIR=C:\\Deployments\\MasterfilePro"`,
+
                               `echo Initializing deployment sequence...`,
+
                               `if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"`,
+
                               `copy /y "build\\*.*" "%TARGET_DIR%"`,
+
                               `echo Deployment successful!`,
+
                               `pause`,
-                            ].join("\n")
+                            ].join("\n"),
                           )
                         }}
                       >
@@ -6506,8 +8607,11 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
+
                       gridTemplateColumns: "1fr 1fr",
+
                       gap: "12px",
+
                       marginTop: "12px",
                     }}
                   >
@@ -6562,10 +8666,15 @@ export default function ToolPage({
                     <label
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         gap: "8px",
+
                         fontSize: "12px",
+
                         marginTop: "10px",
+
                         cursor: "pointer",
                       }}
                     >
@@ -6583,7 +8692,9 @@ export default function ToolPage({
                       <div
                         style={{
                           fontSize: "11px",
+
                           color: "var(--muted)",
+
                           marginTop: "8px",
                         }}
                       >
@@ -6599,8 +8710,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "grid",
+
                         gridTemplateColumns: "1fr 1fr",
+
                         gap: "12px",
+
                         marginTop: "12px",
                       }}
                     >
@@ -6642,8 +8756,11 @@ export default function ToolPage({
                         <small
                           style={{
                             color: "var(--muted)",
+
                             fontSize: "11px",
+
                             display: "block",
+
                             marginTop: "4px",
                           }}
                         >
@@ -6722,48 +8839,52 @@ export default function ToolPage({
                                                       ? "Scan & Extract Text"
                                                       : tool.id === "convert"
                                                         ? "Convert File"
-                                                        : tool.id === "edi-convert"
+                                                        : tool.id ===
+                                                            "edi-convert"
                                                           ? "Convert EDI Data"
-                                                          : tool.id === "csv-convert"
+                                                          : tool.id ===
+                                                              "csv-convert"
                                                             ? "Convert Spreadsheet / CSV"
-                                                            : tool.id === "batch-convert"
-                                                              ? optionA === "template"
+                                                            : tool.id ===
+                                                                "batch-convert"
+                                                              ? optionA ===
+                                                                "template"
                                                                 ? "Generate Batch (.bat) Script"
                                                                 : "Transpile Batch Script"
                                                               : tool.id ===
-                                                            "convert-compress"
-                                                          ? "Convert & Compress"
-                                                          : tool.id ===
-                                                              "merge-compress"
-                                                            ? "Merge & Compress PDFs"
-                                                            : tool.id ===
-                                                                "split-compress"
-                                                              ? "Split & Compress PDF"
-                                                              : tool.id ===
-                                                                  "summarize"
-                                                                ? "Summarize Document"
+                                                                  "convert-compress"
+                                                                ? "Convert & Compress"
                                                                 : tool.id ===
-                                                                    "rewrite"
-                                                                  ? "Rewrite Content"
+                                                                    "merge-compress"
+                                                                  ? "Merge & Compress PDFs"
                                                                   : tool.id ===
-                                                                      "translate"
-                                                                    ? "Translate Text"
+                                                                      "split-compress"
+                                                                    ? "Split & Compress PDF"
                                                                     : tool.id ===
-                                                                        "ask"
-                                                                      ? "Ask Document AI"
+                                                                        "summarize"
+                                                                      ? "Summarize Document"
                                                                       : tool.id ===
-                                                                          "keywords"
-                                                                        ? "Extract Keywords"
+                                                                          "rewrite"
+                                                                        ? "Rewrite Content"
                                                                         : tool.id ===
-                                                                            "sentiment"
-                                                                          ? "Analyze Sentiment"
+                                                                            "translate"
+                                                                          ? "Translate Text"
                                                                           : tool.id ===
-                                                                              "compare"
-                                                                            ? "Compare Texts"
+                                                                              "ask"
+                                                                            ? "Ask Document AI"
                                                                             : tool.id ===
-                                                                                "email"
-                                                                              ? "Generate Email"
-                                                                              : `Run ${tool.name}`}
+                                                                                "keywords"
+                                                                              ? "Extract Keywords"
+                                                                              : tool.id ===
+                                                                                  "sentiment"
+                                                                                ? "Analyze Sentiment"
+                                                                                : tool.id ===
+                                                                                    "compare"
+                                                                                  ? "Compare Texts"
+                                                                                  : tool.id ===
+                                                                                      "email"
+                                                                                    ? "Generate Email"
+                                                                                    : `Run ${tool.name}`}
                 </button>
 
                 {tool.id === "qr" && (
@@ -6772,31 +8893,46 @@ export default function ToolPage({
                     className="text-button"
                     style={{
                       marginTop: "10px",
+
                       width: "100%",
+
                       display: "flex",
+
                       alignItems: "center",
+
                       justifyContent: "center",
+
                       gap: "7px",
+
                       fontSize: "13px",
+
                       padding: "9px 12px",
+
                       border: "1px dashed var(--border)",
+
                       borderRadius: "8px",
+
                       color: "var(--accent)",
+
                       background: "var(--surface-hover)",
                     }}
                     onClick={() => {
                       let content = value.trim() || "https://masterfilepro.com"
+
                       if (
                         kind === "URL" &&
                         !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
                       ) {
                         content = `https://${content}`
                       }
+
                       setRawQrPayload(content)
+
                       setShowQRStudio(true)
                     }}
                   >
-                    <Sparkles size={15} /> Customize Design &amp; Colors (QR Studio)
+                    <Sparkles size={15} /> Customize Design &amp; Colors (QR
+                    Studio)
                   </button>
                 )}
               </>
@@ -6826,29 +8962,43 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "12px 14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
+
                         fontSize: "12px",
+
                         marginBottom: "6px",
                       }}
                     >
                       <span
                         style={{
                           padding: "3px 8px",
+
                           borderRadius: "6px",
+
                           background: "rgba(16, 185, 129, 0.15)",
+
                           color: "#10b981",
+
                           fontWeight: 600,
                         }}
                       >
@@ -6864,8 +9014,11 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "flex",
+
                           gap: "6px",
+
                           flexWrap: "wrap",
+
                           marginTop: "6px",
                         }}
                       >
@@ -6879,8 +9032,11 @@ export default function ToolPage({
                             key={i}
                             style={{
                               fontSize: "11px",
+
                               padding: "2px 6px",
+
                               borderRadius: "4px",
+
                               background:
                                 "var(--badge-bg, rgba(255,255,255,0.06))",
                             }}
@@ -6897,14 +9053,23 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "10px 14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       display: "flex",
+
                       justifyContent: "space-between",
+
                       alignItems: "center",
+
                       fontSize: "12px",
                     }}
                   >
@@ -6923,14 +9088,23 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "10px 14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       display: "flex",
+
                       justifyContent: "space-between",
+
                       alignItems: "center",
+
                       fontSize: "12px",
                     }}
                   >
@@ -6949,34 +9123,48 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
+
                         marginBottom: "8px",
                       }}
                     >
                       <span
                         style={{
                           fontSize: "13px",
+
                           fontWeight: 700,
+
                           padding: "3px 10px",
+
                           borderRadius: "12px",
+
                           background:
                             aiSentimentResult.polarity === "Positive"
                               ? "rgba(16, 185, 129, 0.2)"
                               : aiSentimentResult.polarity === "Negative"
                                 ? "rgba(239, 68, 68, 0.2)"
                                 : "rgba(107, 114, 128, 0.2)",
+
                           color:
                             aiSentimentResult.polarity === "Positive"
                               ? "#10b981"
@@ -6997,24 +9185,37 @@ export default function ToolPage({
                     <div
                       style={{
                         position: "relative",
+
                         height: "8px",
+
                         background:
                           "linear-gradient(to right, #ef4444, #9ca3af, #10b981)",
+
                         borderRadius: "4px",
+
                         margin: "14px 0 6px",
                       }}
                     >
                       <div
                         style={{
                           position: "absolute",
+
                           top: "-4px",
+
                           left: `${Math.max(2, Math.min(98, ((aiSentimentResult.compound + 1) / 2) * 100))}%`,
+
                           width: "16px",
+
                           height: "16px",
+
                           borderRadius: "50%",
+
                           background: "#fff",
+
                           border: "2px solid #0f172a",
+
                           transform: "translateX(-50%)",
+
                           boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
                         }}
                       />
@@ -7022,8 +9223,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         fontSize: "10px",
+
                         color: "var(--muted)",
                       }}
                     >
@@ -7037,11 +9241,17 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "flex",
+
                           justifyContent: "space-between",
+
                           fontSize: "11px",
+
                           color: "var(--muted)",
+
                           marginTop: "8px",
+
                           paddingTop: "8px",
+
                           borderTop: "1px solid var(--border)",
                         }}
                       >
@@ -7064,20 +9274,30 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "12px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         gap: "12px",
+
                         fontSize: "11px",
+
                         color: "var(--muted)",
+
                         marginBottom: "8px",
                       }}
                     >
@@ -7097,11 +9317,16 @@ export default function ToolPage({
                           key={k.rank + k.term}
                           style={{
                             fontSize: "11px",
+
                             padding: "3px 8px",
+
                             borderRadius: "6px",
+
                             background:
                               "var(--badge-bg, rgba(59, 130, 246, 0.15))",
+
                             color: "var(--primary, #3b82f6)",
+
                             fontWeight: 500,
                           }}
                         >
@@ -7116,28 +9341,41 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(59, 130, 246, 0.08))",
+
                       border: "1px solid var(--primary, #3b82f6)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
+
                         marginBottom: "6px",
                       }}
                     >
                       <span
                         style={{
                           fontSize: "11px",
+
                           fontWeight: 700,
+
                           textTransform: "uppercase",
+
                           letterSpacing: "0.5px",
+
                           color: "var(--primary, #3b82f6)",
                         }}
                       >
@@ -7149,8 +9387,11 @@ export default function ToolPage({
                     <div
                       style={{
                         fontSize: "13px",
+
                         fontWeight: 600,
+
                         lineHeight: "1.5",
+
                         marginBottom: "8px",
                       }}
                     >
@@ -7160,9 +9401,13 @@ export default function ToolPage({
                       <div
                         style={{
                           marginTop: "8px",
+
                           paddingTop: "8px",
+
                           borderTop: "1px solid rgba(59, 130, 246, 0.2)",
+
                           fontSize: "11px",
+
                           color: "var(--muted)",
                         }}
                       >
@@ -7175,8 +9420,11 @@ export default function ToolPage({
                           <div
                             style={{
                               marginTop: "4px",
+
                               display: "flex",
+
                               gap: "4px",
+
                               flexWrap: "wrap",
                             }}
                           >
@@ -7187,8 +9435,11 @@ export default function ToolPage({
                                   key={i}
                                   style={{
                                     fontSize: "10px",
+
                                     padding: "1px 5px",
+
                                     borderRadius: "4px",
+
                                     background: "rgba(59, 130, 246, 0.15)",
                                   }}
                                 >
@@ -7207,38 +9458,51 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "12px 14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
+
                         fontSize: "12px",
                       }}
                     >
                       <span
                         style={{
                           padding: "3px 8px",
+
                           borderRadius: "6px",
+
                           background:
                             aiCompareResult.stats.similarityPercentage >= 80
                               ? "rgba(16, 185, 129, 0.15)"
                               : aiCompareResult.stats.similarityPercentage >= 40
                                 ? "rgba(245, 158, 11, 0.15)"
                                 : "rgba(239, 68, 68, 0.15)",
+
                           color:
                             aiCompareResult.stats.similarityPercentage >= 80
                               ? "#10b981"
                               : aiCompareResult.stats.similarityPercentage >= 40
                                 ? "#f59e0b"
                                 : "#ef4444",
+
                           fontWeight: 600,
                         }}
                       >
@@ -7247,7 +9511,9 @@ export default function ToolPage({
                       <div
                         style={{
                           display: "flex",
+
                           gap: "10px",
+
                           fontSize: "11px",
                         }}
                       >
@@ -7269,20 +9535,30 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       padding: "12px 14px",
+
                       borderRadius: "8px",
+
                       background: "var(--card-bg, rgba(255,255,255,0.04))",
+
                       border: "1px solid var(--border)",
+
                       marginBottom: "12px",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
+
                         marginBottom: "6px",
+
                         fontSize: "12px",
                       }}
                     >
@@ -7293,14 +9569,20 @@ export default function ToolPage({
                         type="button"
                         onClick={() => {
                           navigator.clipboard?.writeText(aiEmailResult.subject)
+
                           notify("Subject copied to clipboard!", "success")
                         }}
                         style={{
                           fontSize: "11px",
+
                           padding: "2px 8px",
+
                           borderRadius: "4px",
+
                           border: "1px solid var(--border)",
+
                           background: "var(--badge-bg)",
+
                           cursor: "pointer",
                         }}
                       >
@@ -7317,16 +9599,27 @@ export default function ToolPage({
                 <div
                   style={{
                     textAlign: "left",
+
                     width: "100%",
+
                     maxHeight: "360px",
+
                     overflowY: "auto",
+
                     background: "var(--bg)",
+
                     padding: "16px",
+
                     borderRadius: "8px",
+
                     border: "1px solid var(--border)",
+
                     whiteSpace: "pre-wrap",
+
                     fontFamily: "inherit",
+
                     fontSize: "12px",
+
                     lineHeight: "1.7",
                   }}
                 >
@@ -7335,8 +9628,11 @@ export default function ToolPage({
                 <div
                   style={{
                     display: "flex",
+
                     gap: "10px",
+
                     marginTop: "14px",
+
                     width: "100%",
                   }}
                 >
@@ -7346,6 +9642,7 @@ export default function ToolPage({
                     style={{ flex: 1 }}
                     onClick={() => {
                       navigator.clipboard?.writeText(textOutput)
+
                       notify("Copied to clipboard!", "success")
                     }}
                   >
@@ -7359,7 +9656,9 @@ export default function ToolPage({
                       const blob = new Blob([textOutput], {
                         type: "text/plain;charset=utf-8",
                       })
+
                       download({ name: `${tool.id}-output.txt`, blob })
+
                       notify("Downloaded text file.", "success")
                     }}
                   >
@@ -7371,8 +9670,11 @@ export default function ToolPage({
               <div
                 style={{
                   display: "flex",
+
                   flexDirection: "column",
+
                   alignItems: "center",
+
                   width: "100%",
                 }}
               >
@@ -7380,12 +9682,19 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "6px",
+
                       marginBottom: "16px",
+
                       background: "var(--surface)",
+
                       border: "1px solid var(--border)",
+
                       padding: "4px",
+
                       borderRadius: "10px",
                     }}
                   >
@@ -7394,21 +9703,31 @@ export default function ToolPage({
                       onClick={() => setShowcaseResultTab("qr")}
                       style={{
                         padding: "6px 14px",
+
                         borderRadius: "8px",
+
                         fontSize: "12px",
+
                         fontWeight: 600,
+
                         background:
                           showcaseResultTab === "qr"
                             ? "var(--accent)"
                             : "transparent",
+
                         color:
                           showcaseResultTab === "qr"
                             ? "#ffffff"
                             : "var(--muted)",
+
                         border: "none",
+
                         cursor: "pointer",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
                       }}
                     >
@@ -7419,21 +9738,31 @@ export default function ToolPage({
                       onClick={() => setShowcaseResultTab("preview")}
                       style={{
                         padding: "6px 14px",
+
                         borderRadius: "8px",
+
                         fontSize: "12px",
+
                         fontWeight: 600,
+
                         background:
                           showcaseResultTab === "preview"
                             ? "var(--accent)"
                             : "transparent",
+
                         color:
                           showcaseResultTab === "preview"
                             ? "#ffffff"
                             : "var(--muted)",
+
                         border: "none",
+
                         cursor: "pointer",
+
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
                       }}
                     >
@@ -7453,8 +9782,11 @@ export default function ToolPage({
                         className="secondary"
                         style={{
                           display: "inline-flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           fontSize: "12px",
                         }}
                         onClick={() => setShowcaseResultTab("qr")}
@@ -7465,18 +9797,31 @@ export default function ToolPage({
                   </div>
                 ) : (
                   <>
-                    <img className="qr-result" src={qr} alt="Generated QR code" />
+                    <img
+                      className="qr-result"
+                      src={qr}
+                      alt="Generated QR code"
+                    />
                     <div
                       style={{
                         display: "flex",
+
                         flexWrap: "wrap",
+
                         gap: "10px",
+
                         justifyContent: "center",
+
                         marginTop: "16px",
+
                         width: "100%",
                       }}
                     >
-                      <a className="primary" href={qr} download="masterfilepro-qr.png">
+                      <a
+                        className="primary"
+                        href={qr}
+                        download="masterfilepro-qr.png"
+                      >
                         <Download size={16} /> Download PNG
                       </a>
                       {rawQrPayload && rawQrPayload.includes("#showcase") && (
@@ -7485,7 +9830,9 @@ export default function ToolPage({
                           className="secondary"
                           style={{
                             display: "inline-flex",
+
                             alignItems: "center",
+
                             gap: "8px",
                           }}
                           onClick={() => window.open(rawQrPayload, "_blank")}
@@ -7497,24 +9844,36 @@ export default function ToolPage({
                         type="button"
                         className="primary"
                         style={{
-                          background: "linear-gradient(135deg, #06204D, #00C9B7)",
+                          background:
+                            "linear-gradient(135deg, #06204D, #00C9B7)",
+
                           borderColor: "transparent",
+
                           boxShadow: "0 4px 14px rgba(0, 201, 183, 0.3)",
+
                           display: "inline-flex",
+
                           alignItems: "center",
+
                           gap: "8px",
+
                           cursor: "pointer",
                         }}
                         onClick={() => {
                           let content =
-                            rawQrPayload || value.trim() || "https://masterfilepro.com"
+                            rawQrPayload ||
+                            value.trim() ||
+                            "https://masterfilepro.com"
+
                           if (
                             kind === "URL" &&
                             !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(content)
                           ) {
                             content = `https://${content}`
                           }
+
                           setRawQrPayload(content)
+
                           setShowQRStudio(true)
                         }}
                       >
@@ -7532,19 +9891,28 @@ export default function ToolPage({
                 <div
                   style={{
                     display: "flex",
+
                     justifyContent: "space-between",
+
                     alignItems: "center",
+
                     marginBottom: "12px",
                   }}
                 >
                   <span
                     style={{
                       padding: "4px 8px",
+
                       borderRadius: "6px",
+
                       background: "rgba(16, 185, 129, 0.15)",
+
                       border: "1px solid rgba(16, 185, 129, 0.3)",
+
                       color: "#10b981",
+
                       fontSize: "12px",
+
                       fontWeight: 600,
                     }}
                   >
@@ -7562,14 +9930,23 @@ export default function ToolPage({
                   rows={10}
                   style={{
                     width: "100%",
+
                     fontFamily: "monospace",
+
                     fontSize: "13px",
+
                     lineHeight: "1.5",
+
                     padding: "10px",
+
                     borderRadius: "6px",
+
                     background: "rgba(0, 0, 0, 0.2)",
+
                     border: "1px solid var(--border)",
+
                     color: "var(--text)",
+
                     resize: "vertical",
                   }}
                   value={textOutput}
@@ -7582,8 +9959,11 @@ export default function ToolPage({
                     onClick={() => {
                       if (navigator.clipboard) {
                         navigator.clipboard.writeText(textOutput)
+
                         setCopiedText(true)
+
                         notify.success("OCR text copied to clipboard.")
+
                         setTimeout(() => setCopiedText(false), 2000)
                       }
                     }}
@@ -7617,14 +9997,18 @@ export default function ToolPage({
                       key={`${item.name}-${idx}`}
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         alignItems: "center",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           gap: "8px",
                         }}
                       >
@@ -7640,6 +10024,7 @@ export default function ToolPage({
                         onClick={() =>
                           download({
                             name: item.name.split("/").pop() || item.name,
+
                             blob: item.blob,
                           })
                         }
@@ -7658,7 +10043,10 @@ export default function ToolPage({
                   <span className="result-wave-ring ring-2" />
                   <span className="result-wave-ring ring-3" />
                   <div className="result-celebrate-badge">
-                    <CheckCircle2 size={38} className="result-celebrate-check" />
+                    <CheckCircle2
+                      size={38}
+                      className="result-celebrate-check"
+                    />
                     <Sparkles size={16} className="result-sparkle-star s1" />
                     <Sparkles size={14} className="result-sparkle-star s2" />
                   </div>
@@ -7666,7 +10054,8 @@ export default function ToolPage({
 
                 <div className="result-celebrate-text">
                   <span className="result-celebrate-eyebrow">
-                    <span className="celebrate-status-dot" /> Completed Successfully
+                    <span className="celebrate-status-dot" /> Completed
+                    Successfully
                   </span>
                   <h3 className="result-celebrate-heading">
                     {tool.id === "compress"
@@ -7677,7 +10066,9 @@ export default function ToolPage({
                   </h3>
                   <div className="result-file-meta-pill">
                     <FileText size={14} />
-                    <span className="result-filename" title={result.name}>{result.name}</span>
+                    <span className="result-filename" title={result.name}>
+                      {result.name}
+                    </span>
                     <span className="result-filesize">
                       {(result.blob.size / 1024).toFixed(1)} KB
                     </span>
@@ -7688,15 +10079,20 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       margin: "12px 0",
+
                       textAlign: "left",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         alignItems: "center",
+
                         justifyContent: "space-between",
+
                         marginBottom: "8px",
                       }}
                     >
@@ -7706,6 +10102,7 @@ export default function ToolPage({
                       <span
                         style={{
                           fontSize: "11px",
+
                           color: "var(--muted)",
                         }}
                       >
@@ -7716,10 +10113,15 @@ export default function ToolPage({
                       className="file-list"
                       style={{
                         maxHeight: "220px",
+
                         overflowY: "auto",
+
                         border: "1px solid var(--border)",
+
                         borderRadius: "8px",
+
                         padding: "4px 10px",
+
                         background: "var(--bg)",
                       }}
                     >
@@ -7729,16 +10131,22 @@ export default function ToolPage({
                           key={`${piece.name}-${pIdx}`}
                           style={{
                             display: "flex",
+
                             alignItems: "center",
+
                             justifyContent: "space-between",
+
                             padding: "8px 0",
                           }}
                         >
                           <div
                             style={{
                               display: "flex",
+
                               alignItems: "center",
+
                               gap: "8px",
+
                               minWidth: 0,
                             }}
                           >
@@ -7746,8 +10154,11 @@ export default function ToolPage({
                             <span
                               style={{
                                 fontSize: "12px",
+
                                 overflow: "hidden",
+
                                 textOverflow: "ellipsis",
+
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -7755,7 +10166,9 @@ export default function ToolPage({
                               <small
                                 style={{
                                   display: "block",
+
                                   fontSize: "10px",
+
                                   color: "var(--muted)",
                                 }}
                               >
@@ -7769,14 +10182,23 @@ export default function ToolPage({
                             onClick={() => download(piece)}
                             style={{
                               padding: "4px 8px",
+
                               fontSize: "11px",
+
                               borderRadius: "4px",
+
                               border: "1px solid var(--border)",
+
                               background: "var(--surface)",
+
                               cursor: "pointer",
+
                               display: "flex",
+
                               alignItems: "center",
+
                               gap: "4px",
+
                               flexShrink: 0,
                             }}
                           >
@@ -7793,20 +10215,30 @@ export default function ToolPage({
                     className="pipeline-stats-badge"
                     style={{
                       marginBottom: "12px",
+
                       padding: "10px 14px",
+
                       borderRadius: "8px",
+
                       background: "rgba(16, 185, 129, 0.1)",
+
                       border: "1px solid rgba(16, 185, 129, 0.25)",
+
                       color: "var(--text)",
+
                       fontSize: "12px",
+
                       textAlign: "left",
+
                       width: "100%",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
+
                         justifyContent: "space-between",
+
                         marginBottom: "4px",
                       }}
                     >
@@ -7820,8 +10252,11 @@ export default function ToolPage({
                     <div
                       style={{
                         display: "flex",
+
                         gap: "8px",
+
                         color: "var(--muted)",
+
                         fontSize: "11px",
                       }}
                     >
@@ -7857,20 +10292,28 @@ export default function ToolPage({
                             🎉 {result.savedPercentage}% Space Saved
                           </strong>
                           <span className="compress-saved-kb">
-                            {((files[0].size - result.blob.size) / 1024).toFixed(1)} KB smaller
+                            {(
+                              (files[0].size - result.blob.size) /
+                              1024
+                            ).toFixed(1)}{" "}
+                            KB smaller
                           </span>
                         </div>
                         <div className="compress-reduction-bar-row">
                           <div className="compress-size-pill original">
                             <small>Original</small>
-                            <strong>{(files[0].size / 1024).toFixed(1)} KB</strong>
+                            <strong>
+                              {(files[0].size / 1024).toFixed(1)} KB
+                            </strong>
                           </div>
                           <div className="compress-reduction-arrow">
                             <span>&rarr;</span>
                           </div>
                           <div className="compress-size-pill final">
                             <small>Compressed</small>
-                            <strong>{(result.blob.size / 1024).toFixed(1)} KB</strong>
+                            <strong>
+                              {(result.blob.size / 1024).toFixed(1)} KB
+                            </strong>
                           </div>
                         </div>
                       </>
@@ -7880,7 +10323,9 @@ export default function ToolPage({
                         <div>
                           <strong>Maximum Compression Reached</strong>
                           <p>
-                            This PDF is already fully compacted at {(files[0].size / 1024).toFixed(1)} KB (0% further reduction possible without quality degradation).
+                            This PDF is already fully compacted at{" "}
+                            {(files[0].size / 1024).toFixed(1)} KB (0% further
+                            reduction possible without quality degradation).
                           </p>
                         </div>
                       </div>
@@ -7891,26 +10336,66 @@ export default function ToolPage({
                   <div
                     style={{
                       width: "100%",
+
                       margin: "12px 0",
+
                       padding: "10px 12px",
+
                       background: "rgba(99, 102, 241, 0.08)",
+
                       border: "1px solid rgba(99, 102, 241, 0.2)",
+
                       borderRadius: "8px",
+
                       textAlign: "left",
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <strong style={{ fontSize: "12px", color: "var(--accent)" }}>
-                        Merged {result.pageCount ?? 0} Pages from {result.breakdown.length} Documents
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <strong
+                        style={{ fontSize: "12px", color: "var(--accent)" }}
+                      >
+                        Merged {result.pageCount ?? 0} Pages from{" "}
+                        {result.breakdown.length} Documents
                       </strong>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "4px",
+                      }}
+                    >
                       {result.breakdown.map((item, bIdx) => (
-                        <div key={bIdx} style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", color: "var(--muted)" }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
+                        <div
+                          key={bIdx}
+                          style={{
+                            fontSize: "11px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              maxWidth: "200px",
+                            }}
+                          >
                             #{bIdx + 1} {item.name}
                           </span>
-                          <span>{item.pageCount} page{item.pageCount !== 1 ? "s" : ""}</span>
+                          <span>
+                            {item.pageCount} page
+                            {item.pageCount !== 1 ? "s" : ""}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -7918,121 +10403,192 @@ export default function ToolPage({
                 )}
 
                 {/* PDF to Word Extracted Text Preview card */}
-                {tool.id === "pdf-to-word" && (result.extractedText || result.previewSnippet) && (
-                  <div
-                    className="word-preview-box"
-                    style={{
-                      margin: "16px 0",
-                      padding: "16px",
-                      borderRadius: "12px",
-                      background: "var(--card-bg, rgba(255, 255, 255, 0.7))",
-                      border: "1px solid var(--border)",
-                      textAlign: "left",
-                      width: "100%",
-                      maxWidth: "540px",
-                    }}
-                  >
+                {tool.id === "pdf-to-word" &&
+                  (result.extractedText || result.previewSnippet) && (
                     <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "10px",
-                        paddingBottom: "8px",
-                        borderBottom: "1px solid var(--border)",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <FileText size={16} className="text-primary" />
-                        <span style={{ fontWeight: 600, fontSize: "13px" }}>
-                          Word Content Preview
-                        </span>
-                        {result.pageCount && (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              background: "rgba(99, 102, 241, 0.1)",
-                              color: "var(--primary)",
-                            }}
-                          >
-                            {result.pageCount} Page{result.pageCount !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="text-button"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          fontSize: "12px",
-                          padding: "4px 8px",
-                          borderRadius: "6px",
-                          border: "1px solid var(--border)",
-                          background: "var(--surface)",
-                          cursor: "pointer",
-                        }}
-                        onClick={() => {
-                          if (result.extractedText) {
-                            navigator.clipboard.writeText(result.extractedText)
-                            notify("Document text copied to clipboard!", "success")
-                          }
-                        }}
-                      >
-                        <Copy size={13} /> Copy Text
-                      </button>
-                    </div>
-                    <div
-                      style={{
-                        maxHeight: "180px",
-                        overflowY: "auto",
-                        fontSize: "13px",
-                        lineHeight: "1.6",
-                        color: "var(--foreground)",
-                        whiteSpace: "pre-wrap",
-                        padding: "8px 12px",
-                        background: "var(--surface)",
-                        borderRadius: "8px",
-                        border: "1px solid var(--border)",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {result.extractedText || result.previewSnippet}
-                    </div>
-                  </div>
-                )}
-
-                {/* Converted Data & Script Preview card for EDI, CSV, and Batch tools */}
-                {(tool.id === "edi-convert" || tool.id === "csv-convert" || tool.id === "batch-convert") &&
-                  result.extractedText && (
-                    <div
-                      className="code-preview-box"
+                      className="word-preview-box"
                       style={{
                         margin: "16px 0",
+
                         padding: "16px",
+
                         borderRadius: "12px",
+
                         background: "var(--card-bg, rgba(255, 255, 255, 0.7))",
+
                         border: "1px solid var(--border)",
+
                         textAlign: "left",
+
                         width: "100%",
+
                         maxWidth: "540px",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
+
                           alignItems: "center",
+
                           justifyContent: "space-between",
+
                           marginBottom: "10px",
+
                           paddingBottom: "8px",
+
                           borderBottom: "1px solid var(--border)",
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <FileText size={16} style={{ color: "var(--accent)" }} />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <FileText size={16} className="text-primary" />
+                          <span style={{ fontWeight: 600, fontSize: "13px" }}>
+                            Word Content Preview
+                          </span>
+                          {result.pageCount && (
+                            <span
+                              style={{
+                                fontSize: "11px",
+
+                                padding: "2px 6px",
+
+                                borderRadius: "4px",
+
+                                background: "rgba(99, 102, 241, 0.1)",
+
+                                color: "var(--primary)",
+                              }}
+                            >
+                              {result.pageCount} Page
+                              {result.pageCount !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{
+                            display: "inline-flex",
+
+                            alignItems: "center",
+
+                            gap: "4px",
+
+                            fontSize: "12px",
+
+                            padding: "4px 8px",
+
+                            borderRadius: "6px",
+
+                            border: "1px solid var(--border)",
+
+                            background: "var(--surface)",
+
+                            cursor: "pointer",
+                          }}
+                          onClick={() => {
+                            if (result.extractedText) {
+                              navigator.clipboard.writeText(
+                                result.extractedText,
+                              )
+
+                              notify(
+                                "Document text copied to clipboard!",
+                                "success",
+                              )
+                            }
+                          }}
+                        >
+                          <Copy size={13} /> Copy Text
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          maxHeight: "180px",
+
+                          overflowY: "auto",
+
+                          fontSize: "13px",
+
+                          lineHeight: "1.6",
+
+                          color: "var(--foreground)",
+
+                          whiteSpace: "pre-wrap",
+
+                          padding: "8px 12px",
+
+                          background: "var(--surface)",
+
+                          borderRadius: "8px",
+
+                          border: "1px solid var(--border)",
+
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {result.extractedText || result.previewSnippet}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Converted Data & Script Preview card for EDI, CSV, and Batch tools */}
+                {(tool.id === "edi-convert" ||
+                  tool.id === "csv-convert" ||
+                  tool.id === "batch-convert") &&
+                  result.extractedText && (
+                    <div
+                      className="code-preview-box"
+                      style={{
+                        margin: "16px 0",
+
+                        padding: "16px",
+
+                        borderRadius: "12px",
+
+                        background: "var(--card-bg, rgba(255, 255, 255, 0.7))",
+
+                        border: "1px solid var(--border)",
+
+                        textAlign: "left",
+
+                        width: "100%",
+
+                        maxWidth: "540px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+
+                          alignItems: "center",
+
+                          justifyContent: "space-between",
+
+                          marginBottom: "10px",
+
+                          paddingBottom: "8px",
+
+                          borderBottom: "1px solid var(--border)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <FileText
+                            size={16}
+                            style={{ color: "var(--accent)" }}
+                          />
                           <span style={{ fontWeight: 600, fontSize: "13px" }}>
                             {tool.id === "edi-convert"
                               ? "EDI Converted Output Preview"
@@ -8046,19 +10602,33 @@ export default function ToolPage({
                           className="text-button"
                           style={{
                             display: "inline-flex",
+
                             alignItems: "center",
+
                             gap: "4px",
+
                             fontSize: "12px",
+
                             padding: "4px 8px",
+
                             borderRadius: "6px",
+
                             border: "1px solid var(--border)",
+
                             background: "var(--surface)",
+
                             cursor: "pointer",
                           }}
                           onClick={() => {
                             if (result.extractedText) {
-                              navigator.clipboard.writeText(result.extractedText)
-                              notify("Converted output copied to clipboard!", "success")
+                              navigator.clipboard.writeText(
+                                result.extractedText,
+                              )
+
+                              notify(
+                                "Converted output copied to clipboard!",
+                                "success",
+                              )
                             }
                           }}
                         >
@@ -8068,17 +10638,29 @@ export default function ToolPage({
                       <pre
                         style={{
                           maxHeight: "220px",
+
                           overflowY: "auto",
+
                           fontSize: "12px",
+
                           lineHeight: "1.5",
+
                           color: "var(--text)",
+
                           whiteSpace: "pre-wrap",
+
                           wordBreak: "break-all",
+
                           padding: "10px 12px",
+
                           background: "var(--surface)",
+
                           borderRadius: "8px",
+
                           border: "1px solid var(--border)",
+
                           fontFamily: "monospace",
+
                           margin: 0,
                         }}
                       >
@@ -8087,7 +10669,10 @@ export default function ToolPage({
                     </div>
                   )}
 
-                <div className="result-action-buttons" style={{ flexWrap: "wrap", gap: "8px" }}>
+                <div
+                  className="result-action-buttons"
+                  style={{ flexWrap: "wrap", gap: "8px" }}
+                >
                   <button
                     className="primary result-download-button"
                     onClick={() => handleDownload(result)}
@@ -8099,7 +10684,8 @@ export default function ToolPage({
                       </>
                     ) : (
                       <>
-                        <Download size={16} /> Download {result.name.endsWith(".pdf") ? "PDF" : "File"}
+                        <Download size={16} /> Download{" "}
+                        {result.name.endsWith(".pdf") ? "PDF" : "File"}
                       </>
                     )}
                   </button>
@@ -8113,21 +10699,37 @@ export default function ToolPage({
                       onClick={() => handleDownloadAsZip(result)}
                       style={{
                         display: "inline-flex",
+
                         alignItems: "center",
+
                         gap: "6px",
+
                         padding: "12px 16px",
+
                         borderRadius: "10px",
+
                         border: "1px solid var(--border)",
+
                         background: "var(--surface)",
+
                         color: "var(--text)",
+
                         fontSize: "13.5px",
+
                         fontWeight: 600,
+
                         cursor: "pointer",
+
                         transition: "all 0.2s ease",
                       }}
                     >
-                      <FileArchive size={16} style={{ color: "var(--accent)" }} />
-                      {isZipping ? "Packaging ZIP..." : "Download as ZIP (.zip)"}
+                      <FileArchive
+                        size={16}
+                        style={{ color: "var(--accent)" }}
+                      />
+                      {isZipping
+                        ? "Packaging ZIP..."
+                        : "Download as ZIP (.zip)"}
                     </button>
                   )}
 
@@ -8136,8 +10738,14 @@ export default function ToolPage({
                       type="button"
                       className="secondary result-preview-button"
                       onClick={() => {
-                        navigator.clipboard.writeText(result.extractedText || "")
-                        notify("Full document text copied to clipboard!", "success")
+                        navigator.clipboard.writeText(
+                          result.extractedText || "",
+                        )
+
+                        notify(
+                          "Full document text copied to clipboard!",
+                          "success",
+                        )
                       }}
                     >
                       <Copy size={16} /> Copy Text
@@ -8148,7 +10756,9 @@ export default function ToolPage({
                       className="secondary result-preview-button"
                       onClick={() => {
                         const u = URL.createObjectURL(result.blob)
+
                         window.open(u, "_blank")
+
                         setTimeout(() => URL.revokeObjectURL(u), 60000)
                       }}
                     >
@@ -8181,42 +10791,63 @@ export default function ToolPage({
               <div
                 style={{
                   display: "flex",
+
                   flexDirection: "column",
+
                   alignItems: "center",
+
                   width: "100%",
+
                   padding: "6px 0",
                 }}
               >
                 <div
                   style={{
                     width: "100%",
+
                     maxWidth: "320px",
+
                     display: "flex",
+
                     alignItems: "center",
+
                     justifyContent: "space-between",
+
                     marginBottom: "12px",
+
                     padding: "0 4px",
                   }}
                 >
                   <span
                     style={{
                       fontSize: "12px",
+
                       fontWeight: 700,
+
                       color: "var(--muted)",
+
                       display: "flex",
+
                       alignItems: "center",
+
                       gap: "6px",
                     }}
                   >
-                    <Smartphone size={14} style={{ color: "var(--accent)" }} /> Scanner Mobile Live Preview
+                    <Smartphone size={14} style={{ color: "var(--accent)" }} />{" "}
+                    Scanner Mobile Live Preview
                   </span>
                   <span
                     style={{
                       fontSize: "11px",
+
                       color: "var(--muted)",
+
                       background: "var(--surface)",
+
                       border: "1px solid var(--border)",
+
                       padding: "2px 8px",
+
                       borderRadius: "12px",
                     }}
                   >
@@ -8249,14 +10880,19 @@ export default function ToolPage({
           onClose={() => setShowPreviewModal(false)}
           onConfirm={async (modalResult) => {
             if (modalResult.orderedFiles) setFiles(modalResult.orderedFiles)
+
             if (modalResult.pageRanges) setExtra(modalResult.pageRanges)
+
             if (modalResult.rotations) {
               const degrees = Object.values(modalResult.rotations)
+
               if (degrees.length > 0) {
                 const dominant = degrees[0]
+
                 setOptionA(String(dominant))
               }
             }
+
             if (
               modalResult.orderedPages &&
               files[0] &&
@@ -8265,9 +10901,12 @@ export default function ToolPage({
               try {
                 const reordered = await reorderPDFPages(
                   files[0],
+
                   modalResult.orderedPages,
                 )
+
                 setFiles([reordered])
+
                 notify("Page arrangement applied to document.", "success")
               } catch {
                 // Keep file as is if reorder fails
@@ -8285,6 +10924,7 @@ export default function ToolPage({
           onClose={() => setShowQRStudio(false)}
           onApply={(newQrUrl) => {
             setQr(newQrUrl)
+
             notify("Customized QR code updated successfully!", "success")
           }}
         />

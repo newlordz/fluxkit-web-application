@@ -24,7 +24,9 @@ export default function TactilePadlock({
 
   return (
     <div
-      className={`tactile-padlock-container size-${size} ${unlocked ? "is-unlocked" : ""} ${className}`}
+      className={`tactile-padlock-container size-${size} ${
+        unlocked ? "is-unlocked" : ""
+      } ${className}`}
       style={{
         position: "relative",
         display: "inline-flex",
@@ -58,21 +60,73 @@ export default function TactilePadlock({
       >
         <defs>
           {/* Radiant Amber Glow Filter for Locked State */}
-          <filter id="radiantLockGlow" x="-60%" y="-60%" width="220%" height="220%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.2" floodColor="#D97706" floodOpacity="0.95" />
-            <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#F59E0B" floodOpacity="0.8" />
-            <feDropShadow dx="0" dy="2" stdDeviation="7" floodColor="#EA580C" floodOpacity="0.55" />
+          <filter
+            id="radiantLockGlow"
+            x="-60%"
+            y="-60%"
+            width="220%"
+            height="220%"
+          >
+            <feDropShadow
+              dx="0"
+              dy="0"
+              stdDeviation="1.2"
+              floodColor="#D97706"
+              floodOpacity="0.95"
+            />
+            <feDropShadow
+              dx="0"
+              dy="0"
+              stdDeviation="4"
+              floodColor="#F59E0B"
+              floodOpacity="0.8"
+            />
+            <feDropShadow
+              dx="0"
+              dy="2"
+              stdDeviation="7"
+              floodColor="#EA580C"
+              floodOpacity="0.55"
+            />
           </filter>
 
           {/* Radiant Emerald Glow Filter for Unlocked State */}
-          <filter id="radiantUnlockGlow" x="-60%" y="-60%" width="220%" height="220%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.2" floodColor="#059669" floodOpacity="0.95" />
-            <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#10B981" floodOpacity="0.8" />
-            <feDropShadow dx="0" dy="2" stdDeviation="7" floodColor="#047857" floodOpacity="0.55" />
+          <filter
+            id="radiantUnlockGlow"
+            x="-60%"
+            y="-60%"
+            width="220%"
+            height="220%"
+          >
+            <feDropShadow
+              dx="0"
+              dy="0"
+              stdDeviation="1.2"
+              floodColor="#059669"
+              floodOpacity="0.95"
+            />
+            <feDropShadow
+              dx="0"
+              dy="0"
+              stdDeviation="4"
+              floodColor="#10B981"
+              floodOpacity="0.8"
+            />
+            <feDropShadow
+              dx="0"
+              dy="2"
+              stdDeviation="7"
+              floodColor="#047857"
+              floodOpacity="0.55"
+            />
           </filter>
         </defs>
 
-        <g filter={unlocked ? "url(#radiantUnlockGlow)" : "url(#radiantLockGlow)"}>
+        <g
+          filter={
+            unlocked ? "url(#radiantUnlockGlow)" : "url(#radiantLockGlow)"
+          }
+        >
           {/* Padlock Shackle */}
           <path
             className="tactile-padlock-shackle"

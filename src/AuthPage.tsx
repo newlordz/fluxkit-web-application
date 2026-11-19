@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react"
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,8 +16,11 @@ import {
   Sun,
   Zap,
 } from "lucide-react"
+
 import { brand } from "./config"
+
 import MasterfileLogo from "./MasterfileLogo"
+
 import {
   authConnected,
   isConnected,
@@ -26,22 +30,32 @@ import {
   signOut,
   type UserAccount,
 } from "./authService"
+
 import { useNotify } from "./Notifications"
+
 import GoogleAuth from "./GoogleAuth"
 
 export type AuthPageMode = "sign-in" | "sign-up" | "reset-password"
+
 type Field = "name" | "email" | "password" | "confirm"
+
 type Values = Record<Field, string>
 
 function AuthFormField({
   name,
+
   label,
+
   error,
+
   children,
 }: {
   name: string
+
   label: string
+
   error?: string
+
   children: ReactNode
 }) {
   return (
@@ -59,18 +73,27 @@ function AuthFormField({
 
 function PasswordInput({
   id,
+
   value,
+
   onChange,
+
   error,
+
   newPassword,
 }: {
   id: string
+
   value: string
+
   onChange: (value: string) => void
+
   error?: string
+
   newPassword: boolean
 }) {
   const [visible, setVisible] = useState(false)
+
   return (
     <div className="auth-password">
       <input
@@ -102,33 +125,52 @@ function PasswordInput({
 
 export default function AuthPage({
   mode,
+
   theme,
+
   toggleTheme,
+
   navigate,
+
   currentUser,
+
   onAuthSuccess,
 }: {
   mode: AuthPageMode
+
   theme: string
+
   toggleTheme: () => void
+
   navigate: (id: string) => void
+
   currentUser?: UserAccount | null
+
   onAuthSuccess?: (user: UserAccount) => void
 }) {
   const [values, setValues] = useState<Values>({
     name: "",
+
     email: "",
+
     password: "",
+
     confirm: "",
   })
+
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
+
   const [feedback, setFeedback] = useState("")
+
   const [status, setStatus] =
     useState<"idle" | "loading" | "success" | "failed">("idle")
+
   const notify = useNotify()
 
   const registration = mode === "sign-up"
+
   const reset = mode === "reset-password"
+
   const title = reset
     ? "A fresh start."
     : registration
@@ -137,40 +179,59 @@ export default function AuthPage({
 
   const update = (field: Field, value: string) => {
     setValues((v) => ({ ...v, [field]: value }))
+
     setErrors((e) => ({ ...e, [field]: undefined }))
+
     setFeedback("")
+
     setStatus("idle")
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+
     const next: Partial<Record<Field, string>> = {}
+
     if (registration && !values.name.trim()) next.name = "Enter your name."
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()))
       next.email = "Enter a valid email address."
+
     if (!reset && !values.password) next.password = "Enter your password."
+
     if (registration && values.password.length < 12)
       next.password = "Use at least 12 characters for your password."
+
     if (registration && values.confirm !== values.password)
       next.confirm = "Your passwords don’t match."
+
     setErrors(next)
+
     if (Object.keys(next).length) {
       document.getElementById(Object.keys(next)[0])?.focus()
+
       return
     }
+
     setStatus("loading")
+
     setFeedback("")
+
     try {
       const result = await (reset
         ? requestPasswordReset(values.email.trim())
         : registration
           ? signUp({
               name: values.name.trim(),
+
               email: values.email.trim(),
+
               password: values.password,
             })
           : signIn({ email: values.email.trim(), password: values.password }))
+
       setStatus("success")
+
       const msg =
         result?.message ||
         (reset
@@ -178,13 +239,18 @@ export default function AuthPage({
           : registration
             ? "Account created successfully."
             : "Successfully signed in.")
+
       setFeedback(msg)
+
       setValues((v) => ({ ...v, password: "", confirm: "" }))
+
       notify(msg, "success")
+
       if (!reset && result) {
         if (onAuthSuccess) {
           onAuthSuccess(result as UserAccount)
         }
+
         if ((result as UserAccount).role === "admin") {
           navigate("admin")
         } else {
@@ -193,6 +259,7 @@ export default function AuthPage({
       }
     } catch (error) {
       setStatus("failed")
+
       setFeedback(
         error instanceof Error
           ? error.message
@@ -205,10 +272,13 @@ export default function AuthPage({
     if (onAuthSuccess) {
       onAuthSuccess(user)
     }
+
     notify(
       `Welcome, ${user.name}! Your account has been created with Google.`,
+
       "success",
     )
+
     if (user.role === "admin") {
       navigate("admin")
     } else {
@@ -219,8 +289,17 @@ export default function AuthPage({
   return (
     <div className="auth-layout page-enter">
       <aside className="auth-story">
-        <a className="brand auth-brand" href="#overview" style={{ textDecoration: "none" }}>
-          <MasterfileLogo variant="full" size="xl" height={48} theme={theme === "light" ? "light" : "dark"} />
+        <a
+          className="brand auth-brand"
+          href="#overview"
+          style={{ textDecoration: "none" }}
+        >
+          <MasterfileLogo
+            variant="full"
+            size="xl"
+            height={48}
+            theme={theme === "light" ? "light" : "dark"}
+          />
         </a>
         <div className="auth-story-content">
           <div className="eyebrow">
@@ -229,9 +308,7 @@ export default function AuthPage({
           <h1>
             One workspace. A world of <span>possibility.</span>
           </h1>
-          <p>
-            Your files, words, and ideas. Beautifully brought together.
-          </p>
+          <p>Your files, words, and ideas. Beautifully brought together.</p>
           <div className="auth-illustration" aria-hidden="true">
             <div className="auth-orbit" />
             <div className="auth-orbit inner" />
@@ -314,6 +391,7 @@ export default function AuthPage({
                   className="text-button"
                   onClick={() => {
                     signOut()
+
                     notify("Signed out of Google account.")
                   }}
                 >

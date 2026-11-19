@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react"
+
 import {
   Download,
   Share2,
@@ -13,6 +14,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react"
+
 import {
   getShowcase,
   type ImageShowcaseData,
@@ -21,40 +23,58 @@ import {
 
 interface ImageShowcaseViewerProps {
   theme?: string
+
   toggleTheme?: () => void
+
   onNavigate?: (page: string) => void
 }
 
 export default function ImageShowcaseViewer({
   theme = "light",
+
   toggleTheme,
+
   onNavigate,
 }: ImageShowcaseViewerProps) {
   const [loading, setLoading] = useState(true)
+
   const [data, setData] = useState<ImageShowcaseData | null>(null)
+
   const [error, setError] = useState<string | null>(null)
+
   const [copied, setCopied] = useState(false)
+
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
 
   useEffect(() => {
     // Parse URL params from hash: #showcase?id=xyz&p=abc
+
     const hash = window.location.hash || ""
+
     const queryPart = hash.includes("?") ? hash.split("?")[1] : ""
+
     const params = new URLSearchParams(queryPart)
+
     const id = params.get("id") || ""
+
     const payload = params.get("p") || undefined
 
     if (!id && !payload) {
       setError("No showcase ID provided in the link.")
+
       setLoading(false)
+
       return
     }
 
     getShowcase(id, payload)
+
       .then((res) => {
         if (res) {
           setData(res)
+
           // Update page document title
+
           if (res.title) {
             document.title = `${res.title} — Masterfilepro Showcase`
           }
@@ -64,9 +84,11 @@ export default function ImageShowcaseViewer({
           )
         }
       })
+
       .catch((err) => {
         setError(err.message || "Failed to load image showcase.")
       })
+
       .finally(() => {
         setLoading(false)
       })
@@ -74,33 +96,49 @@ export default function ImageShowcaseViewer({
 
   const handleDownload = () => {
     if (!data?.imageDataUrl) return
+
     const a = document.createElement("a")
+
     a.href = data.imageDataUrl
+
     const safeTitle = (data.title || "showcase-photo")
+
       .toLowerCase()
+
       .replace(/[^a-z0-9_-]/g, "-")
+
     a.download = `${safeTitle}.jpg`
+
     document.body.appendChild(a)
+
     a.click()
+
     document.body.removeChild(a)
   }
 
   const handleShare = async () => {
     const url = window.location.href
+
     if (navigator.share) {
       try {
         await navigator.share({
           title: data?.title || "Image Showcase",
+
           text: data?.description || "Check out this image on Masterfilepro",
+
           url,
         })
+
         return
       } catch {
         // Fallback to clipboard
       }
     }
+
     navigator.clipboard.writeText(url)
+
     setCopied(true)
+
     setTimeout(() => setCopied(false), 2500)
   }
 
@@ -124,7 +162,9 @@ export default function ImageShowcaseViewer({
           {error || "The image link may have expired or is unavailable."}
         </p>
         <button
-          onClick={() => (onNavigate ? onNavigate("qr") : (window.location.hash = "qr"))}
+          onClick={() =>
+            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
+          }
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-all active:scale-[0.98]"
         >
           <QrCode size={16} /> Create an Image QR Code
@@ -134,21 +174,30 @@ export default function ImageShowcaseViewer({
   }
 
   // --------------------------------------------------------------------------
+
   // Theme-Specific Render Configurations (Anti-Slop, Calibrated Taste)
+
   // --------------------------------------------------------------------------
+
   const getThemeWrapperClass = (t: ShowcaseTheme) => {
     switch (t) {
       case "polaroid":
         return "bg-[#eae6df] text-slate-900"
+
       case "obsidian":
         return "bg-slate-950 text-slate-100"
+
       case "editorial":
         return "bg-white text-neutral-900 border-neutral-200"
+
       case "vibrant":
         return "bg-gradient-to-br from-orange-950 via-slate-950 to-pink-950 text-white"
+
       case "billboard":
         return "bg-black text-white"
+
       case "glassmorphism":
+
       default:
         return "bg-gradient-to-b from-slate-900 via-slate-950 to-indigo-950 text-white"
     }
@@ -158,15 +207,21 @@ export default function ImageShowcaseViewer({
     switch (t) {
       case "polaroid":
         return "bg-white p-3.5 pb-8 rounded-sm shadow-[0_16px_36px_rgba(0,0,0,0.18)] rotate-[-1deg] border border-neutral-200"
+
       case "obsidian":
         return "rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6)] bg-slate-900"
+
       case "editorial":
         return "rounded-none border border-neutral-300 p-2 bg-neutral-50 shadow-sm"
+
       case "vibrant":
         return "rounded-2xl overflow-hidden ring-2 ring-orange-500/30 shadow-[0_20px_50px_rgba(249,115,22,0.2)] bg-slate-900"
+
       case "billboard":
         return "rounded-3xl overflow-hidden shadow-2xl bg-neutral-900"
+
       case "glassmorphism":
+
       default:
         return "rounded-2xl overflow-hidden backdrop-blur-xl bg-white/[0.04] ring-1 ring-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
     }
@@ -181,7 +236,9 @@ export default function ImageShowcaseViewer({
       {/* Top Header Bar */}
       <header className="max-w-md mx-auto w-full flex items-center justify-between pb-4">
         <button
-          onClick={() => (onNavigate ? onNavigate("qr") : (window.location.hash = "qr"))}
+          onClick={() =>
+            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
+          }
           className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-md transition-all active:scale-[0.98]"
         >
           <ArrowLeft size={13} /> Masterfilepro QR
@@ -214,8 +271,13 @@ export default function ImageShowcaseViewer({
       {/* Main Showcase Presentation Body */}
       <main className="max-w-md mx-auto w-full flex-1 flex flex-col justify-center items-center py-2">
         {/* The Framed Image Element */}
-        <div className={`w-full max-w-[380px] transition-all duration-300 ${getImageContainerClass(data.theme)}`}>
-          <div className="relative group cursor-pointer overflow-hidden rounded-lg" onClick={() => setIsLightboxOpen(true)}>
+        <div
+          className={`w-full max-w-[380px] transition-all duration-300 ${getImageContainerClass(data.theme)}`}
+        >
+          <div
+            className="relative group cursor-pointer overflow-hidden rounded-lg"
+            onClick={() => setIsLightboxOpen(true)}
+          >
             <img
               src={data.imageDataUrl}
               alt={data.title || "Showcase Photo"}
@@ -294,7 +356,9 @@ export default function ImageShowcaseViewer({
           <span>Designed with Masterfilepro QR Studio</span>
         </div>
         <button
-          onClick={() => (onNavigate ? onNavigate("qr") : (window.location.hash = "qr"))}
+          onClick={() =>
+            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
+          }
           className="underline hover:opacity-100 transition-opacity"
         >
           Create your own Image QR Code for free
@@ -325,6 +389,7 @@ export default function ImageShowcaseViewer({
               <button
                 onClick={(e) => {
                   e.stopPropagation()
+
                   handleDownload()
                 }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-semibold shadow-lg hover:bg-slate-100 transition-all active:scale-[0.98]"
