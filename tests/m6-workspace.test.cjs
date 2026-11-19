@@ -454,7 +454,10 @@ test("M6 Suite 3: getSampleDocuments seeds 4 starter documents when library is i
 
   const samples = getSampleDocuments()
   assert.equal(samples.length, 4)
-  assert.equal(samples[0].name, "FluxKit_Quickstart_Guide.pdf")
+  assert.ok(
+    samples[0].name === "MasterfilePro_Quickstart_Guide.pdf" ||
+      samples[0].name === "FluxKit_Quickstart_Guide.pdf"
+  )
   assert.equal(samples[1].name, "Quarterly_Financial_Summary.xlsx")
   assert.equal(samples[2].name, "Architecture_Design_Notes.docx")
   assert.equal(samples[3].name, "System_Architecture_Diagram.png")

@@ -622,7 +622,7 @@ export default function App() {
             M
           </span>
           <span>
-            Masterfilepro Workspace
+            Masterfile Pro Workspace
             <small>
               {isAdmin
                 ? currentUser?.role === "sub-admin"
@@ -761,13 +761,16 @@ export default function App() {
             <span>
               {isAdmin ||
               currentUser?.name?.includes("FluxKit") ||
-              currentUser?.name?.includes("Masterfilepro")
-                ? currentUser?.name && !currentUser.name.includes("FluxKit")
+              currentUser?.name?.includes("Masterfilepro") ||
+              currentUser?.name?.includes("Masterfile Pro")
+                ? currentUser?.name &&
+                  !currentUser.name.includes("FluxKit") &&
+                  !currentUser.name.includes("Masterfilepro")
                   ? currentUser.name
-                  : "Masterfilepro Administrator"
+                  : "Masterfile Pro Administrator"
                 : currentUser
                   ? currentUser.name
-                  : "Masterfilepro User"}
+                  : "Masterfile Pro User"}
               <small>
                 {isAdmin
                   ? currentUser?.role === "sub-admin"
@@ -967,7 +970,7 @@ export default function App() {
                           ? currentUser.name
                           : profile
                             ? `${profile} (Local Profile)`
-                            : "Masterfilepro User"}
+                            : "Masterfile Pro User"}
                       </strong>
                       <p className="popover-email">
                         {currentUser
@@ -986,7 +989,7 @@ export default function App() {
                           ? "Administrator Account"
                           : currentUser.provider === "google"
                             ? "Google Account Active"
-                            : "Masterfilepro Account Active"}
+                            : "Masterfile Pro Account Active"}
                       </span>
                     </div>
                   ) : (
@@ -1366,7 +1369,7 @@ export default function App() {
                               type="text"
                               value={adminEditName}
                               onChange={(e) => setAdminEditName(e.target.value)}
-                              placeholder="e.g. Masterfilepro Administrator"
+                              placeholder="e.g. Masterfile Pro Administrator"
                               style={{
                                 width: "100%",
                                 padding: "8px 10px",
@@ -1576,7 +1579,7 @@ export default function App() {
                         </span>
                       </div>
                       <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 14px 0", lineHeight: 1.5 }}>
-                        Masterfilepro dynamically processes PDF compressions and conversions through a multi-engine priority pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔ <strong>Priority #2 iLovePDF</strong> ➔ <strong>Priority #3 Local WebAssembly Engine</strong>. If monthly credits run out or an API error occurs, requests fail over automatically with zero user interruption.
+                        Masterfile Pro dynamically processes PDF compressions and conversions through a multi-engine priority pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔ <strong>Priority #2 iLovePDF</strong> ➔ <strong>Priority #3 Local WebAssembly Engine</strong>. If monthly credits run out or an API error occurs, requests fail over automatically with zero user interruption.
                       </p>
                       <button
                         type="button"

@@ -818,7 +818,7 @@ export async function convertCSVToPDF(
     let y = pageHeight - margin
 
     // Title / header
-    page.drawText(`FluxKit CSV Document · ${baseName}`, {
+    page.drawText(`Masterfile Pro CSV Document · ${baseName}`, {
       x: margin,
       y,
       size: 14,
@@ -1049,7 +1049,7 @@ export function convertBatchToPowerShell(batText: string): string {
   const psLines: string[] = [
     `# =====================================================================`,
     `# Converted from Windows Batch (.bat) to PowerShell (.ps1)`,
-    `# Transpiled with FluxKit Batch Script Studio`,
+    `# Transpiled with Masterfile Pro Batch Script Studio`,
     `# =====================================================================`,
     `$ErrorActionPreference = "Stop"\n`,
   ]
@@ -1181,7 +1181,7 @@ export function convertBatchToBash(batText: string): string {
     `#!/usr/bin/env bash`,
     `# =====================================================================`,
     `# Converted from Windows Batch (.bat) to POSIX Bash (.sh)`,
-    `# Transpiled with FluxKit Batch Script Studio`,
+    `# Transpiled with Masterfile Pro Batch Script Studio`,
     `# =====================================================================`,
     `set -euo pipefail\n`,
   ]
@@ -1307,7 +1307,7 @@ export function convertBatchToPython(batText: string): string {
     `#!/usr/bin/env python3`,
     `# =====================================================================`,
     `# Converted from Windows Batch (.bat) to Python (.py)`,
-    `# Transpiled with FluxKit Batch Script Studio`,
+    `# Transpiled with Masterfile Pro Batch Script Studio`,
     `# =====================================================================`,
     `import os`,
     `import sys`,
@@ -1394,11 +1394,11 @@ export function generateBatchTemplate(
     case "backup":
       return [
         `@echo off`,
-        `:: FluxKit Automated File Backup Script`,
+        `:: Masterfile Pro Automated File Backup Script`,
         `setlocal enabledelayedexpansion`,
         ``,
         `set "SOURCE_DIR=%USERPROFILE%\\Documents"`,
-        `set "BACKUP_DIR=D:\\Backups\\FluxKit_%DATE:~10,4%%DATE:~4,2%%DATE:~7,2%"`,
+        `set "BACKUP_DIR=D:\\Backups\\MasterfilePro_%DATE:~10,4%%DATE:~4,2%%DATE:~7,2%"`,
         ``,
         `echo ========================================================`,
         `echo Starting Directory Backup to %BACKUP_DIR%`,
@@ -1418,7 +1418,7 @@ export function generateBatchTemplate(
     case "cleanup":
       return [
         `@echo off`,
-        `:: FluxKit System Temp & Cache Cleanup Script`,
+        `:: Masterfile Pro System Temp & Cache Cleanup Script`,
         `echo Cleaning temporary files and caches...`,
         ``,
         `del /f /s /q "%TEMP%\\*.*" 2>nul`,
@@ -1432,7 +1432,7 @@ export function generateBatchTemplate(
     case "launcher":
       return [
         `@echo off`,
-        `:: FluxKit Workspace Application Launcher`,
+        `:: Masterfile Pro Workspace Application Launcher`,
         `title Workspace Launcher`,
         `echo Initializing workspace environment...`,
         ``,
@@ -1452,7 +1452,7 @@ export function generateBatchTemplate(
     case "system_info":
       return [
         `@echo off`,
-        `:: FluxKit System Diagnostics & Environment Info`,
+        `:: Masterfile Pro System Diagnostics & Environment Info`,
         `echo ========================================================`,
         `echo SYSTEM DIAGNOSTIC REPORT`,
         `echo ========================================================`,

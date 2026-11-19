@@ -1273,7 +1273,7 @@ export async function signPDF(
       font: fontItalic,
       color: rgb(0.1, 0.2, 0.5),
     })
-    page.drawText(`Date: ${signDate} | Verified in FluxKit`, {
+    page.drawText(`Date: ${signDate} | Verified in Masterfile Pro`, {
       x: x + 10,
       y: y + 8,
       size: 7.5,
@@ -1330,7 +1330,7 @@ export async function securePDF(
         height: 22,
         color: rgb(0.12, 0.15, 0.22),
       })
-      firstPage.drawText("SECURED DOCUMENT - FLUXKIT DOCUMENT PROTECTION", {
+      firstPage.drawText("SECURED DOCUMENT - MASTERFILE PRO PROTECTION", {
         x: 20,
         y: height - 15,
         size: 8,
@@ -3630,7 +3630,7 @@ export async function wordToPDF(
       thickness: 0.5,
       color: rgb(0.85, 0.88, 0.92),
     })
-    const footerText = `Page ${i + 1} of ${totalPages} | FluxKit Document`
+    const footerText = `Page ${i + 1} of ${totalPages} | Masterfile Pro Document`
     p.drawText(footerText, {
       x: margin,
       y: margin,
@@ -4197,7 +4197,7 @@ export async function pptToPDF(
           curY -= 6
         }
 
-        page.drawText(`Slide ${i + 1} of ${totalSlides} | FluxKit Presentation`, {
+        page.drawText(`Slide ${i + 1} of ${totalSlides} | Masterfile Pro Presentation`, {
           x: 45,
           y: 35,
           size: 9,
@@ -4598,7 +4598,7 @@ export async function excelToPDF(
   for (let i = 0; i < totalPages; i++) {
     const p = doc.getPage(i)
     p.drawText(
-      `Page ${i + 1} of ${totalPages} | FluxKit Spreadsheet Table (Total ${rows.length} rows)`,
+      `Page ${i + 1} of ${totalPages} | Masterfile Pro Spreadsheet Table (Total ${rows.length} rows)`,
       {
         x: margin,
         y: margin - 15,
@@ -10052,7 +10052,7 @@ export interface EmailOptions {
   purpose?: EmailPurpose // default "follow-up"
   tone?: EmailTone // default "professional"
   recipient?: string // default "Team" / "Colleague"
-  sender?: string // default "Alex Chen" / "FluxKit User"
+  sender?: string // default "Alex Chen" / "Masterfile Pro User"
   callToAction?: string
   subjectTopic?: string
 }
@@ -11179,14 +11179,14 @@ export function getSampleDocuments(): SessionDocument[] {
   return [
     {
       id: "sample-doc-1",
-      name: "FluxKit_Quickstart_Guide.pdf",
+      name: "MasterfilePro_Quickstart_Guide.pdf",
       size: "245.8 KB",
       rawSize: 251658,
       time: "10:00 AM",
       category: "pdf",
       toolSource: "Workspace Guide",
       contentSnippet:
-        "Welcome to FluxKit Workspace. All 37 creative and conversion tools run completely client-side in your browser.",
+        "Welcome to Masterfile Pro Workspace. All 37 creative and conversion tools run completely client-side in your browser.",
     },
     {
       id: "sample-doc-2",
@@ -11489,7 +11489,7 @@ export interface MeetingState {
 }
 
 export function createMeetingState(
-  roomKey = "fluxkit-room-844",
+  roomKey = "masterfile-room-844",
   userName = "You (Host)",
 ): MeetingState {
   return {

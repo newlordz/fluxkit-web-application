@@ -5058,7 +5058,7 @@ export default function AdminPanel({
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)", maxWidth: "680px" }}>
                 Update your administrator email, name, or password at any time. All configuration
-                changes are backed by the server disk database (<code>data/fluxkit-db.json</code>)
+                changes are backed by the secure server disk database
                 and mirrored to browser IndexedDB for offline resilience.
               </p>
             </div>
@@ -5170,7 +5170,7 @@ export default function AdminPanel({
                   Client IndexedDB Engine
                 </span>
                 <strong style={{ fontSize: "13px", color: "#10b981", marginTop: "4px", display: "block" }}>
-                  IndexedDB Active (fluxkit_admin_db)
+                  IndexedDB Active (masterfile_admin_db)
                 </strong>
               </div>
             </div>

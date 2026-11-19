@@ -696,7 +696,7 @@ export default function ToolPage({
   const [cameraOff, setCameraOff] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [meetingTimer, setMeetingTimer] = useState(0)
-  const [meetingRoomKey, setMeetingRoomKey] = useState("fluxkit-room-844")
+  const [meetingRoomKey, setMeetingRoomKey] = useState("masterfile-room-844")
   const [sidebarTab, setSidebarTab] = useState<"chat" | "participants">("chat")
   const [chatMessages, setChatMessages] = useState<Array<{
     id: string
@@ -1806,7 +1806,7 @@ export default function ToolPage({
           const tType = (optionB as "backup" | "cleanup" | "launcher" | "system_info") || "backup"
           const templateCode = generateBatchTemplate(tType)
           const blob = new Blob([templateCode], { type: "application/x-bat" })
-          const outName = `fluxkit-${tType}.bat`
+          const outName = `masterfilepro-${tType}.bat`
           setResult({ name: outName, blob, extractedText: templateCode })
           onComplete(outName)
           notify.success(`Batch automation script created (${tType}).`)
@@ -1852,7 +1852,7 @@ export default function ToolPage({
           const analysis = analyzeBatchScript(batText)
           const report = [
             `=======================================================`,
-            `FLUXKIT BATCH SCRIPT AUDIT REPORT`,
+            `MASTERFILE PRO BATCH SCRIPT AUDIT REPORT`,
             `=======================================================`,
             `Total Lines    : ${analysis.lineCount}`,
             `Total Commands : ${analysis.commandCount}`,
@@ -2185,7 +2185,7 @@ export default function ToolPage({
       blob = new Blob(
         [
           doc.contentSnippet ||
-            `FluxKit Saved Document: ${doc.name}\nSource: ${doc.toolSource}\nCategory: ${doc.category}`,
+            `Masterfile Pro Saved Document: ${doc.name}\nSource: ${doc.toolSource}\nCategory: ${doc.category}`,
         ],
         { type: "application/octet-stream" },
       )
@@ -2588,7 +2588,7 @@ export default function ToolPage({
                 onClick={() => {
                   if (typeof navigator !== "undefined" && navigator.clipboard) {
                     navigator.clipboard.writeText(
-                      `https://fluxkit.app/#meetings?room=${meetingRoomKey}`,
+                      `https://masterfilepro.com/#meetings?room=${meetingRoomKey}`,
                     )
                   }
                   notify("Meeting link copied to clipboard!", "success")
@@ -2917,7 +2917,7 @@ export default function ToolPage({
                       const dataUrl = canvas.toDataURL("image/png")
                       const a = document.createElement("a")
                       a.href = dataUrl
-                      a.download = `fluxkit-whiteboard-${Date.now()}.png`
+                      a.download = `masterfilepro-whiteboard-${Date.now()}.png`
                       a.click()
                       saveSessionDocument({
                         name: a.download,
@@ -2960,7 +2960,7 @@ export default function ToolPage({
                       const dataUrl = offscreen.toDataURL("image/jpeg", 0.95)
                       const a = document.createElement("a")
                       a.href = dataUrl
-                      a.download = `fluxkit-whiteboard-${Date.now()}.jpg`
+                      a.download = `masterfilepro-whiteboard-${Date.now()}.jpg`
                       a.click()
                       saveSessionDocument({
                         name: a.download,
@@ -6415,7 +6415,7 @@ export default function ToolPage({
                           setValue(
                             [
                               `ID,Product Name,Category,Unit Price,In Stock,Status`,
-                              `101,FluxKit Enterprise Hub,Software,499.00,85,Active`,
+                              `101,Masterfile Pro Enterprise Hub,Software,499.00,85,Active`,
                               `102,Industrial Cable Harness,Hardware,45.50,320,Shipped`,
                               `103,Optic Data Gateway,Networking,1250.00,12,In Stock`,
                               `104,Precision Sensor Pack,Sensors,89.90,140,Active`,
@@ -6486,7 +6486,7 @@ export default function ToolPage({
                               `@echo off`,
                               `:: Automated Deployment & Backup Script`,
                               `setlocal enabledelayedexpansion`,
-                              `set "TARGET_DIR=C:\\Deployments\\FluxKit"`,
+                              `set "TARGET_DIR=C:\\Deployments\\MasterfilePro"`,
                               `echo Initializing deployment sequence...`,
                               `if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"`,
                               `copy /y "build\\*.*" "%TARGET_DIR%"`,
@@ -8280,7 +8280,7 @@ export default function ToolPage({
       {/* QR Code Full Customization Studio Modal */}
       {showQRStudio && (
         <QRCodeStudioModal
-          value={rawQrPayload || value.trim() || "https://fluxkit.app"}
+          value={rawQrPayload || value.trim() || "https://masterfilepro.com"}
           isOpen={showQRStudio}
           onClose={() => setShowQRStudio(false)}
           onApply={(newQrUrl) => {
