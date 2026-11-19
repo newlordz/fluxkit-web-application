@@ -396,3 +396,18 @@ body.light-mode .mlm-file-status {
   border-color: #99f6e4;
   color: #06204D;
 }
+
+@media (max-width: 480px) {
+  .mlm-card {
+    padding: 24px 18px 20px;
+    border-radius: 16px;
+    max-width: 95vw;
+  }
+  .mlm-visual-stage {
+    transform: scale(0.85);
+    margin-bottom: 12px;
+  }
+  .mlm-title {
+    font-size: 16px;
+  }
+}

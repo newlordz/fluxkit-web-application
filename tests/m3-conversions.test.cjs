@@ -51,7 +51,17 @@ function loadServices() {
   const mod = { exports: {} }
   compiledWrapper(
     mod.exports,
-    (id) => (id === "./jobTypes" ? {} : require(id)),
+    (id) => {
+      if (id === "./jobTypes") return {}
+      if (id === "./apiPoolService") {
+        try {
+          return require(path.resolve(__dirname, "../src/apiPoolService"))
+        } catch {
+          return {}
+        }
+      }
+      return require(id)
+    },
     mod,
     filePath,
     path.dirname(filePath),
@@ -485,6 +495,45 @@ test("M3 wordToPDF: rejects empty document content or missing file", async () =>
   )
 })
 
+test("M3 wordToPDF: preserves table layout and multi-column alignment from DOCX", async () => {
+  const { wordToPDF, buildZipArchive } = loadServices()
+  const docXml = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+    <w:body>
+      <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>GHANA PORTS AND HARBOURS</w:t></w:r></w:p>
+      <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Takoradi Port</w:t></w:r></w:p>
+      <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Primary pay statement</w:t></w:r></w:p>
+      <w:tbl>
+        <w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="5000"/></w:tblGrid>
+        <w:tr>
+          <w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Employee #</w:t></w:r></w:p></w:tc>
+          <w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>803680</w:t></w:r></w:p></w:tc>
+        </w:tr>
+        <w:tr>
+          <w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Payment date</w:t></w:r></w:p></w:tc>
+          <w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>8/31/2026</w:t></w:r></w:p></w:tc>
+        </w:tr>
+      </w:tbl>
+    </w:body>
+  </w:document>`
+
+  const zipBytes = buildZipArchive([
+    {
+      name: "word/document.xml",
+      data: new TextEncoder().encode(docXml),
+    },
+  ])
+
+  const docxFile = new File([zipBytes], "Pay_Statement.docx", {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  })
+
+  const res = await wordToPDF(docxFile)
+  assert.ok(res && res.blob)
+  assert.match(res.name, /\.pdf$/)
+  const doc = await PDFDocument.load(await res.blob.arrayBuffer())
+  assert.ok(doc.getPageCount() >= 1)
+})
+
 // ============================================================================
 // SUITE 5: ppt-to-pdf Conversion
 // ============================================================================
@@ -537,6 +586,44 @@ test("M3 pptToPDF: supports multi-slide per page handout layouts (1, 2, 4 per pa
   const res4 = await pptToPDF(slides, { slidesPerPage: 4 })
   const doc4 = await PDFDocument.load(await res4.blob.arrayBuffer())
   assert.equal(doc4.getPageCount(), 1, "4 slides @ 4 per page must yield 1 page")
+})
+
+test("M3 pptToPDF: converts PPTX with embedded pictures and full-bleed image slides into PDF", async () => {
+  const { pptToPDF } = loadServices()
+  const pptxgen = require("pptxgenjs")
+  const pres = new pptxgen()
+
+  // Slide 1: Picture slide
+  const s1 = pres.addSlide()
+  s1.addImage({
+    data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
+    x: 0,
+    y: 0,
+    w: "100%",
+    h: "100%",
+  })
+
+  // Slide 2: Text + Picture slide
+  const s2 = pres.addSlide()
+  s2.addText("Quarterly Report", { x: 0.5, y: 0.5 })
+  s2.addText([{ text: "Point A", options: { bullet: true } }], { x: 0.5, y: 1.5, w: 5, h: 3 })
+  s2.addImage({
+    data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
+    x: 6,
+    y: 1.5,
+    w: 3,
+    h: 3,
+  })
+
+  const pptxBytes = await pres.write({ outputType: "uint8array" })
+
+  const res = await pptToPDF(pptxBytes)
+  assert.ok(res && res.blob)
+  assert.match(res.name, /\.pdf$/)
+
+  const doc = await PDFDocument.load(await res.blob.arrayBuffer())
+  assert.equal(doc.getPageCount(), 2)
+  assert.ok(res.blob.size > 1000, "PDF must include embedded image data")
 })
 
 test("M3 pptToPDF: rejects empty presentation or missing input", async () => {

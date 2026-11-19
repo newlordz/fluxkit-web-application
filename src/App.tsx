@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import {
   Activity,
   AudioLines,
@@ -77,6 +77,8 @@ import ProActivationModal from "./ProActivationModal"
 import ImageShowcaseViewer from "./ImageShowcaseViewer"
 import VisitorPassStudio from "./VisitorPassStudio"
 import { GoogleIcon } from "./GoogleAuth"
+import { syncCloudApisWithServer } from "./apiPoolService"
+import { syncGatewaysWithServer } from "./paymentIntegrationService"
 
 function stored(key: string, fallback: string) {
   try {
@@ -146,6 +148,8 @@ function ToolCard({
               padding: "2px 6px",
               borderRadius: "4px",
               fontWeight: 700,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
               background: isToolPro(tool.id)
                 ? "rgba(0,201,183,0.15)"
                 : "rgba(16,185,129,0.15)",
@@ -153,7 +157,7 @@ function ToolCard({
             }}
           >
             {isToolPro(tool.id)
-              ? `PRO · ${getFormattedToolPrice(tool.id)}`
+              ? `PRO · ${getFormattedToolPrice(tool.id, undefined, "month")}`
               : "FREE"}
           </span>
           <span
@@ -231,6 +235,8 @@ export default function App() {
       setAdminEditName(cfg.name)
       setAdminEditEmail(cfg.email)
     })
+    syncCloudApisWithServer().catch(() => null)
+    syncGatewaysWithServer().catch(() => null)
   }, [])
 
   useEffect(() => {
@@ -250,6 +256,9 @@ export default function App() {
     })
   }, [])
   useEffect(() => {
+    if (typeof window !== "undefined" && "scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual"
+    }
     const change = () => {
       setPage(location.hash.slice(1) || "overview")
     }
@@ -334,17 +343,21 @@ export default function App() {
     return () => window.removeEventListener("keydown", shortcut)
   }, [])
   const pageScrollPositions = useRef<Map<string, number>>(new Map())
+  const isRestoringScroll = useRef(false)
 
-  // Continuously record scroll position of the active page
+  // Continuously record scroll position of the active page (unless currently restoring)
   useEffect(() => {
     if (typeof window === "undefined") return
     let ticking = false
     const handleScroll = () => {
+      if (isRestoringScroll.current) return
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          const currentY =
-            window.scrollY || document.documentElement.scrollTop || 0
-          pageScrollPositions.current.set(page, currentY)
+          if (!isRestoringScroll.current) {
+            const currentY =
+              window.scrollY || document.documentElement.scrollTop || 0
+            pageScrollPositions.current.set(page, currentY)
+          }
           ticking = false
         })
         ticking = true
@@ -359,15 +372,34 @@ export default function App() {
     if (typeof window === "undefined") return
     const isTool = tools.some((t) => t.id === page)
     if (isTool) {
+      isRestoringScroll.current = false
       window.scrollTo({ top: 0, behavior: "instant" })
     } else {
       const savedY = pageScrollPositions.current.get(page)
       if (typeof savedY === "number" && savedY > 0) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            window.scrollTo({ top: savedY, behavior: "instant" })
-          })
-        })
+        isRestoringScroll.current = true
+        let attempts = 0
+        const maxAttempts = 8
+        const restore = () => {
+          window.scrollTo({ top: savedY, behavior: "instant" })
+          const currentY =
+            window.scrollY || document.documentElement.scrollTop || 0
+          attempts++
+          if (
+            Math.abs(currentY - savedY) < 10 ||
+            document.documentElement.scrollHeight >= savedY + window.innerHeight ||
+            attempts >= maxAttempts
+          ) {
+            requestAnimationFrame(() => {
+              isRestoringScroll.current = false
+            })
+          } else {
+            requestAnimationFrame(restore)
+          }
+        }
+        requestAnimationFrame(restore)
+      } else {
+        isRestoringScroll.current = false
       }
     }
   }, [page])
@@ -393,6 +425,10 @@ export default function App() {
   }
   const customPage = getCustomPageBySlug(page)
   const selected = tools.find((t) => t.id === page)
+  const isPaywallActive =
+    (page === "audio-text" && !canUserAccessTool("audio-text", currentUser)) ||
+    (page === "visitor-pass" && !canUserAccessTool("visitor-pass", currentUser)) ||
+    Boolean(selected?.available && !canUserAccessTool(selected.id, currentUser))
   const heading =
     navItems.find((n) => n.id === page)?.name ||
     (page === "settings"
@@ -416,12 +452,16 @@ export default function App() {
           : page === "audio"
             ? "Audio tools"
             : undefined
-  const filtered = tools.filter(
-    (t) =>
-      (category
-        ? t.category === category
-        : filter === "All tools" || t.category === filter) &&
-      `${t.name} ${t.description}`.toLowerCase().includes(query.toLowerCase()),
+  const filtered = useMemo(
+    () =>
+      tools.filter(
+        (t) =>
+          (category
+            ? t.category === category
+            : filter === "All tools" || t.category === filter) &&
+          `${t.name} ${t.description}`.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [category, filter, query],
   )
   const activityContent = (
     <section className="panel activity-panel">
@@ -579,22 +619,10 @@ export default function App() {
                 : undefined
             }
           >
-            {isAdmin ||
-            currentUser?.name?.includes("FluxKit") ||
-            currentUser?.name?.includes("Masterfilepro")
-              ? "M"
-              : currentUser
-                ? currentUser.name.slice(0, 1).toUpperCase()
-                : "M"}
+            M
           </span>
           <span>
-            {isAdmin ||
-            currentUser?.name?.includes("FluxKit") ||
-            currentUser?.name?.includes("Masterfilepro")
-              ? "Masterfilepro Workspace"
-              : currentUser
-                ? `${currentUser.name.split(" ")[0]}'s workspace`
-                : "Masterfilepro Workspace"}
+            Masterfilepro Workspace
             <small>
               {isAdmin
                 ? currentUser?.role === "sub-admin"
@@ -937,7 +965,9 @@ export default function App() {
                       <strong>
                         {currentUser
                           ? currentUser.name
-                          : `${profile}'s workspace`}
+                          : profile
+                            ? `${profile} (Local Profile)`
+                            : "Masterfilepro User"}
                       </strong>
                       <p className="popover-email">
                         {currentUser
@@ -1026,7 +1056,11 @@ export default function App() {
             </div>
           </div>
         </header>
-        <main id="main-content" tabIndex={-1}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={isPaywallActive ? "paywall-active" : ""}
+        >
           {page === "overview" ? (
             <Overview navigate={navigate} activity={activity} />
           ) : ["all", "files", "qr-tools", "ai", "audio"].includes(page) ? (
@@ -1198,7 +1232,7 @@ export default function App() {
                     <h3>Guest Mode (Local Only)</h3>
                     <p>
                       Sign in with your email or Google account to access your workspace,
-                      sync your preferences, and manage administrator controls.
+                      save your preferences, and access premium tools.
                     </p>
                     <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
                       <button
@@ -1216,382 +1250,356 @@ export default function App() {
                         style={{ fontSize: "13px", padding: "8px 14px" }}
                         onClick={() => navigate("sign-in")}
                       >
-                        Sign in as Admin
+                        Sign in with Email
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Database-Backed Administrator Security & Credentials Card */}
-                <div
-                  className="settings-account-card"
-                  style={{
-                    marginTop: "20px",
-                    border: "1px solid rgba(168, 85, 247, 0.35)",
-                    background: "rgba(168, 85, 247, 0.04)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                    }}
-                  >
-                    <div>
-                      <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
-                        <Database size={17} color="#00C9B7" />
-                        <span>Administrator Security & Database</span>
-                      </h3>
-                      <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0 0" }}>
-                        Modify root administrator email, name, or password at any time. All updates are automatically saved to the database.
-                      </p>
-                    </div>
+                {/* Database-Backed Administrator Security & Credentials Card (Admins Only) */}
+                {isAdmin && (
+                  <>
                     <div
+                      className="settings-account-card"
                       style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "4px 10px",
-                        borderRadius: "12px",
-                        fontSize: "11px",
-                        fontWeight: 600,
-                        background: "rgba(16, 185, 129, 0.12)",
-                        color: "#10b981",
-                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        marginTop: "20px",
+                        border: "1px solid rgba(168, 85, 247, 0.35)",
+                        background: "rgba(168, 85, 247, 0.04)",
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          width: "6px",
-                          height: "6px",
-                          borderRadius: "50%",
-                          background: "#10b981",
-                        }}
-                      />
-                      Database: Disk DB & IndexedDB
-                    </div>
-                  </div>
-
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      setAdminSaveLoading(true)
-                      setAdminSaveMessage(null)
-                      try {
-                        if (adminNewPassword && adminNewPassword !== adminConfirmPassword) {
-                          throw new Error("New password and confirmation do not match.")
-                        }
-                        if (adminNewPassword && adminNewPassword.length < 8) {
-                          throw new Error("New password must be at least 8 characters long.")
-                        }
-
-                        const result = await updateAdminSettings({
-                          newName: adminEditName,
-                          newEmail: adminEditEmail,
-                          currentPassword: adminCurrentPassword,
-                          newPassword: adminNewPassword || undefined,
-                          overrideAuthCheck: isAdmin,
-                        })
-
-                        setAdminSaveMessage({ type: "success", text: result.message })
-                        notify("Admin credentials successfully saved to database!", "success")
-                        setAdminCurrentPassword("")
-                        setAdminNewPassword("")
-                        setAdminConfirmPassword("")
-                      } catch (err: any) {
-                        setAdminSaveMessage({
-                          type: "error",
-                          text: err.message || "Failed to update admin credentials.",
-                        })
-                        notify(err.message || "Failed to update admin credentials.", "error")
-                      } finally {
-                        setAdminSaveLoading(false)
-                      }
-                    }}
-                    style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}
-                  >
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "11.5px",
-                            color: "var(--muted)",
-                            display: "block",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          Administrator Display Name
-                        </label>
-                        <input
-                          required
-                          type="text"
-                          value={adminEditName}
-                          onChange={(e) => setAdminEditName(e.target.value)}
-                          placeholder="e.g. Masterfilepro Administrator"
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            fontSize: "12.5px",
-                            borderRadius: "6px",
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text)",
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "11.5px",
-                            color: "var(--muted)",
-                            display: "block",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          Administrator Email Address
-                        </label>
-                        <input
-                          required
-                          type="email"
-                          value={adminEditEmail}
-                          onChange={(e) => setAdminEditEmail(e.target.value)}
-                          placeholder="e.g. admin@masterfilepro.com"
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            fontSize: "12.5px",
-                            borderRadius: "6px",
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text)",
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {!isAdmin && (
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "11.5px",
-                            color: "var(--muted)",
-                            display: "block",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          Current Administrator Password
-                        </label>
-                        <input
-                          type={adminShowPass ? "text" : "password"}
-                          value={adminCurrentPassword}
-                          onChange={(e) => setAdminCurrentPassword(e.target.value)}
-                          placeholder="Enter current password to authorize changes..."
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            fontSize: "12.5px",
-                            borderRadius: "6px",
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text)",
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "11.5px",
-                            color: "var(--muted)",
-                            display: "block",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          New Password (optional)
-                        </label>
-                        <input
-                          type={adminShowPass ? "text" : "password"}
-                          value={adminNewPassword}
-                          onChange={(e) => setAdminNewPassword(e.target.value)}
-                          placeholder="Leave blank to keep current"
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            fontSize: "12.5px",
-                            borderRadius: "6px",
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text)",
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "11.5px",
-                            color: "var(--muted)",
-                            display: "block",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          Confirm New Password
-                        </label>
-                        <input
-                          type={adminShowPass ? "text" : "password"}
-                          value={adminConfirmPassword}
-                          onChange={(e) => setAdminConfirmPassword(e.target.value)}
-                          placeholder="Re-type new password"
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            fontSize: "12.5px",
-                            borderRadius: "6px",
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text)",
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginTop: "4px",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setAdminShowPass(!adminShowPass)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "var(--muted)",
-                          cursor: "pointer",
-                          fontSize: "11.5px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          padding: 0,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          flexWrap: "wrap",
+                          gap: "10px",
                         }}
                       >
-                        {adminShowPass ? <EyeOff size={13} /> : <Eye size={13} />}
-                        {adminShowPass ? "Hide Passwords" : "Show Passwords"}
-                      </button>
-
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button
-                          type="submit"
-                          disabled={adminSaveLoading}
-                          className="primary"
+                        <div>
+                          <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                            <Database size={17} color="#00C9B7" />
+                            <span>Administrator Security & Database</span>
+                          </h3>
+                          <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0 0" }}>
+                            Modify root administrator email, name, or password at any time. All updates are automatically saved to the database.
+                          </p>
+                        </div>
+                        <div
                           style={{
-                            fontSize: "12px",
-                            padding: "7px 16px",
-                            borderRadius: "6px",
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "6px",
+                            padding: "4px 10px",
+                            borderRadius: "12px",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            background: "rgba(16, 185, 129, 0.12)",
+                            color: "#10b981",
+                            border: "1px solid rgba(16, 185, 129, 0.3)",
                           }}
                         >
-                          <Save size={13} />
-                          {adminSaveLoading ? "Saving to Database..." : "Save Admin Credentials"}
-                        </button>
+                          <span
+                            style={{
+                              width: "6px",
+                              height: "6px",
+                              borderRadius: "50%",
+                              background: "#10b981",
+                            }}
+                          />
+                          Database: Disk DB & IndexedDB
+                        </div>
                       </div>
-                    </div>
 
-                    {adminSaveMessage && (
-                      <div
-                        style={{
-                          marginTop: "8px",
-                          padding: "8px 12px",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          background:
-                            adminSaveMessage.type === "success"
-                              ? "rgba(16, 185, 129, 0.12)"
-                              : "rgba(239, 68, 68, 0.12)",
-                          border: `1px solid ${
-                            adminSaveMessage.type === "success"
-                              ? "rgba(16, 185, 129, 0.3)"
-                              : "rgba(239, 68, 68, 0.3)"
-                          }`,
-                          color:
-                            adminSaveMessage.type === "success" ? "#10b981" : "#ef4444",
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault()
+                          setAdminSaveLoading(true)
+                          setAdminSaveMessage(null)
+                          try {
+                            if (adminNewPassword && adminNewPassword !== adminConfirmPassword) {
+                              throw new Error("New password and confirmation do not match.")
+                            }
+                            if (adminNewPassword && adminNewPassword.length < 8) {
+                              throw new Error("New password must be at least 8 characters long.")
+                            }
+
+                            const result = await updateAdminSettings({
+                              newName: adminEditName,
+                              newEmail: adminEditEmail,
+                              currentPassword: adminCurrentPassword,
+                              newPassword: adminNewPassword || undefined,
+                              overrideAuthCheck: isAdmin,
+                            })
+
+                            setAdminSaveMessage({ type: "success", text: result.message })
+                            notify("Admin credentials successfully saved to database!", "success")
+                            setAdminCurrentPassword("")
+                            setAdminNewPassword("")
+                            setAdminConfirmPassword("")
+                          } catch (err: any) {
+                            setAdminSaveMessage({
+                              type: "error",
+                              text: err.message || "Failed to update admin credentials.",
+                            })
+                            notify(err.message || "Failed to update admin credentials.", "error")
+                          } finally {
+                            setAdminSaveLoading(false)
+                          }
                         }}
+                        style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}
                       >
-                        {adminSaveMessage.text}
-                      </div>
-                    )}
-                  </form>
-                </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                                display: "block",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              Administrator Display Name
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              value={adminEditName}
+                              onChange={(e) => setAdminEditName(e.target.value)}
+                              placeholder="e.g. Masterfilepro Administrator"
+                              style={{
+                                width: "100%",
+                                padding: "8px 10px",
+                                fontSize: "12.5px",
+                                borderRadius: "6px",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                                display: "block",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              Administrator Email Address
+                            </label>
+                            <input
+                              required
+                              type="email"
+                              value={adminEditEmail}
+                              onChange={(e) => setAdminEditEmail(e.target.value)}
+                              placeholder="e.g. admin@masterfilepro.com"
+                              style={{
+                                width: "100%",
+                                padding: "8px 10px",
+                                fontSize: "12.5px",
+                                borderRadius: "6px",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                {/* PDF & Cloud APIs Priority Card */}
-                <div
-                  style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "12px",
-                    padding: "20px 24px",
-                    marginBottom: "24px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "10px",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <Cpu size={18} color="#00C9B7" />
-                      <h2 style={{ margin: 0, fontSize: "16px" }}>PDF & Cloud APIs Failover Pipeline</h2>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                                display: "block",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              New Password (optional)
+                            </label>
+                            <input
+                              type={adminShowPass ? "text" : "password"}
+                              value={adminNewPassword}
+                              onChange={(e) => setAdminNewPassword(e.target.value)}
+                              placeholder="Leave blank to keep current"
+                              style={{
+                                width: "100%",
+                                padding: "8px 10px",
+                                fontSize: "12.5px",
+                                borderRadius: "6px",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: "11.5px",
+                                color: "var(--muted)",
+                                display: "block",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              Confirm New Password
+                            </label>
+                            <input
+                              type={adminShowPass ? "text" : "password"}
+                              value={adminConfirmPassword}
+                              onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                              placeholder="Re-type new password"
+                              style={{
+                                width: "100%",
+                                padding: "8px 10px",
+                                fontSize: "12.5px",
+                                borderRadius: "6px",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginTop: "4px",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setAdminShowPass(!adminShowPass)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                              fontSize: "11.5px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: 0,
+                            }}
+                          >
+                            {adminShowPass ? <EyeOff size={13} /> : <Eye size={13} />}
+                            {adminShowPass ? "Hide Passwords" : "Show Passwords"}
+                          </button>
+
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              type="submit"
+                              disabled={adminSaveLoading}
+                              className="primary"
+                              style={{
+                                fontSize: "12px",
+                                padding: "7px 16px",
+                                borderRadius: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                              }}
+                            >
+                              <Save size={13} />
+                              {adminSaveLoading ? "Saving to Database..." : "Save Admin Credentials"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {adminSaveMessage && (
+                          <div
+                            style={{
+                              marginTop: "8px",
+                              padding: "8px 12px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              background:
+                                adminSaveMessage.type === "success"
+                                  ? "rgba(16, 185, 129, 0.12)"
+                                  : "rgba(239, 68, 68, 0.12)",
+                              border: `1px solid ${
+                                adminSaveMessage.type === "success"
+                                  ? "rgba(16, 185, 129, 0.3)"
+                                  : "rgba(239, 68, 68, 0.3)"
+                              }`,
+                              color:
+                                adminSaveMessage.type === "success" ? "#10b981" : "#ef4444",
+                            }}
+                          >
+                            {adminSaveMessage.text}
+                          </div>
+                        )}
+                      </form>
                     </div>
-                    <span
+
+                    {/* PDF & Cloud APIs Priority Card */}
+                    <div
                       style={{
-                        fontSize: "11px",
-                        padding: "3px 8px",
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
                         borderRadius: "12px",
-                        background: "rgba(16, 185, 129, 0.15)",
-                        color: "#10b981",
-                        fontWeight: 600,
+                        padding: "20px 24px",
+                        marginBottom: "24px",
                       }}
                     >
-                      Priority Failover Active
-                    </span>
-                  </div>
-                  <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 14px 0", lineHeight: 1.5 }}>
-                    Masterfilepro dynamically processes PDF compressions and conversions through a multi-engine priority pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔ <strong>Priority #2 iLovePDF</strong> ➔ <strong>Priority #3 Local WebAssembly Engine</strong>. If monthly credits run out or an API error occurs, requests fail over automatically with zero user interruption.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => navigate("admin-apis")}
-                    style={{
-                      fontSize: "12px",
-                      padding: "8px 14px",
-                      borderRadius: "6px",
-                      background: "rgba(0, 201, 183, 0.15)",
-                      color: "#00C9B7",
-                      border: "1px solid rgba(0, 201, 183, 0.3)",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <Cpu size={14} /> Configure PDF API Priorities in Admin Panel →
-                  </button>
-                </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "10px",
+                          flexWrap: "wrap",
+                          gap: "10px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <Cpu size={18} color="#00C9B7" />
+                          <h2 style={{ margin: 0, fontSize: "16px" }}>PDF & Cloud APIs Failover Pipeline</h2>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            padding: "3px 8px",
+                            borderRadius: "12px",
+                            background: "rgba(16, 185, 129, 0.15)",
+                            color: "#10b981",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Priority Failover Active
+                        </span>
+                      </div>
+                      <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 14px 0", lineHeight: 1.5 }}>
+                        Masterfilepro dynamically processes PDF compressions and conversions through a multi-engine priority pipeline: <strong>Priority #1 Adobe Acrobat</strong> ➔ <strong>Priority #2 iLovePDF</strong> ➔ <strong>Priority #3 Local WebAssembly Engine</strong>. If monthly credits run out or an API error occurs, requests fail over automatically with zero user interruption.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => navigate("admin-apis")}
+                        style={{
+                          fontSize: "12px",
+                          padding: "8px 14px",
+                          borderRadius: "6px",
+                          background: "rgba(0, 201, 183, 0.15)",
+                          color: "#00C9B7",
+                          border: "1px solid rgba(0, 201, 183, 0.3)",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <Cpu size={14} /> Configure PDF API Priorities in Admin Panel →
+                      </button>
+                    </div>
+                  </>
+                )}
 
                 <form
                   onSubmit={(e) => {

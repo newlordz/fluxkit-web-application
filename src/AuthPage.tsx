@@ -220,7 +220,7 @@ export default function AuthPage({
     <div className="auth-layout page-enter">
       <aside className="auth-story">
         <a className="brand auth-brand" href="#overview" style={{ textDecoration: "none" }}>
-          <MasterfileLogo variant="full" size="lg" height={40} theme="dark" />
+          <MasterfileLogo variant="full" size="lg" height={38} theme={theme === "light" ? "light" : "dark"} />
         </a>
         <div className="auth-story-content">
           <div className="eyebrow">
@@ -328,19 +328,6 @@ export default function AuthPage({
             </div>
           )}
 
-          {/* Google Sign-In */}
-          {!reset && (
-            <div className="google-auth-section">
-              <GoogleAuth
-                onSuccess={handleGoogleSuccess}
-                isSignUp={registration}
-              />
-              <div className="auth-separator">
-                <span>or continue with email</span>
-              </div>
-            </div>
-          )}
-
           {!(authConnected || isConnected()) && (
             <div className="auth-integration-note">
               <Info size={16} />
@@ -396,7 +383,7 @@ export default function AuthPage({
               {!reset && values.email.toLowerCase().includes("@gmail") && (
                 <div className="auth-field-hint">
                   <span>💡 Tip:</span> Use <strong>Continue with Google</strong>{" "}
-                  above to sign in with your Gmail account without entering a
+                  below to sign in with your Gmail account without entering a
                   password.
                 </div>
               )}
@@ -474,6 +461,19 @@ export default function AuthPage({
               </button>
             </fieldset>
           </form>
+
+          {/* Google Sign-In below the submit button */}
+          {!reset && (
+            <div className="google-auth-section">
+              <div className="auth-separator">
+                <span>or continue with</span>
+              </div>
+              <GoogleAuth
+                onSuccess={handleGoogleSuccess}
+                isSignUp={registration}
+              />
+            </div>
+          )}
 
           <p className="auth-switch">
             {reset

@@ -85,6 +85,16 @@ export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
   const tiers = getAllToolTiers()
   tiers[toolId] = tier
   saveAllToolTiers(tiers)
+
+  // Keep prices strictly synced with tier
+  const prices = getAllToolPrices()
+  if (tier === "standard") {
+    prices[toolId] = 0
+    saveAllToolPrices(prices)
+  } else if (tier === "pro" && (!prices[toolId] || prices[toolId] === 0)) {
+    prices[toolId] = 4.99
+    saveAllToolPrices(prices)
+  }
 }
 
 export function getAllToolPrices(): Record<string, number> {
@@ -113,39 +123,54 @@ export function saveAllToolPrices(prices: Record<string, number>): void {
 }
 
 export function getToolPrice(toolId: string): number {
+  if (!isToolPro(toolId)) {
+    return 0
+  }
   const prices = getAllToolPrices()
-  if (typeof prices[toolId] === "number") {
+  if (typeof prices[toolId] === "number" && prices[toolId] > 0) {
     return prices[toolId]
   }
-  return isToolPro(toolId) ? 4.99 : 0
+  return 4.99
 }
 
 export function setToolPrice(toolId: string, price: number): void {
   const prices = getAllToolPrices()
   const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
-  prices[toolId] = isNaN(clean) ? 0 : clean
+  const finalPrice = isNaN(clean) ? 0 : clean
+  prices[toolId] = finalPrice
   saveAllToolPrices(prices)
+
+  // Keep tier strictly synced with price
+  const tiers = getAllToolTiers()
+  const targetTier = finalPrice > 0 ? "pro" : "standard"
+  if (tiers[toolId] !== targetTier) {
+    tiers[toolId] = targetTier
+    saveAllToolTiers(tiers)
+  }
 }
 
 export function getFormattedToolPrice(
   toolId: string,
   currency?: string,
+  cycle: "month" | "year" | "none" = "none",
 ): string {
   const price = getToolPrice(toolId)
   if (price === 0) return "Free"
   const activeCurr = currency || getActiveCurrency()
   const rate = getExchangeRate()
+  const finalPrice = cycle === "year" ? price * 10 : price
+  const suffix = cycle === "year" ? "/yr" : cycle === "month" ? "/mo" : ""
   switch (activeCurr.toUpperCase()) {
     case "GHS":
-      return `GH₵ ${(price * rate).toFixed(2)} GHS`
+      return `GH₵${(finalPrice * rate).toFixed(2)}${suffix}`
     case "NGN":
-      return `₦${(price * 1500).toLocaleString()} NGN`
+      return `₦${(finalPrice * 1500).toLocaleString()}${suffix}`
     case "EUR":
-      return `€${price.toFixed(2)} EUR`
+      return `€${finalPrice.toFixed(2)}${suffix}`
     case "GBP":
-      return `£${(price * 0.85).toFixed(2)} GBP`
+      return `£${(finalPrice * 0.85).toFixed(2)}${suffix}`
     default:
-      return `$${price.toFixed(2)} USD`
+      return `$${finalPrice.toFixed(2)}${suffix}`
   }
 }
 
@@ -171,6 +196,13 @@ export function canUserAccessTool(
     Array.isArray(user.unlockedTools) &&
     user.unlockedTools.includes(toolId)
   ) {
+    // If user has a dated tool subscription record, verify it has not expired
+    const sub = (user as any).toolSubscriptions?.[toolId]
+    if (sub && sub.expiresAt) {
+      if (new Date(sub.expiresAt).getTime() < Date.now()) {
+        return false // Subscription expired, requires monthly/yearly renewal
+      }
+    }
     return true
   }
   return false
@@ -179,45 +211,76 @@ export function canUserAccessTool(
 export function unlockSingleToolForUser(
   userId: string,
   toolId: string,
+  cycle: "monthly" | "yearly" = "monthly",
 ): UserAccount {
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.id === userId)
   let updated: UserAccount
 
+  const now = new Date()
+  const expiresDate = new Date(now)
+  if (cycle === "yearly") {
+    expiresDate.setFullYear(expiresDate.getFullYear() + 1)
+  } else {
+    expiresDate.setMonth(expiresDate.getMonth() + 1)
+  }
+  const expiresAt = expiresDate.toISOString()
+
+  const subRecord = {
+    toolId,
+    plan: cycle,
+    status: "active" as const,
+    startedAt: now.toISOString(),
+    expiresAt,
+    renewsAt: expiresAt,
+    autoRenew: true,
+  }
+
   if (idx >= 0) {
     const existing = accounts[idx].unlockedTools || []
-    if (!existing.includes(toolId)) {
-      accounts[idx] = {
-        ...accounts[idx],
-        unlockedTools: [...existing, toolId],
-      }
-    }
+    const existingSubs = (accounts[idx] as any).toolSubscriptions || {}
+    accounts[idx] = {
+      ...accounts[idx],
+      unlockedTools: existing.includes(toolId) ? existing : [...existing, toolId],
+      toolSubscriptions: {
+        ...existingSubs,
+        [toolId]: subRecord,
+      },
+    } as any
     saveRegisteredAccounts(accounts)
     updated = accounts[idx]
   } else {
     const current = getCurrentUser()
     const existing = current?.unlockedTools || []
+    const existingSubs = (current as any)?.toolSubscriptions || {}
     const combined = existing.includes(toolId)
       ? existing
       : [...existing, toolId]
-    if (current && current.id === userId) {
+    if (current && (current.id === userId || !current.id)) {
       updated = {
         ...current,
         unlockedTools: combined,
-      }
+        toolSubscriptions: {
+          ...existingSubs,
+          [toolId]: subRecord,
+        },
+      } as any
     } else {
       updated = {
         id: userId,
         name: "Customer",
-        email: "customer@fluxkit.com",
+        email: "customer@masterfilepro.com",
         provider: "email",
         role: "user",
         subscriptionTier: "standard",
         proStatus: "none",
         unlockedTools: [toolId],
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      }
+        toolSubscriptions: {
+          [toolId]: subRecord,
+        },
+        createdAt: now.toISOString(),
+        lastLoginAt: now.toISOString(),
+      } as any
     }
   }
 
@@ -232,10 +295,14 @@ export function setBulkToolPrices(toolIds: string[], price: number): void {
   const prices = getAllToolPrices()
   const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
   const val = isNaN(clean) ? 0 : clean
+  const tiers = getAllToolTiers()
+  const targetTier = val > 0 ? "pro" : "standard"
   for (const id of toolIds) {
     prices[id] = val
+    tiers[id] = targetTier
   }
   saveAllToolPrices(prices)
+  saveAllToolTiers(tiers)
 }
 
 export function setCategoryPrice(category: string, price: number): void {

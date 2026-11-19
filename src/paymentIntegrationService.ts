@@ -142,6 +142,31 @@ export function saveGateway(config: PaymentGatewayConfig): void {
       /* ignore */
     }
   }
+  if (typeof fetch !== "undefined") {
+    fetch("/api/db/gateways", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gateways: updated }),
+    }).catch(() => null)
+  }
+}
+
+export async function syncGatewaysWithServer(): Promise<PaymentGatewayConfig[]> {
+  if (typeof fetch === "undefined") return getAllGateways()
+  try {
+    const res = await fetch("/api/db/gateways")
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data.gateways) && data.gateways.length > 0) {
+        const storage = getStorage()
+        if (storage) {
+          storage.setItem(STORAGE_KEY, JSON.stringify(data.gateways))
+        }
+        return data.gateways
+      }
+    }
+  } catch {}
+  return getAllGateways()
 }
 
 export function getActiveGateway(): PaymentGatewayConfig | null {
@@ -209,6 +234,48 @@ export async function testGatewayConnection(
       })
       return res
     }
+    // If real keys are provided and we are in browser, verify live against Paystack API
+    if (typeof window !== "undefined" && !gateway.publicKey.includes("sample") && typeof fetch !== "undefined") {
+      try {
+        const liveRes = await fetch("/api/paystack/verify-keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secretKey: gateway.secretKey,
+            publicKey: gateway.publicKey,
+          }),
+        })
+        const liveData = await liveRes.json().catch(() => ({}))
+        if (liveRes.ok && liveData.ok) {
+          const res = {
+            success: true,
+            message: liveData.message || `Paystack API connected successfully (${liveData.latencyMs || 50}ms).`,
+          }
+          saveGateway({
+            ...gateway,
+            lastTestedAt: now,
+            testStatus: "success",
+            testMessage: res.message,
+          })
+          return res
+        } else {
+          const res = {
+            success: false,
+            message: liveData.message || "Paystack authorization failed with provided keys.",
+          }
+          saveGateway({
+            ...gateway,
+            lastTestedAt: now,
+            testStatus: "failed",
+            testMessage: res.message,
+          })
+          return res
+        }
+      } catch {
+        // Fall through to simulated message if local endpoint is offline
+      }
+    }
+
     const res = {
       success: true,
       message: `Paystack API handshake simulated successfully in ${gateway.mode.toUpperCase()} mode (${gateway.currency}).`,

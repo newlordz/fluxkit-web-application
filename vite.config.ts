@@ -18,6 +18,25 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: emitSourcemaps ? true : false,
       minify: !emitSourcemaps,
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("pdfjs-dist")) {
+              return "pdfjs"
+            }
+            if (id.includes("pdf-lib")) {
+              return "pdf-lib"
+            }
+            if (id.includes("lucide-react")) {
+              return "lucide-icons"
+            }
+            if (id.includes("node_modules")) {
+              return "vendor"
+            }
+          },
+        },
+      },
     },
     plugins: [
       react(),
@@ -31,6 +50,7 @@ export default defineConfig(({ mode }) => {
       ilovePdfPlugin(),
       ocrSpacePlugin(),
       fluxkitDatabasePlugin(),
+      paystackPlugin(),
     ],
     resolve: {
       alias: {
@@ -598,6 +618,46 @@ function currencyApiPlugin(): Plugin {
   }
 }
 
+function getAdobeCredentials(body: any = {}): { clientId: string; clientSecret: string } {
+  let clientId = body.clientId || process.env.PDF_SERVICES_CLIENT_ID || process.env.VITE_ADOBE_CLIENT_ID || ""
+  let clientSecret = body.clientSecret || process.env.PDF_SERVICES_CLIENT_SECRET || process.env.VITE_ADOBE_CLIENT_SECRET || ""
+  if (!clientId || !clientSecret) {
+    try {
+      const dataDir = path.resolve(import.meta.dirname, "./data")
+      const dbFilePath = path.join(dataDir, "fluxkit-db.json")
+      if (fs.existsSync(dbFilePath)) {
+        const db = JSON.parse(fs.readFileSync(dbFilePath, "utf-8"))
+        const adobeApi = db.apiPool?.find((a: any) => a.id === "adobe-pdf-services" || a.provider === "adobe")
+        if (adobeApi) {
+          if (!clientId && adobeApi.apiKey) clientId = adobeApi.apiKey
+          if (!clientSecret && adobeApi.clientSecret) clientSecret = adobeApi.clientSecret
+        }
+      }
+    } catch {}
+  }
+  return { clientId, clientSecret }
+}
+
+function getILovePdfCredentials(body: any = {}): { publicKey: string; secretKey: string } {
+  let publicKey = body.publicKey || process.env.ILOVEPDF_PUBLIC_KEY || process.env.VITE_ILOVEPDF_PUBLIC_KEY || ""
+  let secretKey = body.secretKey || process.env.ILOVEPDF_SECRET_KEY || process.env.VITE_ILOVEPDF_SECRET_KEY || ""
+  if (!publicKey || !secretKey) {
+    try {
+      const dataDir = path.resolve(import.meta.dirname, "./data")
+      const dbFilePath = path.join(dataDir, "fluxkit-db.json")
+      if (fs.existsSync(dbFilePath)) {
+        const db = JSON.parse(fs.readFileSync(dbFilePath, "utf-8"))
+        const iloveApi = db.apiPool?.find((a: any) => a.id === "ilovepdf-cloud" || a.provider === "ilovepdf")
+        if (iloveApi) {
+          if (!publicKey && iloveApi.apiKey) publicKey = iloveApi.apiKey
+          if (!secretKey && iloveApi.clientSecret) secretKey = iloveApi.clientSecret
+        }
+      }
+    } catch {}
+  }
+  return { publicKey, secretKey }
+}
+
 function adobePdfServicesPlugin(): Plugin {
   return {
     name: "adobe-pdf-services-plugin",
@@ -606,7 +666,7 @@ function adobePdfServicesPlugin(): Plugin {
         const rawUrl = req.url || ""
         const [pathname] = rawUrl.split("?")
 
-        if (pathname !== "/api/adobe-pdf/compress" && pathname !== "/api/adobe-pdf/status") {
+        if (!pathname.startsWith("/api/adobe-pdf/")) {
           return next()
         }
 
@@ -623,8 +683,7 @@ function adobePdfServicesPlugin(): Plugin {
 
         if (pathname === "/api/adobe-pdf/status") {
           try {
-            const clientId = process.env.PDF_SERVICES_CLIENT_ID || ""
-            const clientSecret = process.env.PDF_SERVICES_CLIENT_SECRET || ""
+            const { clientId, clientSecret } = getAdobeCredentials()
 
             const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
               method: "POST",
@@ -637,7 +696,7 @@ function adobePdfServicesPlugin(): Plugin {
                 JSON.stringify({
                   ok: true,
                   service: "Adobe PDF Services API",
-                  credential: "botsio212nyc",
+                  credential: "active",
                   tokenType: tokenData.token_type,
                   expiresIn: tokenData.expires_in,
                   freeQuota: 500,
@@ -668,8 +727,7 @@ function adobePdfServicesPlugin(): Plugin {
               const body = JSON.parse(bodyStr)
               const pdfBase64 = body.pdfBase64
               const compressionLevel = (body.compressionLevel || "MEDIUM").toUpperCase()
-              const clientId = body.clientId || process.env.PDF_SERVICES_CLIENT_ID || ""
-              const clientSecret = body.clientSecret || process.env.PDF_SERVICES_CLIENT_SECRET || ""
+              const { clientId, clientSecret } = getAdobeCredentials(body)
 
               if (!pdfBase64) {
                 res.statusCode = 400
@@ -800,6 +858,264 @@ function adobePdfServicesPlugin(): Plugin {
           return
         }
 
+        // Export PDF to PPTX, DOCX, XLSX using official Adobe Acrobat conversion
+        if (pathname === "/api/adobe-pdf/export" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr)
+              const pdfBase64 = body.pdfBase64
+              const targetFormat = body.targetFormat || "pptx"
+              const { clientId, clientSecret } = getAdobeCredentials(body)
+
+              if (!pdfBase64) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: "pdfBase64 is required" }))
+                return
+              }
+
+              const fileBuffer = Buffer.from(pdfBase64, "base64")
+
+              const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret }),
+              })
+              const tokenData = (await tokenRes.json()) as any
+              const token = tokenData.access_token
+              if (!token) {
+                res.statusCode = 401
+                res.end(
+                  JSON.stringify({
+                    error: "Adobe auth failed: " + (tokenData.error_description || JSON.stringify(tokenData)),
+                  }),
+                )
+                return
+              }
+
+              const assetRes = await fetch("https://pdf-services.adobe.io/assets", {
+                method: "POST",
+                headers: {
+                  "x-api-key": clientId,
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ mediaType: "application/pdf" }),
+              })
+              const assetData = (await assetRes.json()) as any
+              const { uploadUri, assetID } = assetData
+              if (!uploadUri || !assetID) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "Failed to allocate Adobe asset URI" }))
+                return
+              }
+
+              const uploadRes = await fetch(uploadUri, {
+                method: "PUT",
+                headers: { "Content-Type": "application/pdf" },
+                body: fileBuffer,
+              })
+              if (!uploadRes.ok) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "Failed to upload PDF to Adobe asset store" }))
+                return
+              }
+
+              const jobRes = await fetch("https://pdf-services.adobe.io/operation/exportpdf", {
+                method: "POST",
+                headers: {
+                  "x-api-key": clientId,
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ assetID, targetFormat }),
+              })
+
+              if (jobRes.status !== 201) {
+                const errText = await jobRes.text()
+                res.statusCode = jobRes.status
+                res.end(JSON.stringify({ error: "Adobe ExportPDF Job failed: " + errText }))
+                return
+              }
+
+              const pollingUrl = jobRes.headers.get("location")
+              if (!pollingUrl) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "Missing polling location header" }))
+                return
+              }
+
+              let downloadUri: string | null = null
+              for (let i = 0; i < 35; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 1500))
+                const pollRes = await fetch(pollingUrl, {
+                  headers: {
+                    "x-api-key": clientId,
+                    Authorization: "Bearer " + token,
+                  },
+                })
+                const pollData = (await pollRes.json()) as any
+                if (pollData.status === "done" && pollData.asset?.downloadUri) {
+                  downloadUri = pollData.asset.downloadUri
+                  break
+                }
+                if (pollData.status === "failed") {
+                  res.statusCode = 500
+                  res.end(JSON.stringify({ error: "Adobe ExportPDF conversion failed" }))
+                  return
+                }
+              }
+
+              if (!downloadUri) {
+                res.statusCode = 504
+                res.end(JSON.stringify({ error: "Adobe export timed out." }))
+                return
+              }
+
+              const resultRes = await fetch(downloadUri)
+              const outputBuffer = Buffer.from(await resultRes.arrayBuffer())
+
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  base64: outputBuffer.toString("base64"),
+                  size: outputBuffer.length,
+                  engine: "Adobe Acrobat PDF Services",
+                }),
+              )
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
+        // Create PDF from PPTX, DOCX, XLSX using official Adobe Acrobat conversion
+        if (pathname === "/api/adobe-pdf/create" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr)
+              const fileBase64 = body.fileBase64
+              const filename = body.filename || "presentation.pptx"
+              const { clientId, clientSecret } = getAdobeCredentials(body)
+
+              if (!fileBase64) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: "fileBase64 is required" }))
+                return
+              }
+
+              const fileBuffer = Buffer.from(fileBase64, "base64")
+              let mediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+              if (filename.endsWith(".docx") || filename.endsWith(".doc")) {
+                mediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
+                mediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              }
+
+              const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret }),
+              })
+              const token = (await tokenRes.json())?.access_token
+              if (!token) {
+                res.statusCode = 401
+                res.end(JSON.stringify({ error: "Adobe auth failed" }))
+                return
+              }
+
+              const assetRes = await fetch("https://pdf-services.adobe.io/assets", {
+                method: "POST",
+                headers: {
+                  "x-api-key": clientId,
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ mediaType }),
+              })
+              const { uploadUri, assetID } = (await assetRes.json()) as any
+              if (!uploadUri || !assetID) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "Failed to allocate Adobe asset URI" }))
+                return
+              }
+
+              await fetch(uploadUri, {
+                method: "PUT",
+                headers: { "Content-Type": mediaType },
+                body: fileBuffer,
+              })
+
+              const jobRes = await fetch("https://pdf-services.adobe.io/operation/createpdf", {
+                method: "POST",
+                headers: {
+                  "x-api-key": clientId,
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ assetID }),
+              })
+
+              const pollingUrl = jobRes.headers.get("location")
+              if (!pollingUrl) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "Missing polling location header" }))
+                return
+              }
+
+              let downloadUri: string | null = null
+              for (let i = 0; i < 35; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 1500))
+                const pollRes = await fetch(pollingUrl, {
+                  headers: {
+                    "x-api-key": clientId,
+                    Authorization: "Bearer " + token,
+                  },
+                })
+                const pollData = (await pollRes.json()) as any
+                if (pollData.status === "done" && pollData.asset?.downloadUri) {
+                  downloadUri = pollData.asset.downloadUri
+                  break
+                }
+                if (pollData.status === "failed") {
+                  res.statusCode = 500
+                  res.end(JSON.stringify({ error: "Adobe CreatePDF conversion failed" }))
+                  return
+                }
+              }
+
+              if (!downloadUri) {
+                res.statusCode = 504
+                res.end(JSON.stringify({ error: "Adobe conversion timed out." }))
+                return
+              }
+
+              const resultRes = await fetch(downloadUri)
+              const outputBuffer = Buffer.from(await resultRes.arrayBuffer())
+
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  pdfBase64: outputBuffer.toString("base64"),
+                  size: outputBuffer.length,
+                  engine: "Adobe Acrobat PDF Services",
+                }),
+              )
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
         res.statusCode = 405
         res.end(JSON.stringify({ error: "Method not allowed" }))
       })
@@ -815,7 +1131,7 @@ function ilovePdfPlugin(): Plugin {
         const rawUrl = req.url || ""
         const [pathname] = rawUrl.split("?")
 
-        if (pathname !== "/api/ilovepdf/compress" && pathname !== "/api/ilovepdf/status") {
+        if (!pathname.startsWith("/api/ilovepdf/")) {
           return next()
         }
 
@@ -832,7 +1148,7 @@ function ilovePdfPlugin(): Plugin {
 
         if (pathname === "/api/ilovepdf/status") {
           try {
-            const publicKey = process.env.ILOVEPDF_PUBLIC_KEY || ""
+            const { publicKey } = getILovePdfCredentials()
             const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -874,8 +1190,7 @@ function ilovePdfPlugin(): Plugin {
                   : body.compressionLevel === "low"
                     ? "low"
                     : "recommended"
-              const publicKey =
-                body.publicKey || process.env.ILOVEPDF_PUBLIC_KEY || ""
+              const { publicKey } = getILovePdfCredentials(body)
 
               if (!pdfBase64) {
                 res.statusCode = 400
@@ -965,6 +1280,193 @@ function ilovePdfPlugin(): Plugin {
                   originalSize,
                   compressedSize,
                   savedPercentage,
+                  engine: "iLovePDF Cloud Engine",
+                }),
+              )
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
+        // Convert PDF to PPTX using iLovePDF
+        if (pathname === "/api/ilovepdf/pdfppt" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr)
+              const pdfBase64 = body.pdfBase64
+              const { publicKey } = getILovePdfCredentials(body)
+
+              if (!pdfBase64) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: "pdfBase64 is required" }))
+                return
+              }
+
+              const fileBuffer = Buffer.from(pdfBase64, "base64")
+
+              const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ public_key: publicKey }),
+              })
+              const token = (await authRes.json())?.token
+              if (!token) {
+                res.statusCode = 401
+                res.end(JSON.stringify({ error: "iLovePDF auth failed" }))
+                return
+              }
+
+              const startRes = await fetch("https://api.ilovepdf.com/v1/start/pdfppt", {
+                headers: { Authorization: "Bearer " + token },
+              })
+              const { server: apiServer, task } = (await startRes.json()) as any
+              if (!apiServer || !task) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "iLovePDF pdfppt task init failed" }))
+                return
+              }
+
+              const formData = new FormData()
+              formData.append("task", task)
+              formData.append("file", new Blob([fileBuffer], { type: "application/pdf" }), "document.pdf")
+
+              const uploadRes = await fetch(`https://${apiServer}/v1/upload`, {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token },
+                body: formData,
+              })
+              const uploadData = (await uploadRes.json()) as any
+              const serverFilename = uploadData.server_filename
+
+              const procRes = await fetch(`https://${apiServer}/v1/process`, {
+                method: "POST",
+                headers: {
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  task,
+                  tool: "pdfppt",
+                  files: [{ server_filename: serverFilename, filename: "document.pdf" }],
+                }),
+              })
+              const procData = (await procRes.json()) as any
+              if (procData.status !== "TaskSuccess") {
+                res.statusCode = 500
+                res.end(JSON.stringify({ error: "iLovePDF conversion processing failed" }))
+                return
+              }
+
+              const dlRes = await fetch(`https://${apiServer}/v1/download/${task}`, {
+                headers: { Authorization: "Bearer " + token },
+              })
+              const outputBuffer = Buffer.from(await dlRes.arrayBuffer())
+
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  base64: outputBuffer.toString("base64"),
+                  size: outputBuffer.length,
+                  engine: "iLovePDF Cloud Engine",
+                }),
+              )
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
+        // Convert Office (PPTX, DOCX, XLSX) to PDF using iLovePDF
+        if (pathname === "/api/ilovepdf/officepdf" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr)
+              const fileBase64 = body.fileBase64
+              const filename = body.filename || "presentation.pptx"
+              const { publicKey } = getILovePdfCredentials(body)
+
+              if (!fileBase64) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: "fileBase64 is required" }))
+                return
+              }
+
+              const fileBuffer = Buffer.from(fileBase64, "base64")
+
+              const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ public_key: publicKey }),
+              })
+              const token = (await authRes.json())?.token
+              if (!token) {
+                res.statusCode = 401
+                res.end(JSON.stringify({ error: "iLovePDF auth failed" }))
+                return
+              }
+
+              const startRes = await fetch("https://api.ilovepdf.com/v1/start/officepdf", {
+                headers: { Authorization: "Bearer " + token },
+              })
+              const { server: apiServer, task } = (await startRes.json()) as any
+              if (!apiServer || !task) {
+                res.statusCode = 502
+                res.end(JSON.stringify({ error: "iLovePDF officepdf task init failed" }))
+                return
+              }
+
+              const formData = new FormData()
+              formData.append("task", task)
+              formData.append("file", new Blob([fileBuffer]), filename)
+
+              const uploadRes = await fetch(`https://${apiServer}/v1/upload`, {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token },
+                body: formData,
+              })
+              const uploadData = (await uploadRes.json()) as any
+              const serverFilename = uploadData.server_filename
+
+              const procRes = await fetch(`https://${apiServer}/v1/process`, {
+                method: "POST",
+                headers: {
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  task,
+                  tool: "officepdf",
+                  files: [{ server_filename: serverFilename, filename }],
+                }),
+              })
+              const procData = (await procRes.json()) as any
+              if (procData.status !== "TaskSuccess") {
+                res.statusCode = 500
+                res.end(JSON.stringify({ error: "iLovePDF officepdf processing failed" }))
+                return
+              }
+
+              const dlRes = await fetch(`https://${apiServer}/v1/download/${task}`, {
+                headers: { Authorization: "Bearer " + token },
+              })
+              const outputBuffer = Buffer.from(await dlRes.arrayBuffer())
+
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  pdfBase64: outputBuffer.toString("base64"),
+                  size: outputBuffer.length,
                   engine: "iLovePDF Cloud Engine",
                 }),
               )
@@ -1250,6 +1752,37 @@ function fluxkitDatabasePlugin(): Plugin {
           return
         }
 
+        if (pathname === "/api/db/gateways" && req.method === "GET") {
+          const dbData = ensureDbFile()
+          res.end(
+            JSON.stringify({
+              ok: true,
+              gateways: dbData?.paymentGateways || [],
+            }),
+          )
+          return
+        }
+
+        if (pathname === "/api/db/gateways" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr)
+              const dbData = ensureDbFile() || {}
+              dbData.paymentGateways = body.gateways || []
+              dbData.updatedAt = new Date().toISOString()
+              fs.writeFileSync(dbFilePath, JSON.stringify(dbData, null, 2), "utf-8")
+              res.end(JSON.stringify({ ok: true, count: dbData.paymentGateways.length }))
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+          })
+          return
+        }
+
         if (pathname === "/api/cloud-apis/ping" && req.method === "POST") {
           const chunks: any[] = []
           req.on("data", (chunk: any) => chunks.push(chunk))
@@ -1282,6 +1815,192 @@ function fluxkitDatabasePlugin(): Plugin {
 
         res.statusCode = 405
         res.end(JSON.stringify({ error: "Method not allowed" }))
+      })
+    },
+  }
+}
+
+function paystackPlugin(): Plugin {
+  return {
+    name: "paystack-plugin",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const rawUrl = req.url || ""
+        const [pathname] = rawUrl.split("?")
+
+        if (!pathname.startsWith("/api/paystack/")) {
+          return next()
+        }
+
+        res.setHeader("Content-Type", "application/json")
+        res.setHeader("Access-Control-Allow-Origin", "*")
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+        if (req.method === "OPTIONS") {
+          res.statusCode = 200
+          res.end()
+          return
+        }
+
+        // 1. Verify Paystack API Keys against live Paystack API
+        if (pathname === "/api/paystack/verify-keys" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr || "{}")
+              let secretKey = body.secretKey || process.env.PAYSTACK_SECRET_KEY || ""
+              let publicKey = body.publicKey || process.env.PAYSTACK_PUBLIC_KEY || ""
+
+              if (!secretKey) {
+                try {
+                  const dbPath = path.resolve(import.meta.dirname, "./data/fluxkit-db.json")
+                  if (fs.existsSync(dbPath)) {
+                    const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"))
+                    const gw = db.paymentGateways?.find((g: any) => g.id === "paystack")
+                    if (gw) {
+                      secretKey = gw.secretKey || secretKey
+                      publicKey = gw.publicKey || publicKey
+                    }
+                  }
+                } catch {}
+              }
+
+              if (!secretKey) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ ok: false, message: "Paystack Secret Key is required." }))
+                return
+              }
+
+              // Live call to Paystack API (GET /bank or /balance)
+              const start = Date.now()
+              const paystackRes = await fetch("https://api.paystack.co/bank?perPage=1", {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${secretKey}`,
+                  "Content-Type": "application/json",
+                },
+              })
+              const latencyMs = Math.max(1, Date.now() - start)
+              const paystackData = ((await paystackRes.json().catch(() => ({}))) || {}) as any
+
+              if (paystackRes.ok && paystackData.status) {
+                const isTest = secretKey.startsWith("sk_test_")
+                res.end(
+                  JSON.stringify({
+                    ok: true,
+                    status: "active",
+                    mode: isTest ? "test" : "live",
+                    latencyMs,
+                    message: `Paystack API connected successfully (${latencyMs}ms). Authentication verified in ${isTest ? "TEST" : "LIVE"} mode.`,
+                  }),
+                )
+              } else {
+                res.statusCode = paystackRes.status || 401
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    status: "error",
+                    message: paystackData.message || "Invalid Paystack Secret Key or unauthorized.",
+                  }),
+                )
+              }
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  message: err.message || "Network error reaching Paystack API.",
+                }),
+              )
+            }
+          })
+          return
+        }
+
+        // 2. Initialize Transaction
+        if (pathname === "/api/paystack/initialize" && req.method === "POST") {
+          const chunks: any[] = []
+          req.on("data", (chunk: any) => chunks.push(chunk))
+          req.on("end", async () => {
+            try {
+              const bodyStr = Buffer.concat(chunks).toString("utf-8")
+              const body = JSON.parse(bodyStr || "{}")
+              const { email, amount, currency, secretKey: customSecret } = body
+              let secretKey = customSecret || process.env.PAYSTACK_SECRET_KEY || ""
+              if (!secretKey) {
+                try {
+                  const dbPath = path.resolve(import.meta.dirname, "./data/fluxkit-db.json")
+                  if (fs.existsSync(dbPath)) {
+                    const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"))
+                    secretKey = db.paymentGateways?.find((g: any) => g.id === "paystack")?.secretKey || ""
+                  }
+                } catch {}
+              }
+
+              const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${secretKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  email,
+                  amount,
+                  currency: currency || "GHS",
+                  callback_url: body.callback_url || undefined,
+                }),
+              })
+              const initData = await initRes.json().catch(() => ({}))
+              res.statusCode = initRes.status
+              res.end(JSON.stringify(initData))
+            } catch (err: any) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ status: false, message: err.message }))
+            }
+          })
+          return
+        }
+
+        // 3. Verify Transaction Reference
+        if (pathname.startsWith("/api/paystack/verify/") && req.method === "GET") {
+          const reference = pathname.replace("/api/paystack/verify/", "").trim()
+          let secretKey = process.env.PAYSTACK_SECRET_KEY || ""
+          if (!secretKey) {
+            try {
+              const dbPath = path.resolve(import.meta.dirname, "./data/fluxkit-db.json")
+              if (fs.existsSync(dbPath)) {
+                const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"))
+                secretKey = db.paymentGateways?.find((g: any) => g.id === "paystack")?.secretKey || ""
+              }
+            } catch {}
+          }
+
+          try {
+            const verifyRes = await fetch(
+              `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+              {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${secretKey}`,
+                  "Content-Type": "application/json",
+                },
+              },
+            )
+            const verifyData = await verifyRes.json().catch(() => ({}))
+            res.statusCode = verifyRes.status
+            res.end(JSON.stringify(verifyData))
+          } catch (err: any) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ status: false, message: err.message }))
+          }
+          return
+        }
+
+        res.statusCode = 404
+        res.end(JSON.stringify({ error: "Paystack endpoint not found" }))
       })
     },
   }

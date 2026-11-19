@@ -584,7 +584,6 @@ export default function ToolPage({
     if (typeof getSessionDocuments === "function") {
       setSessionDocs(getSessionDocuments())
     }
-    notify.success(`"${res.name}" saved to your In-Browser Vault! Stored safely inside your browser.`)
   }
 
   const handleDownload = (res: OutputResult) => {
@@ -1047,6 +1046,11 @@ export default function ToolPage({
     if (tool.id !== "sign-pdf") return
     const canvas = sigCanvasRef.current
     if (!canvas || typeof canvas.getContext !== "function") return
+    const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1
+    if (dpr > 1) {
+      canvas.width = Math.round(360 * dpr)
+      canvas.height = Math.round(120 * dpr)
+    }
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     ctx.lineCap = "round"
@@ -1481,11 +1485,12 @@ export default function ToolPage({
       } else if (tool.id === "pdf-to-ppt") {
         if (files.length < 1)
           throw new Error("Select a PDF to convert to PowerPoint.")
-        const aspectRatio = optionA as "16:9" | "4:3" || "16:9"
+        const aspectRatio = (optionA as "16:9" | "4:3") || "16:9"
         const theme =
-          optionB as "fluxkit-dark" | "minimal-white" | "corporate-blue" ||
+          (optionB as "fluxkit-dark" | "minimal-white" | "corporate-blue") ||
           "fluxkit-dark"
-        setResult(await pdfToPPT(files[0], { aspectRatio, theme }))
+        const layout = (extra as "auto" | "editable-text" | "high-fidelity") || "auto"
+        setResult(await pdfToPPT(files[0], { aspectRatio, theme, layout }))
       } else if (tool.id === "pdf-to-excel") {
         if (files.length < 1)
           throw new Error("Select a PDF to extract into Excel.")
@@ -3170,7 +3175,7 @@ export default function ToolPage({
                           border: "1px solid rgba(16, 185, 129, 0.3)",
                         }}
                       >
-                        Active · 100% Private (No Setup)
+                        100% Private to Your Device · No Cross-User Sharing
                       </span>
                     </h3>
                     <p
@@ -3180,7 +3185,7 @@ export default function ToolPage({
                         color: "var(--muted)",
                       }}
                     >
-                      All files and conversions are stored safely inside this browser&apos;s persistent IndexedDB database. 100% private, offline, and zero setup.
+                      All files and conversions exist strictly inside your personal browser&apos;s local IndexedDB storage. No other user or external server can ever see or access your documents.
                     </p>
                   </div>
                 </div>
@@ -3661,6 +3666,22 @@ export default function ToolPage({
                               >
                                 <FileText size={18} color="var(--accent)" />
                                 <span>{doc.name}</span>
+                                {doc.id.startsWith("sample-doc") && (
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      padding: "1px 6px",
+                                      borderRadius: "4px",
+                                      background: "rgba(245, 158, 11, 0.15)",
+                                      color: "#f59e0b",
+                                      border: "1px solid rgba(245, 158, 11, 0.3)",
+                                      fontWeight: 700,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    Starter Sample
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td
@@ -3816,6 +3837,22 @@ export default function ToolPage({
                           >
                             {doc.name}
                           </strong>
+                          {doc.id.startsWith("sample-doc") && (
+                            <span
+                              style={{
+                                fontSize: "9px",
+                                padding: "1px 5px",
+                                borderRadius: "4px",
+                                background: "rgba(245, 158, 11, 0.15)",
+                                color: "#f59e0b",
+                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Sample
+                            </span>
+                          )}
                         </div>
                         <span
                           style={{
@@ -5508,6 +5545,8 @@ export default function ToolPage({
                           if (!canvas) return
                           const ctx = canvas.getContext("2d")
                           if (!ctx) return
+                          ctx.lineCap = "round"
+                          ctx.lineJoin = "round"
                           const rect = canvas.getBoundingClientRect()
                           const scaleX = canvas.width / rect.width
                           const scaleY = canvas.height / rect.height
@@ -5523,11 +5562,13 @@ export default function ToolPage({
                           if (!canvas) return
                           const ctx = canvas.getContext("2d")
                           if (!ctx) return
+                          ctx.lineCap = "round"
+                          ctx.lineJoin = "round"
                           const rect = canvas.getBoundingClientRect()
                           const scaleX = canvas.width / rect.width
                           const scaleY = canvas.height / rect.height
                           ctx.strokeStyle = sigInkColor
-                          ctx.lineWidth = 2.5
+                          ctx.lineWidth = 2.5 * scaleX
                           ctx.lineTo(
                             (e.clientX - rect.left) * scaleX,
                             (e.clientY - rect.top) * scaleY,
@@ -5683,7 +5724,7 @@ export default function ToolPage({
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                       gap: "12px",
                       marginTop: "12px",
                     }}
@@ -5716,6 +5757,23 @@ export default function ToolPage({
                         </option>
                         <option value="corporate-blue">
                           Corporate Slate & Indigo
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      Conversion Mode
+                      <select
+                        value={extra || "auto"}
+                        onChange={(e) => setExtra(e.target.value)}
+                      >
+                        <option value="auto">
+                          Smart Hybrid / Auto (Recommended)
+                        </option>
+                        <option value="editable-text">
+                          Editable Text & Outlines
+                        </option>
+                        <option value="high-fidelity">
+                          High-Fidelity Visual Deck
                         </option>
                       </select>
                     </label>
@@ -8095,59 +8153,6 @@ export default function ToolPage({
                       }}
                     >
                       <Eye size={16} /> View in Browser
-                    </button>
-                  )}
-
-                  {/* In-Browser Vault Action Button */}
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => handleSaveResultToBrowserVault(result)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "7px",
-                      padding: "12px 16px",
-                      borderRadius: "10px",
-                      border: isSavedInVault
-                        ? "1px solid rgba(16, 185, 129, 0.45)"
-                        : "1px solid var(--border)",
-                      background: isSavedInVault
-                        ? "rgba(16, 185, 129, 0.1)"
-                        : "var(--surface)",
-                      color: isSavedInVault ? "#10b981" : "var(--text)",
-                      fontSize: "13.5px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                    title="Store this document in your browser's persistent IndexedDB vault (100% private, zero setup)"
-                  >
-                    <Database size={16} style={{ color: isSavedInVault ? "#10b981" : "var(--muted)" }} />
-                    {isSavedInVault ? "Saved in Browser Vault ✓" : "Save to Browser Vault"}
-                  </button>
-
-                  {isSavedInVault && navigate && (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => navigate("documents")}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "12px 14px",
-                        borderRadius: "10px",
-                        border: "1px solid var(--border)",
-                        background: "var(--surface)",
-                        color: "var(--accent)",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                      title="Open Workspace Documents to view all stored files"
-                    >
-                      <FileArchive size={14} /> View in Documents
                     </button>
                   )}
                 </div>

@@ -279,6 +279,10 @@ export async function saveCloudApis(apis: CloudApiConfig[]): Promise<void> {
     const sorted = [...apis].sort((a, b) => a.priority - b.priority)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted))
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("fluxkit-apis-updated", { detail: { apis: sorted } }))
+    }
+
     // Write to server disk database
     await fetch("/api/db/apis", {
       method: "POST",
@@ -532,4 +536,14 @@ export async function syncCloudApisWithServer(): Promise<CloudApiConfig[]> {
     // Offline / fallback to local storage
   }
   return getCloudApis()
+}
+
+if (typeof window !== "undefined") {
+  ;(window as any).__fluxkitApiPool = {
+    getNextAvailableApi,
+    recordApiOutcome,
+    getCloudApis,
+    saveCloudApis,
+    syncCloudApisWithServer,
+  }
 }

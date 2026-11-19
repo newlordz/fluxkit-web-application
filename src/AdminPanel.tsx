@@ -90,10 +90,12 @@ import {
   setActiveGateway,
   getActiveGateway,
   testGatewayConnection,
+  syncGatewaysWithServer,
   type PaymentGatewayConfig,
   type PaymentProvider,
 } from "./paymentIntegrationService"
 import { tools } from "./config"
+import { useNotify } from "./Notifications"
 
 export interface AdminPanelProps {
   currentUser: UserAccount | null
@@ -145,8 +147,7 @@ export default function AdminPanel({
           }}
         >
           Administrator privileges are required to view the management console.
-          Please sign in with an authorized administrator account
-          (`admin@masterfilepro.com`).
+          Please sign in with an authorized administrator account.
         </p>
         <button className="primary" onClick={() => navigate("sign-in")}>
           Sign in as Admin
@@ -179,9 +180,24 @@ export default function AdminPanel({
   const [apiCategoryFilter, setApiCategoryFilter] = useState<string>("all")
 
   useEffect(() => {
+    syncGatewaysWithServer().then((gws) => {
+      setGateways(gws)
+    })
     syncCloudApisWithServer().then((apis) => {
       setCloudApis(apis)
     })
+
+    const handleApisUpdated = (e: any) => {
+      if (e?.detail?.apis && Array.isArray(e.detail.apis)) {
+        setCloudApis(e.detail.apis)
+      } else {
+        setCloudApis(getCloudApis())
+      }
+    }
+    window.addEventListener("fluxkit-apis-updated", handleApisUpdated)
+    return () => {
+      window.removeEventListener("fluxkit-apis-updated", handleApisUpdated)
+    }
   }, [])
 
   const handleSetExactPriority = async (apiId: string, targetPriority: number, category?: string) => {
@@ -295,11 +311,13 @@ export default function AdminPanel({
     () => getActiveGateway()?.id || "paystack",
   )
   const [testingGatewayId, setTestingGatewayId] = useState<string | null>(null)
+  const notify = useNotify()
   const [showSecretKey, setShowSecretKey] = useState<Record<string, boolean>>(
     {},
   )
   const [toolQuery, setToolQuery] = useState("")
   const [toastMessage, setToastMessage] = useState("")
+  const [justSavedGatewayId, setJustSavedGatewayId] = useState<string | null>(null)
 
   // User Management & Security States
   const [showAddUserModal, setShowAddUserModal] = useState(false)
@@ -344,8 +362,15 @@ export default function AdminPanel({
   })
   const [pageError, setPageError] = useState("")
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, tone: "success" | "error" | "info" = "success") => {
     setToastMessage(msg)
+    try {
+      if (notify) {
+        if (tone === "error") notify.error(msg)
+        else if (tone === "info") notify.info(msg)
+        else notify.success(msg)
+      }
+    } catch {}
     setTimeout(() => setToastMessage(""), 3500)
   }
 
@@ -366,8 +391,7 @@ export default function AdminPanel({
     setActiveCurrency(currency)
     setActiveCurrencyState(currency)
     showToast(
-      `Store display currency set to ${
-        currency === "GHS" ? "Ghanaian Cedi (GH₵)" : "US Dollar ($)"
+      `Store display currency set to ${currency === "GHS" ? "Ghanaian Cedi (GH₵)" : "US Dollar ($)"
       }.`,
     )
   }
@@ -386,7 +410,7 @@ export default function AdminPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "set_rate", rate: parsed }),
       })
-    } catch {}
+    } catch { }
     setExchangeRate(parsed)
     setExchangeRateState(parsed)
 
@@ -411,6 +435,13 @@ export default function AdminPanel({
     const newUsd = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
     setToolPrice(toolId, newUsd)
     setToolPrices((prev) => ({ ...prev, [toolId]: newUsd }))
+
+    // Automatically sync tier with price
+    const nextTier = newUsd > 0 ? "pro" : "standard"
+    if (toolTiers[toolId] !== nextTier) {
+      setToolTier(toolId, nextTier)
+      setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
+    }
 
     // Trigger backend conversion from USD -> GHS
     try {
@@ -445,10 +476,24 @@ export default function AdminPanel({
       )
       setToolPrice(toolId, conv.convertedAmount)
       setToolPrices((prev) => ({ ...prev, [toolId]: conv.convertedAmount }))
+
+      // Automatically sync tier with price
+      const nextTier = conv.convertedAmount > 0 ? "pro" : "standard"
+      if (toolTiers[toolId] !== nextTier) {
+        setToolTier(toolId, nextTier)
+        setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
+      }
     } catch {
       const convertedUsd = Math.round((newGhs / exchangeRate) * 100) / 100
       setToolPrice(toolId, convertedUsd)
       setToolPrices((prev) => ({ ...prev, [toolId]: convertedUsd }))
+
+      // Automatically sync tier with price
+      const nextTier = convertedUsd > 0 ? "pro" : "standard"
+      if (toolTiers[toolId] !== nextTier) {
+        setToolTier(toolId, nextTier)
+        setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
+      }
     }
   }
 
@@ -495,10 +540,19 @@ export default function AdminPanel({
     const current = toolTiers[toolId] || "standard"
     const next = current === "pro" ? "standard" : "pro"
     setToolTier(toolId, next)
-    setToolTiers({ ...toolTiers, [toolId]: next })
-    if (next === "pro" && (!toolPrices[toolId] || toolPrices[toolId] === 0)) {
-      setToolPrice(toolId, 4.99)
-      setToolPrices((prev) => ({ ...prev, [toolId]: 4.99 }))
+    setToolTiers((prev) => ({ ...prev, [toolId]: next }))
+    if (next === "pro") {
+      const p = toolPrices[toolId] && toolPrices[toolId] > 0 ? toolPrices[toolId] : 4.99
+      setToolPrice(toolId, p)
+      setToolPrices((prev) => ({ ...prev, [toolId]: p }))
+      setGhsPrices((prev) => ({
+        ...prev,
+        [toolId]: Math.round(p * exchangeRate * 100) / 100,
+      }))
+    } else {
+      setToolPrice(toolId, 0)
+      setToolPrices((prev) => ({ ...prev, [toolId]: 0 }))
+      setGhsPrices((prev) => ({ ...prev, [toolId]: 0 }))
     }
     showToast(`Tool '${toolId}' updated to ${next.toUpperCase()} tier.`)
   }
@@ -526,8 +580,7 @@ export default function AdminPanel({
           ? "Free"
           : `$${price.toFixed(2)} USD (GH₵ ${(price * exchangeRate).toFixed(2)} GHS)`
       lines.push(
-        `| ${t.name} | ${t.category} | ${
-          isPro ? "PRO" : "Standard"
+        `| ${t.name} | ${t.category} | ${isPro ? "PRO" : "Standard"
         } | ${priceLabel} |`,
       )
     })
@@ -786,6 +839,7 @@ export default function AdminPanel({
       .map((t) => t.id)
     setBulkToolPrices(proIds, amount)
     setToolPrices(getAllToolPrices())
+    setToolTiers(getAllToolTiers())
     showToast(
       `Updated all ${proIds.length} Pro tools to $${amount.toFixed(2)} USD.`,
     )
@@ -797,6 +851,7 @@ export default function AdminPanel({
       .map((t) => t.id)
     setBulkToolPrices(stdIds, 0)
     setToolPrices(getAllToolPrices())
+    setToolTiers(getAllToolTiers())
     showToast(`Reset all ${stdIds.length} Standard tools to FREE ($0.00).`)
   }
 
@@ -857,135 +912,103 @@ export default function AdminPanel({
       {toastMessage && (
         <div
           style={{
-            padding: "10px 16px",
-            background: "rgba(16,185,129,0.15)",
-            border: "1px solid rgba(16,185,129,0.3)",
-            borderRadius: "8px",
+            position: "fixed",
+            bottom: "28px",
+            right: "28px",
+            zIndex: 99999,
+            padding: "12px 20px",
+            background: "var(--surface)",
+            border: "1px solid rgba(16,185,129,0.5)",
+            borderRadius: "10px",
             color: "#10b981",
-            fontSize: "12px",
-            fontWeight: 500,
-            marginBottom: "20px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
+            fontSize: "13px",
+            fontWeight: 600,
             display: "flex",
             alignItems: "center",
-            gap: "8px",
+            gap: "10px",
+            backdropFilter: "blur(12px)",
           }}
         >
-          <Check size={16} /> {toastMessage}
+          <Check size={18} /> {toastMessage}
         </div>
       )}
 
       {/* Tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: "8px",
-          borderBottom: "1px solid var(--border)",
-          marginBottom: "24px",
-        }}
-      >
-        <button
-          className={activeTab === "tiers" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom: activeTab === "tiers" ? "2px solid #00C9B7" : "none",
-            color: activeTab === "tiers" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("tiers")}
-        >
-          <SlidersHorizontal size={16} /> Tool Tier Manager ({proCount} Pro)
-        </button>
-        <button
-          className={activeTab === "users" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom: activeTab === "users" ? "2px solid #00C9B7" : "none",
-            color: activeTab === "users" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("users")}
-        >
-          <Users size={16} /> User Approvals ({userList.length})
-        </button>
-        <button
-          className={activeTab === "pages" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom: activeTab === "pages" ? "2px solid #00C9B7" : "none",
-            color: activeTab === "pages" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("pages")}
-        >
-          <FileCode2 size={16} /> Page Manager ({customPages.length})
-        </button>
-        <button
-          className={activeTab === "integrations" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom:
-              activeTab === "integrations" ? "2px solid #00C9B7" : "none",
-            color:
-              activeTab === "integrations" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("integrations")}
-        >
-          <CreditCard size={16} /> Payment Gateways ({gateways.filter((g) => g.enabled).length} Active)
-        </button>
-        <button
-          className={activeTab === "apis" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom:
-              activeTab === "apis" ? "2px solid #00C9B7" : "none",
-            color:
-              activeTab === "apis" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("apis")}
-        >
-          <Cpu size={16} /> PDF & Cloud APIs (Priorities)
-        </button>
-        <button
-          className={activeTab === "settings" ? "selected" : ""}
-          style={{
-            padding: "10px 16px",
-            borderBottom:
-              activeTab === "settings" ? "2px solid #00C9B7" : "none",
-            color:
-              activeTab === "settings" ? "var(--text)" : "var(--muted)",
-            fontWeight: 600,
-            fontSize: "13px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-          onClick={() => setActiveTab("settings")}
-        >
-          <Database size={16} /> Admin Settings & Database
-        </button>
-      </div>
+      <nav className="admin-nav-bar" aria-label="Admin Dashboard Navigation">
+        <div className="admin-nav-track">
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "tiers" ? "active" : ""}`}
+            onClick={() => setActiveTab("tiers")}
+          >
+            <SlidersHorizontal size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">Tool Tiers</span>
+            <span className="admin-nav-badge pro">{proCount} Pro</span>
+          </button>
+
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "users" ? "active" : ""}`}
+            onClick={() => setActiveTab("users")}
+          >
+            <Users size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">User Approvals</span>
+            <span
+              className={`admin-nav-badge ${userList.length > 0 ? "highlight" : ""}`}
+            >
+              {userList.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "pages" ? "active" : ""}`}
+            onClick={() => setActiveTab("pages")}
+          >
+            <FileCode2 size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">Page Manager</span>
+            <span className="admin-nav-badge">{customPages.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "integrations" ? "active" : ""}`}
+            onClick={() => setActiveTab("integrations")}
+          >
+            <CreditCard size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">Payment Gateways</span>
+            <span
+              className={`admin-nav-badge ${gateways.filter((g) => g.enabled).length > 0 ? "active-badge" : ""}`}
+            >
+              {gateways.filter((g) => g.enabled).length} Active
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "apis" ? "active" : ""}`}
+            onClick={() => setActiveTab("apis")}
+          >
+            <Cpu size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">PDF & Cloud APIs</span>
+            <span className="admin-nav-badge subtle">Priorities</span>
+          </button>
+
+          <button
+            type="button"
+            className={`admin-nav-tab ${activeTab === "settings" ? "active" : ""}`}
+            onClick={() => setActiveTab("settings")}
+          >
+            <Database size={16} className="admin-nav-icon" />
+            <span className="admin-nav-label">Database & Settings</span>
+            <span className="admin-nav-badge db-status">
+              <span className="admin-status-dot" />
+              Live
+            </span>
+          </button>
+        </div>
+      </nav>
 
       {/* TAB 1: TOOL TIER MANAGER */}
       {activeTab === "tiers" && (
@@ -994,7 +1017,7 @@ export default function AdminPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
               gap: "12px",
               marginBottom: "16px",
             }}
@@ -1524,7 +1547,7 @@ export default function AdminPanel({
                       fontWeight: 600,
                     }}
                   >
-                    Price (USD $)
+                    Monthly Sub (USD $)
                   </th>
                   <th
                     style={{
@@ -1533,7 +1556,7 @@ export default function AdminPanel({
                       fontWeight: 600,
                     }}
                   >
-                    Price (GHS GH₵)
+                    Monthly Sub (GHS GH₵)
                   </th>
                   <th
                     style={{
@@ -1550,12 +1573,16 @@ export default function AdminPanel({
               <tbody>
                 {filteredTools.map((t) => {
                   const isPro = (toolTiers[t.id] || "standard") === "pro"
-                  const priceVal = toolPrices[t.id] ?? (isPro ? 4.99 : 0)
-                  const ghsVal =
-                    ghsPrices[t.id] ??
-                    (priceVal === 0
-                      ? 0
+                  const priceVal = isPro
+                    ? (typeof toolPrices[t.id] === "number" && toolPrices[t.id] > 0
+                      ? toolPrices[t.id]
+                      : 4.99)
+                    : 0
+                  const ghsVal = isPro
+                    ? (typeof ghsPrices[t.id] === "number" && ghsPrices[t.id] > 0
+                      ? ghsPrices[t.id]
                       : Math.round(priceVal * exchangeRate * 100) / 100)
+                    : 0
                   return (
                     <tr
                       key={t.id}
@@ -1632,6 +1659,9 @@ export default function AdminPanel({
                               fontWeight: 600,
                             }}
                           />
+                          <span style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 600 }}>
+                            /mo {priceVal > 0 && <small style={{ display: "block", color: "#00C9B7" }}>(${(priceVal * 10).toFixed(2)}/yr)</small>}
+                          </span>
                         </div>
                       </td>
                       {/* GHS Column - Live Backend Conversion */}
@@ -1677,6 +1707,9 @@ export default function AdminPanel({
                               fontWeight: 600,
                             }}
                           />
+                          <span style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 600 }}>
+                            /mo {ghsVal > 0 && <small style={{ display: "block", color: "#00C9B7" }}>(GH₵{(ghsVal * 10).toFixed(2)}/yr)</small>}
+                          </span>
                           {priceVal === 0 ? (
                             <span
                               style={{
@@ -2287,6 +2320,7 @@ export default function AdminPanel({
                   </div>
 
                   <div
+                    className="admin-form-two-col"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
@@ -2601,6 +2635,7 @@ export default function AdminPanel({
       {/* TAB 3: PAGE MANAGER */}
       {activeTab === "pages" && (
         <div
+          className="admin-two-col-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -3108,7 +3143,7 @@ export default function AdminPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))",
               gap: "20px",
             }}
           >
@@ -3548,11 +3583,10 @@ export default function AdminPanel({
                               : "rgba(239,68,68,0.12)",
                           color:
                             gw.testStatus === "success" ? "#10b981" : "#ef4444",
-                          border: `1px solid ${
-                            gw.testStatus === "success"
+                          border: `1px solid ${gw.testStatus === "success"
                               ? "rgba(16,185,129,0.25)"
                               : "rgba(239,68,68,0.25)"
-                          }`,
+                            }`,
                         }}
                       >
                         {gw.testStatus === "success" ? (
@@ -3638,21 +3672,26 @@ export default function AdminPanel({
                         type="button"
                         onClick={() => {
                           saveGateway(gw)
+                          setJustSavedGatewayId(gw.id)
                           showToast(
                             `${gw.name} configuration saved successfully.`,
                           )
+                          setTimeout(() => setJustSavedGatewayId(null), 2500)
                         }}
                         className="primary"
                         style={{
                           fontSize: "11px",
-                          padding: "6px 12px",
+                          padding: "6px 14px",
                           borderRadius: "6px",
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "6px",
+                          background: justSavedGatewayId === gw.id ? "#10b981" : undefined,
+                          borderColor: justSavedGatewayId === gw.id ? "#10b981" : undefined,
+                          transition: "all 0.2s ease",
                         }}
                       >
-                        <Check size={12} /> Save
+                        <Check size={12} /> {justSavedGatewayId === gw.id ? "Saved! ✓" : "Save"}
                       </button>
                     </div>
                   </div>
@@ -3972,132 +4011,132 @@ export default function AdminPanel({
                       <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
                         API Provider Name *
                       </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. CloudConvert, PDF.co"
-                      value={newApiName}
-                      onChange={(e) => setNewApiName(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    />
-                  </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. CloudConvert, PDF.co"
+                        value={newApiName}
+                        onChange={(e) => setNewApiName(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      />
+                    </div>
 
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
-                      Service Category
-                    </label>
-                    <select
-                      value={newApiCategory}
-                      onChange={(e) => setNewApiCategory(e.target.value as any)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <option value="pdf-compression">PDF Compression & Optimization</option>
-                      <option value="ocr-text">OCR & Document Text Extraction</option>
-                      <option value="image-tools">Image Optimization & Compression</option>
-                      <option value="audio-speech">Audio Transcription & Speech</option>
-                      <option value="ai-text">AI Summarization & Translation</option>
-                    </select>
-                  </div>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Service Category
+                      </label>
+                      <select
+                        value={newApiCategory}
+                        onChange={(e) => setNewApiCategory(e.target.value as any)}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <option value="pdf-compression">PDF Compression & Optimization</option>
+                        <option value="ocr-text">OCR & Document Text Extraction</option>
+                        <option value="image-tools">Image Optimization & Compression</option>
+                        <option value="audio-speech">Audio Transcription & Speech</option>
+                        <option value="ai-text">AI Summarization & Translation</option>
+                      </select>
+                    </div>
 
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
-                      Endpoint URL / Base URL
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://api.service.com/v1"
-                      value={newApiEndpoint}
-                      onChange={(e) => setNewApiEndpoint(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    />
-                  </div>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Endpoint URL / Base URL
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://api.service.com/v1"
+                        value={newApiEndpoint}
+                        onChange={(e) => setNewApiEndpoint(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      />
+                    </div>
 
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
-                      Monthly Free Quota (Calls)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={newApiQuota}
-                      onChange={(e) => setNewApiQuota(Number(e.target.value))}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    />
-                  </div>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Monthly Free Quota (Calls)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newApiQuota}
+                        onChange={(e) => setNewApiQuota(Number(e.target.value))}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      />
+                    </div>
 
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
-                      API Key / Client ID / Public Key
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Paste your free API key here"
-                      value={newApiKey}
-                      onChange={(e) => setNewApiKey(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    />
-                  </div>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        API Key / Client ID / Public Key
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Paste your free API key here"
+                        value={newApiKey}
+                        onChange={(e) => setNewApiKey(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      />
+                    </div>
 
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
-                      Secret Key / Client Secret (Optional)
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Optional secret or token"
-                      value={newApiSecret}
-                      onChange={(e) => setNewApiSecret(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text)",
-                        fontSize: "12px",
-                      }}
-                    />
-                  </div>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Secret Key / Client Secret (Optional)
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Optional secret or token"
+                        value={newApiSecret}
+                        onChange={(e) => setNewApiSecret(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: "6px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                        }}
+                      />
+                    </div>
 
                   </div>
 
@@ -5396,11 +5435,10 @@ export default function AdminPanel({
                       adminSaveStatus.type === "success"
                         ? "rgba(16, 185, 129, 0.12)"
                         : "rgba(239, 68, 68, 0.12)",
-                    border: `1px solid ${
-                      adminSaveStatus.type === "success"
+                    border: `1px solid ${adminSaveStatus.type === "success"
                         ? "rgba(16, 185, 129, 0.3)"
                         : "rgba(239, 68, 68, 0.3)"
-                    }`,
+                      }`,
                     color: adminSaveStatus.type === "success" ? "#10b981" : "#ef4444",
                   }}
                 >

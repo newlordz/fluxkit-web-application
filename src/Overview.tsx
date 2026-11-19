@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import {
   Activity,
@@ -86,7 +86,8 @@ export default function Overview({
       if (e.detail) setActiveCurrency(e.detail)
     }
     window.addEventListener("fluxkit-currency-changed", handleCurr)
-    return () => window.removeEventListener("fluxkit-currency-changed", handleCurr)
+    return () =>
+      window.removeEventListener("fluxkit-currency-changed", handleCurr)
   }, [])
 
   // Track client mount for safe portal rendering
@@ -478,131 +479,148 @@ export default function Overview({
     handleFileReceived(droppedFiles)
   }
 
-  // Filter logic
-  const filteredTools = tools.filter((t) => {
-    // Search query matching
-    const matchesQuery =
-      search.trim() === "" ||
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.description.toLowerCase().includes(search.toLowerCase()) ||
-      t.category.toLowerCase().includes(search.toLowerCase()) ||
-      (t.formatBadge &&
-        t.formatBadge.toLowerCase().includes(search.toLowerCase()))
+  // Filter logic memoized for smooth typing and rendering
+  const filteredTools = useMemo(() => {
+    return tools.filter((t) => {
+      // Search query matching
+      const matchesQuery =
+        search.trim() === "" ||
+        t.name.toLowerCase().includes(search.toLowerCase()) ||
+        t.description.toLowerCase().includes(search.toLowerCase()) ||
+        t.category.toLowerCase().includes(search.toLowerCase()) ||
+        (t.formatBadge &&
+          t.formatBadge.toLowerCase().includes(search.toLowerCase()))
 
-    if (!matchesQuery) return false
+      if (!matchesQuery) return false
 
-    // Tab category matching
-    if (activeTab === "Favorites") return favorites.includes(t.id)
-    if (activeTab === "PDF Essentials") {
-      return [
-        "merge-pdf",
-        "split-pdf",
-        "compress",
-        "rotate-pdf",
-        "watermark",
-        "edit-pdf",
-        "sign-pdf",
-        "password",
-      ].includes(t.id)
-    }
-    if (activeTab === "Convert & Export") {
-      return [
-        "pdf-to-word",
-        "word-to-pdf",
-        "pdf-to-excel",
-        "excel-to-pdf",
-        "pdf-to-ppt",
-        "ppt-to-pdf",
-        "pdf-to-jpg",
-        "jpg-to-pdf",
-        "convert",
-        "edi-convert",
-        "csv-convert",
-        "batch-convert",
-        "convert-compress",
-      ].includes(t.id)
-    }
-    if (activeTab === "AI & Writing") {
-      return (
-        t.category === "AI text tools" ||
-        ["text-pdf", "audio-text"].includes(t.id)
-      )
-    }
-    if (activeTab === "QR & Sharing") {
-      return (
-        t.category === "QR tools" ||
-        ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id)
-      )
-    }
+      // Tab category matching
+      if (activeTab === "Favorites") return favorites.includes(t.id)
+      if (activeTab === "PDF Essentials") {
+        return [
+          "merge-pdf",
+          "split-pdf",
+          "compress",
+          "rotate-pdf",
+          "watermark",
+          "edit-pdf",
+          "sign-pdf",
+          "password",
+        ].includes(t.id)
+      }
+      if (activeTab === "Convert & Export") {
+        return [
+          "pdf-to-word",
+          "word-to-pdf",
+          "pdf-to-excel",
+          "excel-to-pdf",
+          "pdf-to-ppt",
+          "ppt-to-pdf",
+          "pdf-to-jpg",
+          "jpg-to-pdf",
+          "convert",
+          "edi-convert",
+          "csv-convert",
+          "batch-convert",
+          "convert-compress",
+        ].includes(t.id)
+      }
+      if (activeTab === "AI & Writing") {
+        return (
+          t.category === "AI text tools" ||
+          ["text-pdf", "audio-text"].includes(t.id)
+        )
+      }
+      if (activeTab === "QR & Sharing") {
+        return (
+          t.category === "QR tools" ||
+          ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id)
+        )
+      }
 
-    return true // "All" tab
-  })
+      return true // "All" tab
+    })
+  }, [search, activeTab, favorites])
 
-  // Group tab counts
-  const tabCounts: Record<TabCategory, number> = {
-    All: tools.length,
-    "PDF Essentials": tools.filter((t) =>
-      [
-        "merge-pdf",
-        "split-pdf",
-        "compress",
-        "rotate-pdf",
-        "watermark",
-        "edit-pdf",
-        "sign-pdf",
-        "password",
-      ].includes(t.id),
-    ).length,
-    "Convert & Export": tools.filter((t) =>
-      [
-        "pdf-to-word",
-        "word-to-pdf",
-        "pdf-to-excel",
-        "excel-to-pdf",
-        "pdf-to-ppt",
-        "ppt-to-pdf",
-        "pdf-to-jpg",
-        "jpg-to-pdf",
-        "convert",
-        "edi-convert",
-        "csv-convert",
-        "batch-convert",
-        "convert-compress",
-      ].includes(t.id),
-    ).length,
-    "AI & Writing": tools.filter(
-      (t) =>
-        t.category === "AI text tools" ||
-        ["text-pdf", "audio-text"].includes(t.id),
-    ).length,
-    "QR & Sharing": tools.filter(
-      (t) =>
-        t.category === "QR tools" ||
-        ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id),
-    ).length,
-    Favorites: tools.filter((t) => favorites.includes(t.id)).length,
-  }
+  // Group tab counts memoized to prevent redundant iterations
+  const tabCounts: Record<TabCategory, number> = useMemo(
+    () => ({
+      All: tools.length,
+      "PDF Essentials": tools.filter((t) =>
+        [
+          "merge-pdf",
+          "split-pdf",
+          "compress",
+          "rotate-pdf",
+          "watermark",
+          "edit-pdf",
+          "sign-pdf",
+          "password",
+        ].includes(t.id),
+      ).length,
+      "Convert & Export": tools.filter((t) =>
+        [
+          "pdf-to-word",
+          "word-to-pdf",
+          "pdf-to-excel",
+          "excel-to-pdf",
+          "pdf-to-ppt",
+          "ppt-to-pdf",
+          "pdf-to-jpg",
+          "jpg-to-pdf",
+          "convert",
+          "edi-convert",
+          "csv-convert",
+          "batch-convert",
+          "convert-compress",
+        ].includes(t.id),
+      ).length,
+      "AI & Writing": tools.filter(
+        (t) =>
+          t.category === "AI text tools" ||
+          ["text-pdf", "audio-text"].includes(t.id),
+      ).length,
+      "QR & Sharing": tools.filter(
+        (t) =>
+          t.category === "QR tools" ||
+          ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id),
+      ).length,
+      Favorites: tools.filter((t) => favorites.includes(t.id)).length,
+    }),
+    [favorites],
+  )
 
-  // Interactive 3D Card mouse movement handler
+  // Interactive 3D Card mouse movement handler throttled with requestAnimationFrame
+  const mouseRafRef = useRef<number | null>(null)
   const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      !window.matchMedia("(hover: hover)").matches
+    ) {
+      return
+    }
     const card = e.currentTarget
     const rect = card.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    card.style.setProperty("--mouse-x", `${x}px`)
-    card.style.setProperty("--mouse-y", `${y}px`)
+    if (mouseRafRef.current) cancelAnimationFrame(mouseRafRef.current)
+    mouseRafRef.current = requestAnimationFrame(() => {
+      card.style.setProperty("--mouse-x", `${x}px`)
+      card.style.setProperty("--mouse-y", `${y}px`)
 
-    const centerX = rect.width / 2
-    const centerY = rect.height / 2
-    const rotateX = ((y - centerY) / centerY) * -6
-    const rotateY = ((x - centerX) / centerX) * 6
+      const centerX = rect.width / 2
+      const centerY = rect.height / 2
+      const rotateX = ((y - centerY) / centerY) * -6
+      const rotateY = ((x - centerX) / centerX) * 6
 
-    card.style.setProperty("--rotate-x", `${rotateX.toFixed(2)}deg`)
-    card.style.setProperty("--rotate-y", `${rotateY.toFixed(2)}deg`)
+      card.style.setProperty("--rotate-x", `${rotateX.toFixed(2)}deg`)
+      card.style.setProperty("--rotate-y", `${rotateY.toFixed(2)}deg`)
+    })
   }
 
   const handleCardMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (mouseRafRef.current) cancelAnimationFrame(mouseRafRef.current)
     const card = e.currentTarget
     card.style.setProperty("--rotate-x", "0deg")
     card.style.setProperty("--rotate-y", "0deg")
@@ -1077,28 +1095,20 @@ export default function Overview({
                     />
 
                     <div className="card-header-actions">
-                      <span
-                        className="card-format-tag"
-                        style={
-                          isToolPro(t.id)
-                            ? {
-                                background: "rgba(0,201,183,0.15)",
-                                color: "#00C9B7",
-                                fontWeight: 700,
-                              }
-                            : {
-                                background: "rgba(16,185,129,0.15)",
-                                color: "#10b981",
-                                fontWeight: 700,
-                              }
-                        }
-                      >
-                        {isToolPro(t.id)
-                          ? `PRO · ${getFormattedToolPrice(t.id)}`
-                          : "FREE"}
-                      </span>
+                      {isToolPro(t.id) ? (
+                        <span
+                          className="card-format-tag card-pro-pill"
+                          title={`Pro Tool · ${getFormattedToolPrice(t.id, undefined, "month")}`}
+                        >
+                          PRO{t.formatBadge ? "" : ` · ${getFormattedToolPrice(t.id, undefined, "month")}`}
+                        </span>
+                      ) : (
+                        <span className="card-format-tag card-free-pill">
+                          FREE
+                        </span>
+                      )}
                       {t.formatBadge && (
-                        <span className="card-format-tag">{t.formatBadge}</span>
+                        <span className="card-format-tag card-badge-pill">{t.formatBadge}</span>
                       )}
                       <button
                         className={`card-fav-btn ${isFav ? "is-fav" : ""}`}
@@ -1124,7 +1134,14 @@ export default function Overview({
 
                   {/* Card Footer */}
                   <div className="overview-card-bottom">
-                    <span className="card-bottom-category">{t.category}</span>
+                    <span className="card-bottom-category">
+                      {t.category}
+                      {isToolPro(t.id) && (
+                        <span className="card-bottom-price">
+                          {" "}· {getFormattedToolPrice(t.id, undefined, "month")}
+                        </span>
+                      )}
+                    </span>
                     <span className="card-bottom-action">
                       <span>{t.available ? "Launch" : "Open"}</span>
                       <ArrowRight size={13} />

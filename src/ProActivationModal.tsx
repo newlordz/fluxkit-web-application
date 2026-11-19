@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react"
 import {
   Lock,
+  Unlock,
   Sparkles,
   CreditCard,
   Send,
@@ -9,6 +10,7 @@ import {
   ShieldCheck,
   Coins,
 } from "lucide-react"
+import TactilePadlock from "./TactilePadlock"
 import type { Tool } from "./config"
 import type { UserAccount } from "./authService"
 import {
@@ -24,7 +26,6 @@ import {
 } from "./paymentIntegrationService"
 import {
   getActiveCurrency,
-  setActiveCurrency,
   getExchangeRate,
   type SupportedCurrency,
 } from "./currencyService"
@@ -45,9 +46,19 @@ export default function ProActivationModal({
   const [loading, setLoading] = useState<"payment" | "approval" | null>(null)
   const [successMessage, setSuccessMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly")
   const [activeCurrency, setActiveCurrencyLocal] =
     useState<SupportedCurrency>(getActiveCurrency)
   const exchangeRate = getExchangeRate()
+
+  const isYearly = billingCycle === "yearly"
+
+  useEffect(() => {
+    if (successMessage) {
+      setIsUnlocked(true)
+    }
+  }, [successMessage])
 
   useEffect(() => {
     const onCurrChange = (e: any) => {
@@ -58,35 +69,87 @@ export default function ProActivationModal({
       window.removeEventListener("fluxkit-currency-changed", onCurrChange)
   }, [])
 
-  const handleSelectCurrency = (c: SupportedCurrency) => {
-    setActiveCurrency(c)
-    setActiveCurrencyLocal(c)
-  }
-
   const isPending = currentUser?.proStatus === "pending"
   const activeGateway = getActiveGateway()
+
+  // Single-Tool subscription prices
+  const rawToolPrice = getToolPrice(tool.id)
+  const singleToolUsd = isYearly ? rawToolPrice * 10 : rawToolPrice
+  const singleToolLabel = getFormattedToolPrice(
+    tool.id,
+    activeCurrency,
+    isYearly ? "year" : "month",
+  )
+
+  // All-Access Pro plan prices
+  const allAccessUsd = isYearly ? 190 : 19
   const formattedFee =
     activeCurrency === "GHS"
-      ? `GH₵ ${(19 * exchangeRate).toFixed(2)} GHS / month`
-      : "$19.00 USD / month"
-
-  const toolPriceLabel = getFormattedToolPrice(tool.id, activeCurrency)
-  const rawToolPrice = getToolPrice(tool.id)
+      ? `GH₵ ${(allAccessUsd * exchangeRate).toFixed(2)} GHS / ${isYearly ? "year" : "month"}`
+      : `$${allAccessUsd}.00 USD / ${isYearly ? "year" : "month"}`
 
   const handleBuySingleTool = () => {
     setLoading("payment")
     setErrorMessage("")
     setTimeout(() => {
       const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
-      const updated = unlockSingleToolForUser(userId, tool.id)
+      const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
       setLoading(null)
+      const renewsPeriod = isYearly ? "1 year" : "1 month"
       setSuccessMessage(
-        `Success! You have unlocked a Single-Tool Pass for ${tool.name}. Full access is now active!`,
+        `Success! You subscribed to ${tool.name} (${billingCycle.toUpperCase()} plan). Auto-renews in ${renewsPeriod}. Access is now active!`,
       )
       if (onActivated) {
         onActivated(updated)
       }
     }, 600)
+  }
+
+  const handleBuySingleToolLive = () => {
+    setErrorMessage("")
+    if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
+      setLoading("payment")
+      const userEmail = currentUser?.email || "customer@masterfilepro.com"
+      const subunits =
+        activeGateway.currency === "GHS"
+          ? Math.round(singleToolUsd * exchangeRate * 100)
+          : activeGateway.currency === "NGN"
+            ? Math.round(singleToolUsd * 1500 * 100)
+            : Math.round(singleToolUsd * 100)
+
+      triggerLivePaystackCheckout({
+        publicKey: activeGateway.publicKey,
+        email: userEmail,
+        amountInSubunits: subunits,
+        currency: activeGateway.currency,
+        onSuccess: (ref) => {
+          const userId = currentUser
+            ? currentUser.id
+            : "usr_guest_" + Date.now()
+          const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
+          setLoading(null)
+          setSuccessMessage(
+            `Live Paystack Payment Verified! (Ref: ${ref}). ${tool.name} ${billingCycle.toUpperCase()} subscription active!`,
+          )
+          if (onActivated) {
+            onActivated(updated)
+          }
+        },
+        onClose: () => {
+          setLoading(null)
+        },
+        onError: (err) => {
+          setLoading(null)
+          setErrorMessage(
+            err.message ||
+              "Paystack checkout was closed or encountered an error.",
+          )
+        },
+      })
+      return
+    }
+
+    handleBuySingleTool()
   }
 
   const handleSimulatedPayment = () => {
@@ -112,10 +175,10 @@ export default function ProActivationModal({
       const userEmail = currentUser?.email || "customer@masterfilepro.com"
       const subunits =
         activeGateway.currency === "GHS"
-          ? 25000
+          ? Math.round(allAccessUsd * exchangeRate * 100)
           : activeGateway.currency === "NGN"
-            ? 2500000
-            : 1900
+            ? Math.round(allAccessUsd * 1500 * 100)
+            : Math.round(allAccessUsd * 100)
 
       triggerLivePaystackCheckout({
         publicKey: activeGateway.publicKey,
@@ -173,110 +236,138 @@ export default function ProActivationModal({
   return (
     <div
       className="panel pro-paywall-panel page-enter"
-      style={{ maxWidth: "680px", margin: "40px auto", padding: "36px" }}
+      style={{
+        maxWidth: "680px",
+        margin: "8px auto 20px",
+        padding: "20px 24px",
+        position: "relative",
+      }}
     >
-      {/* Currency Switcher */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          gap: "8px",
-          marginBottom: "16px",
-        }}
-      >
-        <span style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
-          Currency:
-        </span>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: "20px",
-            padding: "2px",
-            fontSize: "11px",
-            fontWeight: 600,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => handleSelectCurrency("USD")}
-            style={{
-              padding: "3px 9px",
-              borderRadius: "16px",
-              border: "none",
-              background:
-                activeCurrency === "USD" ? "#00C9B7" : "transparent",
-              color: activeCurrency === "USD" ? "#06204D" : "var(--muted)",
-              cursor: "pointer",
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
+      {/* Sleek Horizontal Header Bar - Zero Wasted Space */}
+      <div className="paywall-header-bar">
+        {/* Left: 3D Tactile Lock + Title + Pill + Subtitle */}
+        <div className="paywall-header-left">
+          <div className="paywall-lock-slot" style={{ position: "relative", flexShrink: 0 }}>
+            <TactilePadlock unlocked={isUnlocked} size="sm" />
+            {isUnlocked && (
+              <div className="paywall-unlock-sparkles">
+                <Sparkles
+                  size={12}
+                  color="#10b981"
+                  style={{ position: "absolute", top: "-5px", right: "-5px" }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="paywall-title-block">
+            <div className="paywall-title-row">
+              <h1 className="paywall-title">
+                {isUnlocked ? `Welcome to ${tool.name}` : `Unlock ${tool.name} with Pro`}
+              </h1>
+              <span className={`tactile-pro-pill ${isUnlocked ? "is-unlocked" : ""}`}>
+                {isUnlocked ? "✓ UNLOCKED" : "PRO FEATURE"}
+              </span>
+            </div>
+            <p className="paywall-subtitle">
+              {isUnlocked
+                ? `Subscription active. Unlimited high-speed WebAssembly access enabled.`
+                : `Activate your pass for unlimited high-speed WebAssembly access.`}
+            </p>
+          </div>
+        </div>
+
+        {/* Right: Currency Switcher */}
+        <div className="paywall-header-right">
+          <div
+            className="paywall-currency-switcher"
+            style={{ display: "flex", alignItems: "center", gap: "6px" }}
           >
-            <span>🇺🇸</span>
-            <span>USD ($)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSelectCurrency("GHS")}
-            style={{
-              padding: "3px 9px",
-              borderRadius: "16px",
-              border: "none",
-              background:
-                activeCurrency === "GHS" ? "#00C9B7" : "transparent",
-              color: activeCurrency === "GHS" ? "#06204D" : "var(--muted)",
-              cursor: "pointer",
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            <span>🇬🇭</span>
-            <span>GHS (GH₵)</span>
-          </button>
+            <span style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+              Currency:
+            </span>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "20px",
+                padding: "2px",
+                fontSize: "11px",
+                fontWeight: 600,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCurrency("USD")
+                  setActiveCurrencyLocal("USD")
+                }}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "16px",
+                  border: "none",
+                  background:
+                    activeCurrency === "USD" ? "#00C9B7" : "transparent",
+                  color: activeCurrency === "USD" ? "#06204D" : "var(--muted)",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>🇺🇸</span>
+                <span>USD ($)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCurrency("GHS")
+                  setActiveCurrencyLocal("GHS")
+                }}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "16px",
+                  border: "none",
+                  background:
+                    activeCurrency === "GHS" ? "#00C9B7" : "transparent",
+                  color: activeCurrency === "GHS" ? "#06204D" : "var(--muted)",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>🇬🇭</span>
+                <span>GHS (GH₵)</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style={{ textAlign: "center", marginBottom: "28px" }}>
-        <div
-          style={{
-            width: "56px",
-            height: "56px",
-            borderRadius: "16px",
-            background:
-              "linear-gradient(135deg, rgba(6,32,77,0.4), rgba(0,201,183,0.25))",
-            color: "#00C9B7",
-            display: "grid",
-            placeItems: "center",
-            margin: "0 auto 16px",
-            border: "1px solid rgba(0,201,183,0.35)",
-          }}
-        >
-          <Lock size={28} />
+      {/* Row 2: Compact Centered Billing Cycle Toggle */}
+      <div className="paywall-billing-bar">
+        <div className="paywall-billing-pill-track">
+          <button
+            type="button"
+            onClick={() => setBillingCycle("monthly")}
+            className={`paywall-billing-tab ${!isYearly ? "active" : ""}`}
+          >
+            Monthly Plan
+          </button>
+          <button
+            type="button"
+            onClick={() => setBillingCycle("yearly")}
+            className={`paywall-billing-tab ${isYearly ? "active" : ""}`}
+          >
+            <span>Annual Plan</span>
+            <span className="paywall-save-tag">SAVE 17% · 2 MOS FREE</span>
+          </button>
         </div>
-        <div
-          className="eyebrow"
-          style={{ color: "#00C9B7", letterSpacing: "1px" }}
-        >
-          PRO SUBSCRIPTION TOOL
-        </div>
-        <h1 style={{ fontSize: "28px", marginTop: "8px" }}>
-          Unlock {tool.name} with Pro
-        </h1>
-        <p
-          className="page-subtitle"
-          style={{ maxWidth: "480px", margin: "10px auto 0" }}
-        >
-          This advanced tool has been designated as a{" "}
-          <strong>Pro Feature</strong> by the administrator. Activate your
-          subscription to unlock unlimited access.
-        </p>
       </div>
 
       {successMessage ? (
@@ -329,7 +420,7 @@ export default function ProActivationModal({
               marginBottom: "20px",
             }}
           >
-            {/* Option 1: Single-Tool Pass */}
+            {/* Option 1: Single-Tool Monthly/Yearly Subscription */}
             <div
               style={{
                 border: "1px solid rgba(59,130,246,0.4)",
@@ -351,7 +442,7 @@ export default function ProActivationModal({
                     fontWeight: 600,
                   }}
                 >
-                  <Sparkles size={18} /> Single-Tool Pass
+                  <Sparkles size={18} /> {tool.name} Pass
                 </div>
                 <div
                   style={{
@@ -360,7 +451,7 @@ export default function ProActivationModal({
                     margin: "12px 0 6px",
                   }}
                 >
-                  {toolPriceLabel}{" "}
+                  {singleToolLabel}{" "}
                   <span
                     style={{
                       fontSize: "13px",
@@ -368,7 +459,7 @@ export default function ProActivationModal({
                       color: "var(--muted)",
                     }}
                   >
-                    one-off
+                    {isYearly ? "per year" : "per month"}
                   </span>
                 </div>
                 <p
@@ -378,8 +469,10 @@ export default function ProActivationModal({
                     lineHeight: 1.6,
                   }}
                 >
-                  Unlock access to <strong>{tool.name}</strong> only. No
-                  recurring billing or automatic subscription renewals.
+                  Dedicated monthly subscription for <strong>{tool.name}</strong>.
+                  {isYearly
+                    ? " Renews annually with 2 months free applied. Cancel anytime."
+                    : " Renews automatically every month on this date. Cancel anytime."}
                 </p>
               </div>
               <div>
@@ -393,29 +486,12 @@ export default function ProActivationModal({
                     borderColor: "#3b82f6",
                   }}
                   disabled={loading !== null}
-                  onClick={handleBuySingleTool}
+                  onClick={handleBuySingleToolLive}
                 >
                   {loading === "payment"
-                    ? "Unlocking tool…"
-                    : `Buy ${tool.name} (${toolPriceLabel})`}
+                    ? "Processing checkout…"
+                    : `Subscribe to ${tool.name} (${singleToolLabel})`}
                 </button>
-                <div style={{ textAlign: "center", marginTop: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={handleBuySingleTool}
-                    disabled={loading !== null}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--muted)",
-                      fontSize: "11px",
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Simulate one-off tool purchase
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -458,7 +534,7 @@ export default function ProActivationModal({
                       color: "var(--muted)",
                     }}
                   >
-                    per month
+                    {isYearly ? "per year" : "per month"}
                   </span>
                 </div>
                 <p
@@ -470,6 +546,7 @@ export default function ProActivationModal({
                 >
                   Unlock all 37 creative & conversion tools across the platform
                   with priority client WebAssembly processing.
+                  {isYearly ? " Includes 2 months free." : ""}
                 </p>
               </div>
               <div>
@@ -487,23 +564,6 @@ export default function ProActivationModal({
                     ? "Processing checkout…"
                     : `Unlock All-Access (${formattedFee})`}
                 </button>
-                <div style={{ textAlign: "center", marginTop: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={handleSimulatedPayment}
-                    disabled={loading !== null}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--muted)",
-                      fontSize: "11px",
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Simulate Pro monthly subscription
-                  </button>
-                </div>
               </div>
             </div>
           </div>

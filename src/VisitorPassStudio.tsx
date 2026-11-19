@@ -131,19 +131,19 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
   const [facilityLocation, setFacilityLocation] = useState("Global Headquarters · Floor 14")
   const [selectedTheme, setSelectedTheme] = useState(BRAND_THEMES[0])
 
-  // Visitor fields
-  const [passId, setPassId] = useState("VP-8492")
-  const [fullName, setFullName] = useState("Dr. Sarah Jenkins")
-  const [organization, setOrganization] = useState("Apex Quantum Technologies")
-  const [email, setEmail] = useState("sarah.jenkins@apexquantum.io")
-  const [phone, setPhone] = useState("+1 (555) 382-9014")
-  const [vehiclePlate, setVehiclePlate] = useState("7XYZ942")
+  // Visitor fields (initialized blank for new entry)
+  const [passId, setPassId] = useState(() => `VP-${Math.floor(1000 + Math.random() * 9000)}`)
+  const [fullName, setFullName] = useState("")
+  const [organization, setOrganization] = useState("")
+  const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
+  const [vehiclePlate, setVehiclePlate] = useState("")
   const [photoDataUrl, setPhotoDataUrl] = useState<string>("")
 
-  // Host details
-  const [hostName, setHostName] = useState("David Vance")
-  const [hostDepartment, setHostDepartment] = useState("Strategic Architecture")
-  const [meetingRoom, setMeetingRoom] = useState("Executive Boardroom C")
+  // Host details (initialized blank for new entry)
+  const [hostName, setHostName] = useState("")
+  const [hostDepartment, setHostDepartment] = useState("")
+  const [meetingRoom, setMeetingRoom] = useState("")
 
   // Access & Security
   const [accessTier, setAccessTier] = useState<AccessTier>("vip")
@@ -177,6 +177,21 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
   const regeneratePassId = () => {
     const randomNum = Math.floor(1000 + Math.random() * 9000)
     setPassId(`VP-${randomNum}`)
+  }
+
+  // Clear all visitor and host fields so form is completely blank
+  const handleClearForm = () => {
+    setFullName("")
+    setOrganization("")
+    setEmail("")
+    setPhone("")
+    setVehiclePlate("")
+    setPhotoDataUrl("")
+    setHostName("")
+    setHostDepartment("")
+    setMeetingRoom("")
+    regeneratePassId()
+    notify("Visitor form cleared.", "info")
   }
 
   // Load visitor log from localStorage on mount
@@ -737,6 +752,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
         {/* Global Action Toolbar */}
         <div className="visitor-header-actions">
+          {(fullName || organization || email || phone || vehiclePlate || photoDataUrl || hostName || hostDepartment || meetingRoom) && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={handleClearForm}
+              title="Clear all inputted fields"
+              style={{ fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+            >
+              <RefreshCw size={13} />
+              <span>Clear Form</span>
+            </button>
+          )}
           <button
             type="button"
             className="secondary"
@@ -857,7 +884,19 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
             {/* Section 1: Visitor Information */}
             <div className="visitor-section">
-              <label className="visitor-section-title">Visitor Information</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <label className="visitor-section-title" style={{ margin: 0 }}>Visitor Information</label>
+                {(fullName || organization || email || phone || vehiclePlate || photoDataUrl || hostName || hostDepartment || meetingRoom) && (
+                  <button
+                    type="button"
+                    className="text-button-sm"
+                    onClick={handleClearForm}
+                    style={{ fontSize: "11px", color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                  >
+                    <RefreshCw size={11} /> Clear fields
+                  </button>
+                )}
+              </div>
               <div className="form-row-grid">
                 <div className="form-group">
                   <label htmlFor="vis-fullname">Full Name *</label>
@@ -1174,18 +1213,18 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                       )}
                     </div>
 
-                    <div className="cr80-visitor-name">{fullName}</div>
-                    <div className="cr80-visitor-org">{organization}</div>
+                    <div className="cr80-visitor-name">{fullName || "Visitor Name"}</div>
+                    <div className="cr80-visitor-org">{organization || "Organization / Affiliation"}</div>
 
                     {/* Metadata table */}
                     <div className="cr80-meta-grid">
                       <div className="cr80-meta-cell">
                         <small>HOST</small>
-                        <strong>{hostName}</strong>
+                        <strong>{hostName || "Front Desk"}</strong>
                       </div>
                       <div className="cr80-meta-cell">
                         <small>DEPT</small>
-                        <strong>{hostDepartment}</strong>
+                        <strong>{hostDepartment || "Lobby"}</strong>
                       </div>
                       <div className="cr80-meta-cell">
                         <small>DATE</small>
@@ -1239,15 +1278,20 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
 
                   <div className="clip-body-content">
                     <div className="clip-left-column">
-                      <div className="clip-visitor-name">{fullName}</div>
-                      <div className="clip-visitor-org">{organization}</div>
+                      <div className="clip-visitor-name">{fullName || "Visitor Name"}</div>
+                      <div className="clip-visitor-org">{organization || "Organization / Affiliation"}</div>
 
                       <div className="clip-info-rows">
                         <div>
-                          <span>HOST:</span> <strong>{hostName} ({hostDepartment})</strong>
+                          <span>HOST:</span>{" "}
+                          <strong>
+                            {hostName
+                              ? `${hostName}${hostDepartment ? ` (${hostDepartment})` : ""}`
+                              : "Front Desk Staff"}
+                          </strong>
                         </div>
                         <div>
-                          <span>ROOM:</span> <strong>{meetingRoom}</strong>
+                          <span>ROOM:</span> <strong>{meetingRoom || "Main Lobby"}</strong>
                         </div>
                         <div>
                           <span>VALID:</span> <strong>{visitDate} ({timeIn} - {timeOut})</strong>
@@ -1278,8 +1322,8 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                         <span className="mobile-org-title">{companyName}</span>
                         <span className="mobile-status-live">● ACTIVE PASS</span>
                       </div>
-                      <div className="mobile-guest-name">{fullName}</div>
-                      <div className="mobile-guest-sub">{organization}</div>
+                      <div className="mobile-guest-name">{fullName || "Visitor Name"}</div>
+                      <div className="mobile-guest-sub">{organization || "Organization / Affiliation"}</div>
                     </div>
 
                     <div className="mobile-pass-body">
@@ -1371,9 +1415,9 @@ export default function VisitorPassStudio({ navigate, onComplete }: VisitorPassS
                             <small>{tierMeta.label}</small>
                           </div>
                           <div className="a4-mini-body">
-                            <h3>{fullName}</h3>
-                            <p>{organization}</p>
-                            <small>Host: {hostName} ({hostDepartment})</small>
+                            <h3>{fullName || "Visitor Name"}</h3>
+                            <p>{organization || "Organization / Affiliation"}</p>
+                            <small>Host: {hostName || "Reception Desk"} ({hostDepartment || "Front Lobby"})</small>
                             {qrDataUrl && <img src={qrDataUrl} alt="A4 QR" className="a4-mini-qr" />}
                             <span className="a4-pass-code">{passId}</span>
                           </div>

@@ -828,6 +828,7 @@ export default function QRCodeStudioModal({
       }}
     >
       <div
+        className="qr-studio-card"
         style={{
           width: "100%",
           maxWidth: "1080px",
@@ -954,9 +955,10 @@ export default function QRCodeStudioModal({
 
         {/* Modal Main Body (2 Columns) */}
         <div
+          className="qr-studio-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(320px, 420px) 1fr",
+            gridTemplateColumns: "minmax(min(100%, 360px), 420px) 1fr",
             flex: 1,
             overflow: "hidden",
           }}

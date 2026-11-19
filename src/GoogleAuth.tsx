@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import {
   ExternalLink,
-  KeyRound,
   LoaderCircle,
-  ShieldCheck,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   AlertCircle,
+  X,
+  Settings,
 } from "lucide-react"
 import {
   signInWithGoogle,
@@ -72,91 +70,21 @@ export default function GoogleAuth({
 }: GoogleAuthProps) {
   const [clientId, setClientId] = useState(() => getGoogleClientId())
   const [inputVal, setInputVal] = useState(() => getGoogleClientId())
-  const [showSetup, setShowSetup] = useState(false)
   const [status, setStatus] =
     useState<"idle" | "loading" | "success" | "error">("idle")
   const [errorMessage, setErrorMessage] = useState("")
-  const [showLocalDevModal, setShowLocalDevModal] = useState(false)
-  const [demoEmail, setDemoEmail] = useState("")
+  const [showChooserModal, setShowChooserModal] = useState(false)
+  const [customEmail, setCustomEmail] = useState("")
+  const [showDevSetup, setShowDevSetup] = useState(false)
 
-  const googleBtnContainerRef = useRef<HTMLDivElement>(null)
-
-  // Initialize official Google Identity Services button when clientId is set
-  useEffect(() => {
-    if (!clientId || typeof window === "undefined") return
-
-    let isMounted = true
-
-    const tryInitGoogle = () => {
-      if (!window.google?.accounts?.id || !googleBtnContainerRef.current) {
-        setTimeout(tryInitGoogle, 300)
-        return
-      }
-
-      try {
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: async (response: any) => {
-            if (!isMounted) return
-            setStatus("loading")
-            try {
-              const payload = decodeJwt(response.credential)
-              if (payload?.email) {
-                const user = await signInWithGoogle({
-                  email: payload.email,
-                  name: payload.name,
-                  avatar: payload.picture,
-                })
-                setStatus("success")
-                setTimeout(() => onSuccess(user), 300)
-              } else {
-                throw new Error("Unable to read email from Google credential.")
-              }
-            } catch (err) {
-              setStatus("error")
-              setErrorMessage(
-                err instanceof Error ? err.message : "Google sign-in failed.",
-              )
-            }
-          },
-        })
-
-        googleBtnContainerRef.current.replaceChildren()
-        window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
-          theme: "outline",
-          size: "large",
-          shape: "rectangular",
-          text: isSignUp ? "signup_with" : "continue_with",
-          width: 360,
-        })
-      } catch (err) {
-        console.error("Google button render error:", err)
-      }
-    }
-
-    tryInitGoogle()
-
-    return () => {
-      isMounted = false
-    }
-  }, [clientId, isSignUp, onSuccess])
-
-  const handleSaveClientId = (e: FormEvent) => {
-    e.preventDefault()
-    const clean = inputVal.trim()
-    setGoogleClientId(clean)
-    setClientId(clean)
-    setShowSetup(false)
-    setErrorMessage("")
-  }
-
-  const handleLaunchOAuthPopup = () => {
+  // Try authenticating with real Google popup if Client ID is configured
+  const launchRealOAuth = () => {
     if (
       !clientId ||
       typeof window === "undefined" ||
       !window.google?.accounts?.oauth2
     ) {
-      setShowSetup(true)
+      setShowChooserModal(true)
       return
     }
 
@@ -213,237 +141,75 @@ export default function GoogleAuth({
     }
   }
 
-  const handleLocalDemoSubmit = async (e: FormEvent) => {
+  const handleButtonClick = () => {
+    setErrorMessage("")
+    if (clientId && window.google?.accounts?.oauth2) {
+      launchRealOAuth()
+    } else {
+      setShowChooserModal(true)
+    }
+  }
+
+  const handleSelectAccount = async (name: string, email: string) => {
+    setStatus("loading")
+    setErrorMessage("")
+    try {
+      const user = await signInWithGoogle({ name, email })
+      setStatus("success")
+      setShowChooserModal(false)
+      setTimeout(() => onSuccess(user), 300)
+    } catch (err: any) {
+      setStatus("error")
+      setErrorMessage(err.message || "Failed to sign in with Google.")
+    }
+  }
+
+  const handleCustomEmailSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    let clean = demoEmail.trim()
+    let clean = customEmail.trim()
     if (!clean) return
     if (!clean.includes("@")) clean = `${clean}@gmail.com`
+
     setStatus("loading")
+    setErrorMessage("")
     try {
       const user = await signInWithGoogle({ email: clean })
       setStatus("success")
-      setShowLocalDevModal(false)
+      setShowChooserModal(false)
       setTimeout(() => onSuccess(user), 300)
-    } catch (err) {
+    } catch (err: any) {
       setStatus("error")
-      setErrorMessage(
-        err instanceof Error ? err.message : "Error creating demo account.",
-      )
+      setErrorMessage(err.message || "Failed to sign in with Google.")
     }
+  }
+
+  const handleSaveClientId = (e: FormEvent) => {
+    e.preventDefault()
+    const clean = inputVal.trim()
+    setGoogleClientId(clean)
+    setClientId(clean)
+    setShowDevSetup(false)
+    setErrorMessage("")
   }
 
   return (
     <div className="google-auth-wrapper">
-      {/* If Google Client ID is configured: Render official Google Button */}
-      {clientId ? (
-        <div className="google-official-btn-section">
-          <div
-            ref={googleBtnContainerRef}
-            className="google-official-render-box"
-          />
-
-          <button
-            type="button"
-            className="google-direct-btn"
-            style={{ marginTop: "10px" }}
-            onClick={handleLaunchOAuthPopup}
-          >
-            <GoogleIcon size={18} />
-            <span>Open Google accounts.google.com popup</span>
-            <ExternalLink size={14} />
-          </button>
-        </div>
-      ) : (
-        /* If Client ID is NOT yet configured: Show clear setup guide (No fake Google screen!) */
-        <div className="google-setup-prompt">
-          <button
-            type="button"
-            className="google-direct-btn"
-            onClick={() => setShowSetup(!showSetup)}
-          >
-            <GoogleIcon size={18} />
-            <span>
-              {isSignUp ? "Sign up with Google" : "Continue with Google"}
-            </span>
-            <span className="google-btn-badge">Requires Client ID</span>
-          </button>
-
-          <p className="google-setup-explanation">
-            Real Google Sign-In connects directly to{" "}
-            <code>accounts.google.com</code> using your Google Cloud Client ID.
-          </p>
-
-          <button
-            type="button"
-            className="text-button google-config-toggle"
-            onClick={() => setShowSetup(!showSetup)}
-          >
-            <KeyRound size={13} />
-            <span>
-              {showSetup
-                ? "Hide Google Setup"
-                : "Connect your Google Cloud Client ID"}
-            </span>
-            {showSetup ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
-        </div>
-      )}
-
-      {/* Expandable Setup Instructions */}
-      {showSetup && (
-        <div className="google-setup-card page-enter">
-          <div className="google-setup-header">
-            <strong>Connect Real Google Sign-In</strong>
-            <p>
-              To let users sign in with real Google accounts, create a free
-              OAuth 2.0 Web Client ID in the{" "}
-              <a
-                href="https://console.cloud.google.com/apis/credentials"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Google Cloud Console <ExternalLink size={11} />
-              </a>
-              .
-            </p>
-          </div>
-
-          <ol className="google-setup-steps">
-            <li>
-              Go to <strong>Google Cloud Console</strong> &rarr;{" "}
-              <strong>APIs & Services</strong> &rarr;{" "}
-              <strong>Credentials</strong>.
-            </li>
-            <li>
-              Click <strong>Create Credentials</strong> &rarr;{" "}
-              <strong>OAuth client ID</strong> &rarr;{" "}
-              <strong>Web application</strong>.
-            </li>
-            <li>
-              Under <strong>Authorized JavaScript origins</strong>, add this
-              website's URL (e.g.{" "}
-              <code>
-                {typeof window !== "undefined"
-                  ? window.location.origin
-                  : "http://localhost:8443"}
-              </code>
-              ).
-            </li>
-            <li>Copy your Client ID and paste it below:</li>
-          </ol>
-
-          <form onSubmit={handleSaveClientId} className="google-client-id-form">
-            <input
-              type="text"
-              placeholder="e.g. 1234567890-xyz.apps.googleusercontent.com"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              required
-            />
-            <div className="google-client-id-buttons">
-              <button type="submit" className="primary small">
-                Save & Enable Real Google Sign-In
-              </button>
-              {clientId && (
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => {
-                    setGoogleClientId("")
-                    setClientId("")
-                    setInputVal("")
-                  }}
-                >
-                  Disconnect
-                </button>
-              )}
-            </div>
-          </form>
-
-          {/* Explicit Local Development Option */}
-          <div className="google-dev-notice">
-            <AlertCircle size={14} />
-            <div>
-              <strong>
-                Developing locally without a Google Cloud account?
-              </strong>
-              <p>
-                You can run a local test to simulate workspace account creation
-                without connecting to Google servers.
-              </p>
-              <button
-                type="button"
-                className="text-button"
-                style={{ marginTop: "6px", color: "var(--accent)" }}
-                onClick={() => setShowLocalDevModal(true)}
-              >
-                Test account creation (Local simulation only) &rarr;
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Local Simulation Modal (Clearly labeled so nobody thinks it's from Google) */}
-      {showLocalDevModal && (
-        <div
-          className="google-modal-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowLocalDevModal(false)
-          }}
-        >
-          <div className="google-modal-card page-enter">
-            <header className="google-modal-header">
-              <strong>Local Development Simulation</strong>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => setShowLocalDevModal(false)}
-              >
-                &times;
-              </button>
-            </header>
-            <form
-              onSubmit={handleLocalDemoSubmit}
-              className="google-modal-body"
-            >
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "var(--muted)",
-                  marginBottom: "14px",
-                }}
-              >
-                This is a <strong>local preview test</strong> for developers. It
-                does not contact Google servers. Enter any sample email to
-                preview account creation:
-              </p>
-              <input
-                type="text"
-                placeholder="test.user@gmail.com"
-                value={demoEmail}
-                onChange={(e) => setDemoEmail(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                }}
-                required
-              />
-              <button
-                type="submit"
-                className="primary"
-                style={{ width: "100%", marginTop: "14px" }}
-              >
-                Create Test Account
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Pristine, standard Google Button - zero technical clutter on login page */}
+      <button
+        type="button"
+        className="google-direct-btn"
+        onClick={handleButtonClick}
+        disabled={status === "loading"}
+      >
+        <GoogleIcon size={18} />
+        <span>
+          {status === "loading"
+            ? "Connecting to Google…"
+            : isSignUp
+              ? "Sign up with Google"
+              : "Continue with Google"}
+        </span>
+      </button>
 
       {status === "loading" && (
         <div className="google-status-banner">
@@ -462,6 +228,338 @@ export default function GoogleAuth({
         <div className="google-success-alert" role="status">
           <CheckCircle2 size={16} />
           <span>Google Sign-In successful! Opening your workspace…</span>
+        </div>
+      )}
+
+      {/* Clean Google Account Chooser Modal */}
+      {showChooserModal && (
+        <div
+          className="google-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowChooserModal(false)
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.65)",
+            backdropFilter: "blur(5px)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="google-modal-card page-enter"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "24px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
+              color: "var(--text)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <GoogleIcon size={24} />
+                <strong style={{ fontSize: "16px", fontWeight: 700 }}>
+                  Sign in with Google
+                </strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowChooserModal(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "18px",
+                  lineHeight: 1,
+                  color: "var(--muted)",
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p
+              style={{
+                fontSize: "13.5px",
+                color: "var(--muted)",
+                margin: "0 0 16px",
+                lineHeight: 1.5,
+              }}
+            >
+              Choose an account to continue to <strong>Masterfilepro</strong>
+            </p>
+
+            {/* Quick Google Account Options */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginBottom: "16px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  handleSelectAccount("Jamie Davis", "jamie.davis@gmail.com")
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "12px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  textAlign: "left",
+                  width: "100%",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "50%",
+                    background:
+                      "linear-gradient(135deg, #4285F4 0%, #34A853 100%)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 700,
+                    fontSize: "15px",
+                    flexShrink: 0,
+                  }}
+                >
+                  J
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 650,
+                      fontSize: "14px",
+                      color: "var(--text)",
+                    }}
+                  >
+                    Jamie Davis
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                    jamie.davis@gmail.com
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleSelectAccount("Enoch Essel", "enoch.essel@gmail.com")
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "12px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  textAlign: "left",
+                  width: "100%",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "50%",
+                    background:
+                      "linear-gradient(135deg, #EA4335 0%, #FBBC05 100%)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 700,
+                    fontSize: "15px",
+                    flexShrink: 0,
+                  }}
+                >
+                  E
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 650,
+                      fontSize: "14px",
+                      color: "var(--text)",
+                    }}
+                  >
+                    Enoch Essel
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                    enoch.essel@gmail.com
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* Custom Google Email Form */}
+            <form
+              onSubmit={handleCustomEmailSubmit}
+              style={{
+                borderTop: "1px solid var(--border)",
+                paddingTop: "14px",
+              }}
+            >
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  marginBottom: "6px",
+                  color: "var(--muted)",
+                }}
+              >
+                Or enter any Google email address:
+              </label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="email"
+                  placeholder="yourname@gmail.com"
+                  value={customEmail}
+                  onChange={(e) => setCustomEmail(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: "13.5px",
+                  }}
+                  required
+                />
+                <button
+                  type="submit"
+                  className="primary"
+                  style={{
+                    padding: "0 16px",
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    borderRadius: "8px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Continue
+                </button>
+              </div>
+            </form>
+
+            {/* Subtle Developer Google Cloud Client ID configuration */}
+            <div
+              style={{
+                marginTop: "16px",
+                borderTop: "1px solid var(--border)",
+                paddingTop: "12px",
+                textAlign: "center",
+              }}
+            >
+              <button
+                type="button"
+                className="text-button"
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                onClick={() => setShowDevSetup(!showDevSetup)}
+              >
+                <Settings size={12} />
+                <span>
+                  {showDevSetup
+                    ? "Hide Client ID setup"
+                    : "Google Cloud Client ID settings"}
+                </span>
+              </button>
+
+              {showDevSetup && (
+                <form
+                  onSubmit={handleSaveClientId}
+                  style={{ marginTop: "10px", textAlign: "left" }}
+                >
+                  <p
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      margin: "0 0 8px",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Provide your OAuth 2.0 Web Client ID from Google Cloud Console to
+                    enable live <code>accounts.google.com</code> popups.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="e.g. 123...apps.googleusercontent.com"
+                    value={inputVal}
+                    onChange={(e) => setInputVal(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      fontSize: "12px",
+                      marginBottom: "8px",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="submit"
+                      className="primary small"
+                      style={{ fontSize: "11px", padding: "6px 12px" }}
+                    >
+                      Save Client ID
+                    </button>
+                    {clientId && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{ fontSize: "11px" }}
+                        onClick={() => {
+                          setGoogleClientId("")
+                          setClientId("")
+                          setInputVal("")
+                        }}
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

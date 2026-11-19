@@ -374,6 +374,14 @@
   min-height: 480px;
 }
 
+@media (max-width: 480px) {
+  .badge-canvas-wrapper {
+    padding: 16px 8px;
+    min-height: 420px;
+    overflow-x: hidden;
+  }
+}
+
 /* FORMAT 1: CR80 LANYARD ID BADGE */
 .cr80-badge-card {
   width: 320px;

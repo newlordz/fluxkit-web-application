@@ -18,6 +18,7 @@ if (typeof origUpdateInfoDict === "function") {
   }
 }
 import QRCode from "qrcode"
+
 async function getPdfEngine(): Promise<any> {
   try {
     return await import("./pdfEngine")
@@ -26,8 +27,26 @@ async function getPdfEngine(): Promise<any> {
   }
 }
 
+async function getApiPool(): Promise<any> {
+  if (typeof window !== "undefined" && (window as any).__fluxkitApiPool) {
+    return (window as any).__fluxkitApiPool
+  }
+  try {
+    const mod = await import("./apiPoolService")
+    if (typeof window !== "undefined" && mod) {
+      ;(window as any).__fluxkitApiPool = mod
+    }
+    return mod
+  } catch {
+    return null
+  }
+}
+
 function getNextAvailableApi(category: string): any {
   try {
+    if (typeof window !== "undefined" && (window as any).__fluxkitApiPool?.getNextAvailableApi) {
+      return (window as any).__fluxkitApiPool.getNextAvailableApi(category)
+    }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
     return pool?.getNextAvailableApi ? pool.getNextAvailableApi(category) : null
@@ -38,6 +57,10 @@ function getNextAvailableApi(category: string): any {
 
 function recordApiOutcome(apiId: string, outcome: any): void {
   try {
+    if (typeof window !== "undefined" && (window as any).__fluxkitApiPool?.recordApiOutcome) {
+      (window as any).__fluxkitApiPool.recordApiOutcome(apiId, outcome)
+      return
+    }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pool = typeof require !== "undefined" ? require("./apiPoolService") : null
     if (pool?.recordApiOutcome) pool.recordApiOutcome(apiId, outcome)
@@ -1789,6 +1812,8 @@ export async function extractPDFPages(
 
     const lines: string[] = []
     let currentLine = ""
+    let lastY: number | null = null
+    let lastX: number | null = null
     const opRegex =
       /(?:<([0-9a-fA-F]+)>|\(([^)]*)\))\s*(Tj|'|")|\[([\s\S]*?)\]\s*TJ|(T\*|Tm|Td|TD)/g
     let m: RegExpExecArray | null
@@ -1799,6 +1824,8 @@ export async function extractPDFPages(
         if (m[3] === "'" || m[3] === '"') {
           if (currentLine.trim()) lines.push(currentLine.trim())
           currentLine = ""
+          lastY = null
+          lastX = null
         }
       } else if (m[2] !== undefined) {
         const str = m[2]
@@ -1811,9 +1838,11 @@ export async function extractPDFPages(
         if (m[3] === "'" || m[3] === '"') {
           if (currentLine.trim()) lines.push(currentLine.trim())
           currentLine = ""
+          lastY = null
+          lastX = null
         }
       } else if (m[4]) {
-        const innerRegex = /(?:<([0-9a-fA-F]+)>|\(([^)]*)\))/g
+        const innerRegex = /(?:<([0-9a-fA-F]+)>|\(([^)]*)\)|(-?\d+(?:\.\d+)?))/g
         let im: RegExpExecArray | null
         while ((im = innerRegex.exec(m[4])) !== null) {
           if (im[1]) {
@@ -1822,11 +1851,70 @@ export async function extractPDFPages(
             currentLine += im[2]
               .replace(/\\\\/g, "\\")
               .replace(/\\([()])/g, "$1")
+          } else if (im[3] !== undefined) {
+            const num = parseFloat(im[3])
+            if (num <= -220) {
+              if (currentLine.trim() && !currentLine.endsWith("\t")) {
+                currentLine += "\t"
+              }
+            } else if (num <= -80) {
+              if (!currentLine.endsWith(" ") && !currentLine.endsWith("\t")) {
+                currentLine += " "
+              }
+            }
           }
         }
       } else if (m[5]) {
-        if (currentLine.trim()) {
-          lines.push(currentLine.trim())
+        const op = m[5]
+        if (op === "T*") {
+          if (currentLine.trim()) lines.push(currentLine.trim())
+          currentLine = ""
+          lastY = null
+          lastX = null
+        } else if (op === "Tm") {
+          const prevChunk = fullStreamText.slice(Math.max(0, m.index - 100), m.index)
+          const tmMatch = prevChunk.match(
+            /(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*$/,
+          )
+          if (tmMatch) {
+            const newX = parseFloat(tmMatch[5])
+            const newY = parseFloat(tmMatch[6])
+            if (lastY !== null && Math.abs(newY - lastY) > 3) {
+              if (currentLine.trim()) lines.push(currentLine.trim())
+              currentLine = ""
+            } else if (lastX !== null && newX > lastX + 10) {
+              if (currentLine.trim() && !currentLine.endsWith("\t")) {
+                currentLine += "\t"
+              }
+            }
+            lastX = newX
+            lastY = newY
+          } else {
+            if (currentLine.trim()) lines.push(currentLine.trim())
+            currentLine = ""
+            lastY = null
+            lastX = null
+          }
+        } else if (op === "Td" || op === "TD") {
+          const prevChunk = fullStreamText.slice(Math.max(0, m.index - 80), m.index)
+          const tdMatch = prevChunk.match(/(-?[\d.]+)\s+(-?[\d.]+)\s*$/)
+          if (tdMatch) {
+            const dx = parseFloat(tdMatch[1])
+            const dy = parseFloat(tdMatch[2])
+            if (Math.abs(dy) > 3) {
+              if (currentLine.trim()) lines.push(currentLine.trim())
+              currentLine = ""
+            } else if (dx > 10) {
+              if (currentLine.trim() && !currentLine.endsWith("\t")) {
+                currentLine += "\t"
+              }
+            }
+          } else {
+            if (currentLine.trim()) lines.push(currentLine.trim())
+            currentLine = ""
+          }
+        } else {
+          if (currentLine.trim()) lines.push(currentLine.trim())
           currentLine = ""
         }
       }
@@ -2223,6 +2311,124 @@ export async function pdfToPPT(
   }
 
   const baseName = name.replace(/\.[^/.]+$/, "")
+
+  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
+  if (typeof window !== "undefined") {
+    const activeApi = getNextAvailableApi("pdf-compression")
+    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        const pdfBase64 = btoa(binary)
+        const response = await fetch("/api/adobe-pdf/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfBase64,
+            targetFormat: "pptx",
+            clientId: activeApi.apiKey,
+            clientSecret: activeApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.base64) {
+            const pptxBinary = atob(data.base64)
+            const pptxBytes = new Uint8Array(pptxBinary.length)
+            for (let i = 0; i < pptxBinary.length; i++) {
+              pptxBytes[i] = pptxBinary.charCodeAt(i)
+            }
+            recordApiOutcome(activeApi.id, { success: true })
+            const blob = new Blob([pptxBytes], {
+              type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            })
+            return {
+              blob,
+              name: `${baseName}-converted.pptx`,
+              format: "pptx",
+              size: pptxBytes.byteLength,
+            }
+          }
+        } else {
+          recordApiOutcome(activeApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `Adobe export returned ${response.status}`,
+          })
+        }
+      } catch (cloudErr) {
+        console.warn("Adobe PDF Services PPTX export failed, falling back to next engine:", cloudErr)
+        recordApiOutcome(activeApi.id, {
+          success: false,
+          errorMessage: String(cloudErr),
+        })
+      }
+    }
+
+    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        const pdfBase64 = btoa(binary)
+        const response = await fetch("/api/ilovepdf/pdfppt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileBase64: pdfBase64,
+            fileName: `${baseName}.pdf`,
+            publicKey: iloveApi.apiKey,
+            secretKey: iloveApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.base64) {
+            const pptxBinary = atob(data.base64)
+            const pptxBytes = new Uint8Array(pptxBinary.length)
+            for (let i = 0; i < pptxBinary.length; i++) {
+              pptxBytes[i] = pptxBinary.charCodeAt(i)
+            }
+            recordApiOutcome(iloveApi.id, { success: true })
+            const blob = new Blob([pptxBytes], {
+              type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            })
+            return {
+              blob,
+              name: `${baseName}-converted.pptx`,
+              format: "pptx",
+              size: pptxBytes.byteLength,
+            }
+          }
+        } else {
+          recordApiOutcome(iloveApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `iLovePDF returned ${response.status}`,
+          })
+        }
+      } catch (iloveErr) {
+        console.warn("iLovePDF PPTX conversion failed, falling back to local engine:", iloveErr)
+        recordApiOutcome(iloveApi.id, {
+          success: false,
+          errorMessage: String(iloveErr),
+        })
+      }
+    }
+  }
+
+  // 1. Local Fallback Engine (with Master slides and Layout relationships to prevent PowerPoint repair errors)
   const pages = await extractPDFPages(bytes)
   const slideCount = Math.max(1, pages.length)
   const is43 = options.aspectRatio === "4:3"
@@ -2257,6 +2463,8 @@ export async function pdfToPPT(
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
 ${overrides}</Types>`
   entries.push({ name: "[Content_Types].xml", data: contentTypesXml })
 
@@ -2266,7 +2474,7 @@ ${overrides}</Types>`
 </Relationships>`
   entries.push({ name: "_rels/.rels", data: relsXml })
 
-  let presRels = ""
+  let presRels = `  <Relationship Id="rIdMaster1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>\n`
   for (let i = 1; i <= slideCount; i++) {
     presRels += `  <Relationship Id="rId${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i}.xml"/>\n`
   }
@@ -2278,13 +2486,42 @@ ${presRels}</Relationships>`
     data: presentationRelsXml,
   })
 
+  // Minimal slide master and layout to satisfy Microsoft PowerPoint schema
+  const slideMasterXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:grpSpPr/></p:nvGrpSpPr></p:spTree></p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
+</p:sldMaster>`
+  entries.push({ name: "ppt/slideMasters/slideMaster1.xml", data: slideMasterXml })
+
+  const slideMasterRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>`
+  entries.push({ name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", data: slideMasterRelsXml })
+
+  const slideLayoutXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:grpSpPr/></p:nvGrpSpPr></p:spTree></p:cSld>
+</p:sldLayout>`
+  entries.push({ name: "ppt/slideLayouts/slideLayout1.xml", data: slideLayoutXml })
+
+  const slideLayoutRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>`
+  entries.push({ name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", data: slideLayoutRelsXml })
+
   let sldIdList = ""
   for (let i = 1; i <= slideCount; i++) {
     sldIdList += `    <p:sldId id="${255 + i}" r:id="rId${i}"/>\n`
   }
   const presentationXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:sldMasterIdLst/>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldMasterIdLst>
+    <p:sldMasterId id="2147483648" r:id="rIdMaster1"/>
+  </p:sldMasterIdLst>
   <p:sldIdLst>
 ${sldIdList}  </p:sldIdLst>
   <p:sldSz cx="${cx}" cy="${cy}"/>
@@ -2292,6 +2529,12 @@ ${sldIdList}  </p:sldIdLst>
   entries.push({ name: "ppt/presentation.xml", data: presentationXml })
 
   for (let i = 1; i <= slideCount; i++) {
+    const slideRelXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>`
+    entries.push({ name: `ppt/slides/_rels/slide${i}.xml.rels`, data: slideRelXml })
+
     const pageData = pages[i - 1]
     const lines =
       pageData && pageData.lines.length > 0 ? pageData.lines : [`Slide ${i}`]
@@ -2319,7 +2562,7 @@ ${sldIdList}  </p:sldIdLst>
     }
 
     const slideXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld>
     <p:bg>
       <p:bgPr>
@@ -2368,6 +2611,58 @@ ${bodyParas}        </p:txBody>
 }
 
 // ----------------------------------------------------------------------------
+function splitTableLineSmart(line: string): string[] {
+  const trimmed = line.trim()
+  const tokens = trimmed.split(/\s+/)
+  if (tokens.length < 2) return [trimmed]
+
+  const numRegex = /^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/
+  const numericTokens: string[] = []
+  let textIndex = tokens.length - 1
+
+  while (textIndex >= 0 && numRegex.test(tokens[textIndex])) {
+    numericTokens.unshift(tokens[textIndex])
+    textIndex--
+  }
+
+  if (numericTokens.length >= 2 && textIndex >= 0) {
+    const textPart = tokens.slice(0, textIndex + 1).join(" ")
+    return [textPart, ...numericTokens]
+  }
+
+  if (numericTokens.length === 1 && textIndex >= 0 && tokens.length <= 4) {
+    const textPart = tokens.slice(0, textIndex + 1).join(" ")
+    return [textPart, numericTokens[0]]
+  }
+
+  return [trimmed]
+}
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = []
+  let cur = ""
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (char === "," && !inQuotes) {
+      result.push(cur.trim())
+      cur = ""
+    } else {
+      cur += char
+    }
+  }
+  result.push(cur.trim())
+  return result
+}
+
+// ----------------------------------------------------------------------------
 // 3. PDF to Excel (XLSX, CSV, TSV)
 // ----------------------------------------------------------------------------
 export async function pdfToExcel(
@@ -2389,43 +2684,124 @@ export async function pdfToExcel(
   }
 
   const baseName = name.replace(/\.[^/.]+$/, "")
-  const pages = await extractPDFPages(bytes)
   const format = options.format || "xlsx"
   const strategy = options.strategy || "auto"
 
-  const allLines: string[] = []
-  for (const page of pages) {
-    allLines.push(...page.lines)
-  }
+  // 0. Cloud conversion with Adobe Acrobat PDF Services (if linked in Admin / API Pool)
+  if (format === "xlsx" && typeof window !== "undefined") {
+    const activeApi = getNextAvailableApi("pdf-compression")
+    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        const pdfBase64 = btoa(binary)
+        const response = await fetch("/api/adobe-pdf/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfBase64,
+            targetFormat: "xlsx",
+            clientId: activeApi.apiKey,
+            clientSecret: activeApi.clientSecret,
+          }),
+        })
 
-  const rows: string[][] = []
-  for (const line of allLines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    let cols: string[] = []
-    if (strategy === "lines") {
-      cols = [trimmed]
-    } else if (strategy === "whitespace") {
-      cols = trimmed.split(/\s{2,}/)
-    } else {
-      if (trimmed.includes("\t")) {
-        cols = trimmed.split("\t")
-      } else if (trimmed.includes("|")) {
-        cols = trimmed
-          .split("|")
-          .map((c) => c.trim())
-          .filter((c) => c.length > 0)
-      } else if (trimmed.split(/\s{2,}/).length >= 2) {
-        cols = trimmed.split(/\s{2,}/)
-      } else if (trimmed.includes(",")) {
-        const m = trimmed.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)
-        cols = m ? m.map((c) => c.replace(/^"|"$/g, "")) : trimmed.split(",")
-      } else {
-        cols = [trimmed]
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.base64) {
+            const xlsxBinary = atob(data.base64)
+            const xlsxBytes = new Uint8Array(xlsxBinary.length)
+            for (let i = 0; i < xlsxBinary.length; i++) {
+              xlsxBytes[i] = xlsxBinary.charCodeAt(i)
+            }
+            recordApiOutcome(activeApi.id, { success: true })
+            const blob = new Blob([xlsxBytes], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            })
+            return {
+              blob,
+              name: `${baseName}.xlsx`,
+              format: "xlsx",
+              size: xlsxBytes.byteLength,
+              pages: 1,
+            }
+          }
+        } else {
+          recordApiOutcome(activeApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `Adobe export returned ${response.status}`,
+          })
+        }
+      } catch (cloudErr) {
+        console.warn("Adobe PDF Services XLSX export failed, falling back to local extractor:", cloudErr)
+        recordApiOutcome(activeApi.id, {
+          success: false,
+          errorMessage: String(cloudErr),
+        })
       }
     }
-    rows.push(cols.map((c) => c.trim()))
+  }
+
+  let rows: string[][] = []
+
+  // 1. Try high-fidelity PDF.js coordinate table extractor if in browser environment
+  if (strategy !== "lines") {
+    try {
+      const engine = await getPdfEngine()
+      if (engine && typeof engine.extractTableWithPdfJs === "function") {
+        const tableRows = await engine.extractTableWithPdfJs(bytes)
+        if (tableRows && tableRows.length > 0 && tableRows.some((r: string[]) => r.length > 1)) {
+          rows = tableRows
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // 2. Fall back to structural PDF parser if PDF.js table was unavailable or 1-column
+  if (rows.length === 0) {
+    const pages = await extractPDFPages(bytes)
+    const allLines: string[] = []
+    for (const page of pages) {
+      allLines.push(...page.lines)
+    }
+
+    for (const line of allLines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+
+      let cols: string[] = []
+      if (strategy === "lines") {
+        cols = [trimmed]
+      } else if (strategy === "whitespace") {
+        cols = trimmed.split(/\s{2,}/)
+      } else {
+        if (trimmed.includes("\t")) {
+          cols = trimmed.split("\t")
+        } else if (trimmed.includes("|")) {
+          cols = trimmed
+            .split("|")
+            .map((c) => c.trim())
+            .filter((c) => c.length > 0)
+        } else if (trimmed.split(/\s{2,}/).length >= 2) {
+          cols = trimmed.split(/\s{2,}/)
+        } else if (
+          trimmed.includes(",") &&
+          !/^[\$€£¥₹]?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(trimmed)
+        ) {
+          cols = parseCsvLine(trimmed)
+        } else {
+          cols = splitTableLineSmart(trimmed)
+        }
+      }
+      rows.push(cols.map((c) => c.trim()))
+    }
   }
 
   if (rows.length === 0) {
@@ -2437,9 +2813,11 @@ export async function pdfToExcel(
       "\uFEFF" +
       rows
         .map((r) =>
-          r.map((c) =>
-            /[",\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c,
-          ).join(","),
+          r
+            .map((c) =>
+              /[",\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c,
+            )
+            .join(","),
         )
         .join("\r\n")
     return {
@@ -2459,16 +2837,50 @@ export async function pdfToExcel(
     }
   }
 
-  // OpenXML .xlsx
+  // OpenXML .xlsx with auto-calculated column widths and gridlines
+  const maxColWidths: number[] = []
+  rows.forEach((row) => {
+    row.forEach((cell, cIdx) => {
+      const len = cell ? cell.toString().length : 0
+      maxColWidths[cIdx] = Math.max(maxColWidths[cIdx] || 0, len)
+    })
+  })
+
+  let colsXml = ""
+  if (maxColWidths.length > 0) {
+    colsXml = "  <cols>\n"
+    maxColWidths.forEach((len, cIdx) => {
+      const colNum = cIdx + 1
+      const width = Math.min(60, Math.max(12, Math.round(len * 1.25) + 3))
+      colsXml += `    <col min="${colNum}" max="${colNum}" width="${width}" customWidth="1"/>\n`
+    })
+    colsXml += "  </cols>\n"
+  }
+
   let sheetDataXml = ""
   rows.forEach((row, rowIdx) => {
     const rowNum = rowIdx + 1
     let rowCellsXml = ""
     row.forEach((cellVal, colIdx) => {
       const cellRef = `${colIndexToName(colIdx)}${rowNum}`
-      const numVal = parseFloat(cellVal.replace(/^[$,]/, ""))
-      if (!isNaN(numVal) && /^-?\$?[\d,]+(\.\d+)?%?$/.test(cellVal.trim())) {
-        rowCellsXml += `<c r="${cellRef}"><v>${numVal}</v></c>`
+      const trimmed = cellVal.trim()
+      const isLeadingZeroId = /^0\d+$/.test(trimmed)
+      const isNum =
+        !isLeadingZeroId &&
+        /^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/.test(trimmed)
+
+      if (isNum) {
+        const rawNum = trimmed
+          .replace(/^[\$€£¥₹]\s*/, "")
+          .replace(/,/g, "")
+          .replace(/%$/, "")
+        const numVal = parseFloat(rawNum)
+        if (!isNaN(numVal)) {
+          const finalVal = trimmed.endsWith("%") ? numVal / 100 : numVal
+          rowCellsXml += `<c r="${cellRef}"><v>${finalVal}</v></c>`
+        } else {
+          rowCellsXml += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(cellVal)}</t></is></c>`
+        }
       } else {
         rowCellsXml += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(cellVal)}</t></is></c>`
       }
@@ -2503,7 +2915,11 @@ export async function pdfToExcel(
 
   const sheet1Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetData>
+  <sheetViews>
+    <sheetView tabSelected="1" workbookViewId="0" showGridLines="1"/>
+  </sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+${colsXml}  <sheetData>
     ${sheetDataXml}
   </sheetData>
 </worksheet>`
@@ -2527,6 +2943,282 @@ export async function pdfToExcel(
 // ----------------------------------------------------------------------------
 // 4. Word to PDF (DOCX, TXT, Text)
 // ----------------------------------------------------------------------------
+
+function decodeXmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
+interface ParsedDocxParagraph {
+  type: "p"
+  text: string
+  align: "left" | "center" | "right" | "justify"
+  isHeading: number
+  isBold: boolean
+  isBullet: boolean
+  fontSize: number
+}
+
+interface ParsedDocxTableCell {
+  text: string
+  lines: string[]
+  align: "left" | "center" | "right"
+  isBold: boolean
+  widthDxa?: number
+  colSpan?: number
+}
+
+interface ParsedDocxTableRow {
+  cells: ParsedDocxTableCell[]
+  isHeader?: boolean
+}
+
+interface ParsedDocxTable {
+  type: "tbl"
+  rows: ParsedDocxTableRow[]
+  colWidthsDxa: number[]
+}
+
+type ParsedDocxBlock = ParsedDocxParagraph | ParsedDocxTable
+
+function parseDocxParagraph(pXml: string): ParsedDocxParagraph {
+  const jcMatch = /<w:jc[^>]+w:val="([^"]+)"/i.exec(pXml)
+  let align: "left" | "center" | "right" | "justify" = "left"
+  if (jcMatch) {
+    const val = jcMatch[1].toLowerCase()
+    if (val === "center") align = "center"
+    else if (val === "right") align = "right"
+    else if (val === "both" || val === "justify") align = "justify"
+  }
+
+  const styleMatch = /<w:pStyle[^>]+w:val="([^"]+)"/i.exec(pXml)
+  let isHeading = 0
+  if (styleMatch) {
+    const val = styleMatch[1].toLowerCase()
+    if (val.includes("heading1") || val === "title") isHeading = 1
+    else if (val.includes("heading2") || val === "subtitle") isHeading = 2
+    else if (val.includes("heading3")) isHeading = 3
+  }
+
+  const isBullet = /<w:numPr[\s>]/.test(pXml)
+
+  const runRegex = /<w:r[\s>][\s\S]*?<\/w:r>/g
+  let rm: RegExpExecArray | null
+  let fullText = ""
+  let hasBold = false
+  let maxFontSize = 11
+
+  while ((rm = runRegex.exec(pXml)) !== null) {
+    const rXml = rm[0]
+    if (/<w:b(\/|>|\s[^>]*w:val="(?:1|true)")/i.test(rXml)) {
+      hasBold = true
+    }
+    const szMatch = /<w:sz[^>]+w:val="(\d+)"/i.exec(rXml)
+    if (szMatch) {
+      const halfPts = parseInt(szMatch[1], 10)
+      const pt = Math.round(halfPts / 2)
+      if (pt > maxFontSize) maxFontSize = pt
+    }
+    let runText = ""
+    const textRegex = /<w:t(?:[^>]*)>([\s\S]*?)<\/w:t>|<w:tab\/>|<w:br\/>/g
+    let tm: RegExpExecArray | null
+    while ((tm = textRegex.exec(rXml)) !== null) {
+      if (tm[0] === "<w:tab/>") {
+        runText += "    "
+      } else if (tm[0] === "<w:br/>") {
+        runText += "\n"
+      } else if (tm[1] !== undefined) {
+        runText += decodeXmlEntities(tm[1])
+      }
+    }
+    fullText += runText
+  }
+
+  if (!fullText) {
+    const tRegex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g
+    let tm: RegExpExecArray | null
+    while ((tm = tRegex.exec(pXml)) !== null) {
+      fullText += decodeXmlEntities(tm[1])
+    }
+  }
+
+  if (isHeading === 1 && maxFontSize < 16) maxFontSize = 16
+  if (isHeading === 2 && maxFontSize < 13) maxFontSize = 13
+
+  return {
+    type: "p",
+    text: fullText,
+    align,
+    isHeading,
+    isBold: hasBold || isHeading > 0,
+    isBullet,
+    fontSize: maxFontSize,
+  }
+}
+
+function parseDocxTable(tblXml: string): ParsedDocxTable {
+  const colWidthsDxa: number[] = []
+  const gridMatch = /<w:tblGrid[\s>]([\s\S]*?)<\/w:tblGrid>/i.exec(tblXml)
+  if (gridMatch) {
+    const colRegex = /<w:gridCol[^>]+w:w="(\d+)"/gi
+    let cm: RegExpExecArray | null
+    while ((cm = colRegex.exec(gridMatch[1])) !== null) {
+      colWidthsDxa.push(parseInt(cm[1], 10))
+    }
+  }
+
+  const rows: ParsedDocxTableRow[] = []
+  const trRegex = /<w:tr[\s>][\s\S]*?<\/w:tr>/g
+  let trm: RegExpExecArray | null
+
+  while ((trm = trRegex.exec(tblXml)) !== null) {
+    const trXml = trm[0]
+    const isHeader = /<w:tblHeader\b/i.test(trXml)
+    const cells: ParsedDocxTableCell[] = []
+
+    const tcRegex = /<w:tc[\s>][\s\S]*?<\/w:tc>/g
+    let tcm: RegExpExecArray | null
+
+    while ((tcm = tcRegex.exec(trXml)) !== null) {
+      const tcXml = tcm[0]
+      const wMatch = /<w:tcW[^>]+w:w="(\d+)"/i.exec(tcXml)
+      const widthDxa = wMatch ? parseInt(wMatch[1], 10) : undefined
+
+      const pMatches = tcXml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || []
+      const cellLines: string[] = []
+      let cellIsBold = isHeader
+      let cellAlign: "left" | "center" | "right" = "left"
+
+      if (pMatches.length > 0) {
+        for (const pXml of pMatches) {
+          const parsedP = parseDocxParagraph(pXml)
+          if (parsedP.text.trim()) {
+            cellLines.push(parsedP.text.trim())
+          }
+          if (parsedP.isBold) cellIsBold = true
+          if (parsedP.align !== "left") cellAlign = parsedP.align
+        }
+      } else {
+        const tRegex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g
+        let tm: RegExpExecArray | null
+        let txt = ""
+        while ((tm = tRegex.exec(tcXml)) !== null) {
+          txt += decodeXmlEntities(tm[1])
+        }
+        if (txt.trim()) cellLines.push(txt.trim())
+      }
+
+      cells.push({
+        text: cellLines.join("\n"),
+        lines: cellLines,
+        align: cellAlign,
+        isBold: cellIsBold,
+        widthDxa,
+      })
+    }
+
+    if (cells.length > 0) {
+      rows.push({ cells, isHeader })
+    }
+  }
+
+  if (colWidthsDxa.length === 0) {
+    let maxCols = 0
+    let bestRow: ParsedDocxTableCell[] = []
+    for (const r of rows) {
+      if (r.cells.length > maxCols) {
+        maxCols = r.cells.length
+        bestRow = r.cells
+      }
+    }
+    for (const c of bestRow) {
+      colWidthsDxa.push(c.widthDxa || 1000)
+    }
+  }
+
+  return {
+    type: "tbl",
+    rows,
+    colWidthsDxa,
+  }
+}
+
+function extractDocxBlocks(docXml: string): ParsedDocxBlock[] {
+  const bodyMatch = /<w:body[^>]*>([\s\S]*?)<\/w:body>/i.exec(docXml)
+  const bodyXml = bodyMatch ? bodyMatch[1] : docXml
+  const blocks: ParsedDocxBlock[] = []
+
+  let pos = 0
+  while (pos < bodyXml.length) {
+    const nextP = bodyXml.indexOf("<w:p", pos)
+    const nextTbl = bodyXml.indexOf("<w:tbl", pos)
+
+    if (nextP === -1 && nextTbl === -1) break
+
+    if (nextTbl !== -1 && (nextP === -1 || nextTbl < nextP)) {
+      const openTag = "<w:tbl"
+      const closeTag = "</w:tbl>"
+      let depth = 0
+      let cur = nextTbl
+      let end = -1
+
+      while (cur < bodyXml.length) {
+        const nextOpen = bodyXml.indexOf(openTag, cur)
+        const nextClose = bodyXml.indexOf(closeTag, cur)
+
+        if (nextClose === -1) {
+          end = bodyXml.length
+          break
+        }
+
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          const closeBracket = bodyXml.indexOf(">", nextOpen)
+          if (closeBracket !== -1 && bodyXml[closeBracket - 1] === "/") {
+            cur = closeBracket + 1
+            continue
+          }
+          depth++
+          cur = closeBracket !== -1 ? closeBracket + 1 : nextOpen + openTag.length
+        } else {
+          depth--
+          cur = nextClose + closeTag.length
+          if (depth <= 0) {
+            end = cur
+            break
+          }
+        }
+      }
+
+      if (end !== -1) {
+        const tblXml = bodyXml.substring(nextTbl, end)
+        const parsedTbl = parseDocxTable(tblXml)
+        if (parsedTbl.rows.length > 0) {
+          blocks.push(parsedTbl)
+        }
+        pos = end
+      } else {
+        pos = nextTbl + openTag.length
+      }
+    } else if (nextP !== -1) {
+      const endP = bodyXml.indexOf("</w:p>", nextP)
+      if (endP !== -1) {
+        const pXml = bodyXml.substring(nextP, endP + 6)
+        const parsedP = parseDocxParagraph(pXml)
+        blocks.push(parsedP)
+        pos = endP + 6
+      } else {
+        pos = nextP + 4
+      }
+    }
+  }
+
+  return blocks
+}
+
 export async function wordToPDF(
   fileOrText: File | string | Uint8Array | ArrayBuffer,
   options: WordToPDFOptions = {},
@@ -2536,31 +3228,27 @@ export async function wordToPDF(
     throw new Error("Select a Word document or enter text to convert to PDF.")
   }
 
+  let docxBlocks: ParsedDocxBlock[] = []
   let fullText = ""
-  if (
+
+  const isZip =
     bytes.length >= 4 &&
     bytes[0] === 0x50 &&
     bytes[1] === 0x4b &&
     bytes[2] === 0x03 &&
     bytes[3] === 0x04
-  ) {
+
+  if (isZip) {
     try {
       const entries = await unzipEntries(bytes)
       const docXml = entries["word/document.xml"]
       if (docXml) {
-        const paraRegex = /<w:p[\s>][\s\S]*?<\/w:p>/g
-        let pm: RegExpExecArray | null
-        const paraTexts: string[] = []
-        while ((pm = paraRegex.exec(docXml)) !== null) {
-          const tRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g
-          let tm: RegExpExecArray | null
-          let pText = ""
-          while ((tm = tRegex.exec(pm[0])) !== null) {
-            pText += tm[1]
-          }
-          if (pText.trim()) paraTexts.push(pText.trim())
+        docxBlocks = extractDocxBlocks(docXml)
+        if (docxBlocks.length > 0) {
+          fullText = docxBlocks
+            .map((b) => (b.type === "p" ? b.text : b.rows.map((r) => r.cells.map((c) => c.text).join("\t")).join("\n")))
+            .join("\n\n")
         }
-        fullText = paraTexts.join("\n\n")
       }
     } catch {
       // Fallback
@@ -2590,104 +3278,347 @@ export async function wordToPDF(
   const font = await doc.embedFont(regularFontName)
   const fontBold = await doc.embedFont(boldFontName)
 
-  let margin = 72 // standard (1 inch)
+  let margin = 54 // standard professional 0.75 in
   if (options.margins === "compact") margin = 36 // 0.5 inch
-  if (options.margins === "spacious") margin = 108 // 1.5 inch
+  if (options.margins === "spacious") margin = 90 // 1.25 inch
 
   const pageWidth = 612
   const pageHeight = 792
   const printableWidth = pageWidth - 2 * margin
 
-  const lines = fullText.split(/\r?\n/)
   let currentPage = doc.addPage([pageWidth, pageHeight])
   let curY = pageHeight - margin - 20
 
-  const docTitle = options.title || baseName || "Document"
-  currentPage.drawText(sanitizeForWinAnsi(docTitle, fontBold), {
-    x: margin,
-    y: curY,
-    size: 20,
-    font: fontBold,
-    color: rgb(0.12, 0.23, 0.54),
-  })
-  curY -= 36
+  // Draw user-specified document title if requested
+  if (options.title) {
+    currentPage.drawText(sanitizeForWinAnsi(options.title, fontBold), {
+      x: margin,
+      y: curY,
+      size: 20,
+      font: fontBold,
+      color: rgb(0.12, 0.23, 0.54),
+    })
+    curY -= 36
+  }
 
-  for (const rawLine of lines) {
-    const trimmed = rawLine.trim()
-    if (!trimmed) {
-      curY -= 12
-      continue
-    }
+  if (docxBlocks.length > 0) {
+    // Structured DOCX Rendering (Preserves Headings, Tables, Layouts, Alignments)
+    for (const block of docxBlocks) {
+      if (block.type === "tbl") {
+        const numCols = Math.max(
+          ...block.rows.map((r) => r.cells.length),
+          block.colWidthsDxa.length,
+          1,
+        )
 
-    let isH1 = false
-    let isH2 = false
-    let isBullet = false
-    let lineText = trimmed
+        let colWidths: number[] = []
+        const totalDxa = block.colWidthsDxa.reduce((a, b) => a + b, 0)
+        if (totalDxa > 0 && block.colWidthsDxa.length === numCols) {
+          colWidths = block.colWidthsDxa.map(
+            (dxa) => (dxa / totalDxa) * printableWidth,
+          )
+        } else {
+          const firstRowDxa =
+            block.rows[0]?.cells.map((c) => c.widthDxa || 0) || []
+          const firstTotal = firstRowDxa.reduce((a, b) => a + b, 0)
+          if (firstTotal > 0 && firstRowDxa.length === numCols) {
+            colWidths = firstRowDxa.map(
+              (dxa) => (dxa / firstTotal) * printableWidth,
+            )
+          } else {
+            const equalW = printableWidth / numCols
+            colWidths = Array(numCols).fill(equalW)
+          }
+        }
 
-    if (trimmed.startsWith("# ")) {
-      isH1 = true
-      lineText = trimmed.substring(2).trim()
-    } else if (trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
-      isH2 = true
-      lineText = trimmed.replace(/^#+\s*/, "").trim()
-    } else if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-      isBullet = true
-      lineText = trimmed.substring(2).trim()
-    }
+        curY -= 6
 
-    const cleanText = sanitizeForWinAnsi(
-      lineText,
-      isH1 || isH2 ? fontBold : font,
-    )
-    const fontSize = isH1 ? 16 : isH2 ? 13 : 11
-    const activeFont = isH1 || isH2 ? fontBold : font
-    const lineHeight = fontSize + 5
+        for (const row of block.rows) {
+          const fontSize = 10
+          const cellLineHeight = 14
+          const cellWrappedLines: string[][] = []
 
-    const words = cleanText.split(/\s+/)
-    let currentChunk = ""
-    const wrappedLines: string[] = []
+          for (let c = 0; c < row.cells.length; c++) {
+            const cell = row.cells[c]
+            const cellW = colWidths[c] || printableWidth / numCols
+            const innerW = Math.max(20, cellW - 12)
+            const cellFont = cell.isBold ? fontBold : font
+            const wrapped: string[] = []
 
-    for (const w of words) {
-      const testChunk = currentChunk ? `${currentChunk} ${w}` : w
-      const textWidth = activeFont.widthOfTextAtSize(testChunk, fontSize)
-      if (textWidth <= printableWidth - (isBullet ? 20 : 0)) {
-        currentChunk = testChunk
+            const paragraphs = cell.text.split("\n")
+            for (const para of paragraphs) {
+              const words = para.trim().split(/\s+/)
+              let chunk = ""
+              for (const w of words) {
+                if (!w) continue
+                const testChunk = chunk ? `${chunk} ${w}` : w
+                const textWidth = cellFont.widthOfTextAtSize(testChunk, fontSize)
+                if (textWidth <= innerW) {
+                  chunk = testChunk
+                } else {
+                  if (chunk) wrapped.push(chunk)
+                  chunk = w
+                }
+              }
+              if (chunk) wrapped.push(chunk)
+            }
+            cellWrappedLines.push(wrapped.length > 0 ? wrapped : [""])
+          }
+
+          const maxLines = Math.max(...cellWrappedLines.map((l) => l.length), 1)
+          const rowHeight = maxLines * cellLineHeight + 10
+
+          if (curY - rowHeight < margin + 30) {
+            currentPage = doc.addPage([pageWidth, pageHeight])
+            curY = pageHeight - margin - 20
+          }
+
+          if (row.isHeader) {
+            currentPage.drawRectangle({
+              x: margin,
+              y: curY - rowHeight,
+              width: printableWidth,
+              height: rowHeight,
+              color: rgb(0.95, 0.96, 0.98),
+            })
+          }
+
+          // Top border
+          currentPage.drawLine({
+            start: { x: margin, y: curY },
+            end: { x: margin + printableWidth, y: curY },
+            thickness: row.isHeader ? 1 : 0.5,
+            color: row.isHeader ? rgb(0.7, 0.75, 0.82) : rgb(0.88, 0.9, 0.93),
+          })
+          // Bottom border
+          currentPage.drawLine({
+            start: { x: margin, y: curY - rowHeight },
+            end: { x: margin + printableWidth, y: curY - rowHeight },
+            thickness: row.isHeader ? 1 : 0.5,
+            color: row.isHeader ? rgb(0.7, 0.75, 0.82) : rgb(0.88, 0.9, 0.93),
+          })
+
+          let cellX = margin
+          for (let c = 0; c < row.cells.length; c++) {
+            const cell = row.cells[c]
+            const cellW = colWidths[c] || printableWidth / numCols
+            const cellFont = cell.isBold ? fontBold : font
+            const cellColor = cell.isBold
+              ? rgb(0.12, 0.18, 0.28)
+              : rgb(0.25, 0.3, 0.38)
+
+            if (c > 0) {
+              currentPage.drawLine({
+                start: { x: cellX, y: curY },
+                end: { x: cellX, y: curY - rowHeight },
+                thickness: 0.5,
+                color: rgb(0.88, 0.9, 0.93),
+              })
+            }
+
+            let lineY = curY - 5 - fontSize
+            for (const line of cellWrappedLines[c]) {
+              if (line) {
+                const textW = cellFont.widthOfTextAtSize(line, fontSize)
+                let textX = cellX + 6
+                if (cell.align === "center") {
+                  textX = cellX + Math.max(6, (cellW - textW) / 2)
+                } else if (cell.align === "right") {
+                  textX = cellX + Math.max(6, cellW - textW - 6)
+                }
+                currentPage.drawText(sanitizeForWinAnsi(line, cellFont), {
+                  x: textX,
+                  y: lineY,
+                  size: fontSize,
+                  font: cellFont,
+                  color: cellColor,
+                })
+              }
+              lineY -= cellLineHeight
+            }
+            cellX += cellW
+          }
+
+          // Left and right border
+          currentPage.drawLine({
+            start: { x: margin, y: curY },
+            end: { x: margin, y: curY - rowHeight },
+            thickness: 0.5,
+            color: rgb(0.88, 0.9, 0.93),
+          })
+          currentPage.drawLine({
+            start: { x: margin + printableWidth, y: curY },
+            end: { x: margin + printableWidth, y: curY - rowHeight },
+            thickness: 0.5,
+            color: rgb(0.88, 0.9, 0.93),
+          })
+
+          curY -= rowHeight
+        }
+        curY -= 10
       } else {
+        // Paragraph Block
+        if (!block.text.trim()) {
+          curY -= 8
+          continue
+        }
+
+        const fontSize = block.fontSize
+        const activeFont = block.isBold ? fontBold : font
+        const lineHeight = fontSize + 4
+        const words = block.text.trim().split(/\s+/)
+        let currentChunk = ""
+        const wrappedLines: string[] = []
+        const maxTextW = printableWidth - (block.isBullet ? 18 : 0)
+
+        for (const w of words) {
+          if (!w) continue
+          const testChunk = currentChunk ? `${currentChunk} ${w}` : w
+          const textWidth = activeFont.widthOfTextAtSize(testChunk, fontSize)
+          if (textWidth <= maxTextW) {
+            currentChunk = testChunk
+          } else {
+            if (currentChunk) wrappedLines.push(currentChunk)
+            currentChunk = w
+          }
+        }
         if (currentChunk) wrappedLines.push(currentChunk)
-        currentChunk = w
+
+        for (let i = 0; i < wrappedLines.length; i++) {
+          if (curY < margin + 40) {
+            currentPage = doc.addPage([pageWidth, pageHeight])
+            curY = pageHeight - margin - 20
+          }
+          const line = wrappedLines[i]
+          const textW = activeFont.widthOfTextAtSize(line, fontSize)
+          let drawX = margin
+          if (block.align === "center") {
+            drawX = margin + Math.max(0, (printableWidth - textW) / 2)
+          } else if (block.align === "right") {
+            drawX = margin + Math.max(0, printableWidth - textW)
+          } else if (block.isBullet) {
+            drawX = margin + 18
+            if (i === 0) {
+              currentPage.drawText("•", {
+                x: margin + 4,
+                y: curY,
+                size: fontSize,
+                font: fontBold,
+                color: rgb(0.2, 0.4, 0.8),
+              })
+            }
+          }
+
+          const textColor =
+            block.isHeading === 1
+              ? rgb(0.12, 0.23, 0.54)
+              : block.isHeading === 2
+                ? rgb(0.15, 0.2, 0.28)
+                : rgb(0.2, 0.25, 0.35)
+
+          currentPage.drawText(sanitizeForWinAnsi(line, activeFont), {
+            x: drawX,
+            y: curY,
+            size: fontSize,
+            font: activeFont,
+            color: textColor,
+          })
+          curY -= lineHeight
+        }
+        curY -= block.isHeading ? 8 : 4
       }
     }
-    if (currentChunk) wrappedLines.push(currentChunk)
+  } else {
+    // Markdown & Plain Text Fallback Pipeline
+    const lines = fullText.split(/\r?\n/)
+    if (!options.title && baseName && !lines[0]?.startsWith("# ")) {
+      currentPage.drawText(sanitizeForWinAnsi(baseName, fontBold), {
+        x: margin,
+        y: curY,
+        size: 20,
+        font: fontBold,
+        color: rgb(0.12, 0.23, 0.54),
+      })
+      curY -= 36
+    }
 
-    for (let i = 0; i < wrappedLines.length; i++) {
-      if (curY < margin + 40) {
-        currentPage = doc.addPage([pageWidth, pageHeight])
-        curY = pageHeight - margin - 20
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim()
+      if (!trimmed) {
+        curY -= 12
+        continue
       }
-      const drawX = isBullet ? margin + 16 : margin
-      if (isBullet && i === 0) {
-        currentPage.drawText("•", {
-          x: margin,
+
+      let isH1 = false
+      let isH2 = false
+      let isBullet = false
+      let lineText = trimmed
+
+      if (trimmed.startsWith("# ")) {
+        isH1 = true
+        lineText = trimmed.substring(2).trim()
+      } else if (trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
+        isH2 = true
+        lineText = trimmed.replace(/^#+\s*/, "").trim()
+      } else if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+        isBullet = true
+        lineText = trimmed.substring(2).trim()
+      }
+
+      const cleanText = sanitizeForWinAnsi(
+        lineText,
+        isH1 || isH2 ? fontBold : font,
+      )
+      const fontSize = isH1 ? 16 : isH2 ? 13 : 11
+      const activeFont = isH1 || isH2 ? fontBold : font
+      const lineHeight = fontSize + 5
+
+      const words = cleanText.split(/\s+/)
+      let currentChunk = ""
+      const wrappedLines: string[] = []
+
+      for (const w of words) {
+        const testChunk = currentChunk ? `${currentChunk} ${w}` : w
+        const textWidth = activeFont.widthOfTextAtSize(testChunk, fontSize)
+        if (textWidth <= printableWidth - (isBullet ? 20 : 0)) {
+          currentChunk = testChunk
+        } else {
+          if (currentChunk) wrappedLines.push(currentChunk)
+          currentChunk = w
+        }
+      }
+      if (currentChunk) wrappedLines.push(currentChunk)
+
+      for (let i = 0; i < wrappedLines.length; i++) {
+        if (curY < margin + 40) {
+          currentPage = doc.addPage([pageWidth, pageHeight])
+          curY = pageHeight - margin - 20
+        }
+        const drawX = isBullet ? margin + 16 : margin
+        if (isBullet && i === 0) {
+          currentPage.drawText("•", {
+            x: margin,
+            y: curY,
+            size: fontSize,
+            font: fontBold,
+            color: rgb(0.2, 0.4, 0.8),
+          })
+        }
+        currentPage.drawText(wrappedLines[i], {
+          x: drawX,
           y: curY,
           size: fontSize,
-          font: fontBold,
-          color: rgb(0.2, 0.4, 0.8),
+          font: activeFont,
+          color: isH1
+            ? rgb(0.12, 0.23, 0.54)
+            : isH2
+              ? rgb(0.15, 0.2, 0.28)
+              : rgb(0.25, 0.3, 0.38),
         })
+        curY -= lineHeight
       }
-      currentPage.drawText(wrappedLines[i], {
-        x: drawX,
-        y: curY,
-        size: fontSize,
-        font: activeFont,
-        color: isH1
-          ? rgb(0.12, 0.23, 0.54)
-          : isH2
-            ? rgb(0.15, 0.2, 0.28)
-            : rgb(0.25, 0.3, 0.38),
-      })
-      curY -= lineHeight
+      curY -= 4
     }
-    curY -= 4
   }
 
   const totalPages = doc.getPageCount()
@@ -2716,8 +3647,33 @@ export async function wordToPDF(
   }
 }
 
+function wrapTextLines(text: string, font: any, fontSize: number, maxWidth: number): string[] {
+  if (!text) return []
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let currentLine = ""
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    let width = 0
+    try {
+      width = font.widthOfTextAtSize(testLine, fontSize)
+    } catch {
+      width = testLine.length * (fontSize * 0.55)
+    }
+    if (width <= maxWidth || !currentLine) {
+      currentLine = testLine
+    } else {
+      lines.push(currentLine)
+      currentLine = word
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines.length > 0 ? lines : [text]
+}
+
 // ----------------------------------------------------------------------------
-// 5. PowerPoint to PDF (PPTX, Outline)
+// 5. PowerPoint to PDF (PPTX, Outline, Pictures & Graphics)
 // ----------------------------------------------------------------------------
 export async function pptToPDF(
   fileOrText: File | string | Uint8Array | ArrayBuffer,
@@ -2730,11 +3686,137 @@ export async function pptToPDF(
     )
   }
 
+  const baseName = name.replace(/\.[^/.]+$/, "")
+
+  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
+  if (typeof window !== "undefined") {
+    const activeApi = getNextAvailableApi("pdf-compression")
+    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        const pptxBase64 = btoa(binary)
+        const response = await fetch("/api/adobe-pdf/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileBase64: pptxBase64,
+            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,
+            clientId: activeApi.apiKey,
+            clientSecret: activeApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.base64) {
+            const pdfBinary = atob(data.base64)
+            const pdfBytes = new Uint8Array(pdfBinary.length)
+            for (let i = 0; i < pdfBinary.length; i++) {
+              pdfBytes[i] = pdfBinary.charCodeAt(i)
+            }
+            recordApiOutcome(activeApi.id, { success: true })
+            return {
+              blob: new Blob([pdfBytes], { type: "application/pdf" }),
+              name: `${baseName}-converted.pdf`,
+              format: "pdf",
+              size: pdfBytes.byteLength,
+            }
+          }
+        } else {
+          recordApiOutcome(activeApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `Adobe create returned ${response.status}`,
+          })
+        }
+      } catch (cloudErr) {
+        console.warn("Adobe PDF Services PPTX to PDF failed, falling back to next engine:", cloudErr)
+        recordApiOutcome(activeApi.id, {
+          success: false,
+          errorMessage: String(cloudErr),
+        })
+      }
+    }
+
+    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    const iloveApi = activeApi?.provider === "ilovepdf" ? activeApi : getNextAvailableApi("pdf-compression")
+    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        const pptxBase64 = btoa(binary)
+        const response = await fetch("/api/ilovepdf/officepdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileBase64: pptxBase64,
+            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,
+            publicKey: iloveApi.apiKey,
+            secretKey: iloveApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.base64) {
+            const pdfBinary = atob(data.base64)
+            const pdfBytes = new Uint8Array(pdfBinary.length)
+            for (let i = 0; i < pdfBinary.length; i++) {
+              pdfBytes[i] = pdfBinary.charCodeAt(i)
+            }
+            recordApiOutcome(iloveApi.id, { success: true })
+            return {
+              blob: new Blob([pdfBytes], { type: "application/pdf" }),
+              name: `${baseName}-converted.pdf`,
+              format: "pdf",
+              size: pdfBytes.byteLength,
+            }
+          }
+        } else {
+          recordApiOutcome(iloveApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `iLovePDF officepdf returned ${response.status}`,
+          })
+        }
+      } catch (iloveErr) {
+        console.warn("iLovePDF PPTX to PDF conversion failed, falling back to local engine:", iloveErr)
+        recordApiOutcome(iloveApi.id, {
+          success: false,
+          errorMessage: String(iloveErr),
+        })
+      }
+    }
+  }
+
+  interface ExtractedSlideImage {
+    bytes: Uint8Array
+    x: number
+    y: number
+    cx: number
+    cy: number
+    isFullSlide?: boolean
+  }
+
   const rawSlides: {
     title: string
     bullets: string[]
+    images: ExtractedSlideImage[]
   }[] = []
 
+  let sldCx = 12192000
+  let sldCy = 6858000
+
+  // 1. Process binary PPTX files (ZIP archive containing PresentationML and media)
   if (
     bytes.length >= 4 &&
     bytes[0] === 0x50 &&
@@ -2743,37 +3825,172 @@ export async function pptToPDF(
     bytes[3] === 0x04
   ) {
     try {
-      const entries = await unzipEntries(bytes)
-      const slideKeys = Object.keys(entries)
-        .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
-        .sort((a, b) => {
-          const numA = parseInt(a.replace(/\D/g, ""), 10)
-          const numB = parseInt(b.replace(/\D/g, ""), 10)
-          return numA - numB
-        })
-      for (const sk of slideKeys) {
-        const xml = entries[sk]
-        const paraRegex = /<a:p[\s>][\s\S]*?<\/a:p>/g
-        let pm: RegExpExecArray | null
-        const lines: string[] = []
-        while ((pm = paraRegex.exec(xml)) !== null) {
-          const tRegex = /<a:t[^>]*>([^<]*)<\/a:t>/g
-          let tm: RegExpExecArray | null
-          let pText = ""
-          while ((tm = tRegex.exec(pm[0])) !== null) {
-            pText += tm[1]
-          }
-          if (pText.trim()) lines.push(pText.trim())
+      let zip: any = null
+      try {
+        const jszipMod = await import("jszip")
+        const JSZip = (jszipMod.default || jszipMod) as any
+        zip = await JSZip.loadAsync(bytes)
+      } catch {
+        // fallback
+      }
+
+      if (zip) {
+        // Read presentation canvas dimensions if defined
+        const presFile = zip.file("ppt/presentation.xml")
+        if (presFile) {
+          const presXml = await presFile.async("string")
+          const cxM = presXml.match(/<p:sldSz[^>]*\bcx="(\d+)"/i)
+          const cyM = presXml.match(/<p:sldSz[^>]*\bcy="(\d+)"/i)
+          if (cxM) sldCx = parseInt(cxM[1], 10) || sldCx
+          if (cyM) sldCy = parseInt(cyM[1], 10) || sldCy
         }
-        if (lines.length > 0) {
-          rawSlides.push({ title: lines[0], bullets: lines.slice(1) })
+
+        const slideKeys = Object.keys(zip.files)
+          .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k) && !zip.files[k].dir)
+          .sort((a, b) => {
+            const numA = parseInt(a.replace(/\D/g, ""), 10)
+            const numB = parseInt(b.replace(/\D/g, ""), 10)
+            return numA - numB
+          })
+
+        for (const sk of slideKeys) {
+          const xml = await zip.file(sk).async("string")
+
+          // Relationships for images
+          const relKey = sk.replace("ppt/slides/slide", "ppt/slides/_rels/slide") + ".rels"
+          const relMap: Record<string, string> = {}
+          if (zip.file(relKey)) {
+            const relsXml = await zip.file(relKey).async("string")
+            const relRegex = /<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"/g
+            let rm: RegExpExecArray | null
+            while ((rm = relRegex.exec(relsXml)) !== null) {
+              relMap[rm[1]] = rm[2]
+            }
+          }
+
+          // Extract text lines
+          const paraRegex = /<a:p[\s>][\s\S]*?<\/a:p>/g
+          let pm: RegExpExecArray | null
+          const lines: string[] = []
+          while ((pm = paraRegex.exec(xml)) !== null) {
+            const tRegex = /<a:t[^>]*>([^<]*)<\/a:t>/g
+            let tm: RegExpExecArray | null
+            let pText = ""
+            while ((tm = tRegex.exec(pm[0])) !== null) {
+              pText += tm[1]
+            }
+            if (pText.trim()) lines.push(pText.trim())
+          }
+
+          // Extract pictures and embedded graphics
+          const images: ExtractedSlideImage[] = []
+
+          // Check picture shapes (<p:pic>)
+          const picRegex = /<p:pic[\s\S]*?<\/p:pic>/g
+          let picM: RegExpExecArray | null
+          while ((picM = picRegex.exec(xml)) !== null) {
+            const picXml = picM[0]
+            const blipMatch = picXml.match(/<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/)
+            const offMatch = picXml.match(/<a:off[^>]+x="(-?\d+)"[^>]+y="(-?\d+)"/)
+            const extMatch = picXml.match(/<a:ext[^>]+cx="(\d+)"[^>]+cy="(\d+)"/)
+            if (blipMatch && relMap[blipMatch[1]]) {
+              let target = relMap[blipMatch[1]].replace(/^(\.\.\/)+/, "ppt/")
+              if (!target.startsWith("ppt/")) target = "ppt/" + target
+              const file = zip.file(target) || zip.file(target.toLowerCase())
+              if (file) {
+                const imgBytes = await file.async("uint8array")
+                const x = offMatch ? parseInt(offMatch[1], 10) : 0
+                const y = offMatch ? parseInt(offMatch[2], 10) : 0
+                const cx = extMatch ? parseInt(extMatch[1], 10) : sldCx
+                const cy = extMatch ? parseInt(extMatch[2], 10) : sldCy
+                const isFull =
+                  (cx >= sldCx * 0.85 && cy >= sldCy * 0.85) ||
+                  (x === 0 && y === 0 && cx >= sldCx * 0.75)
+                images.push({ bytes: imgBytes, x, y, cx, cy, isFullSlide: isFull })
+              }
+            }
+          }
+
+          // Check slide background image (<p:bg>)
+          const bgMatch = xml.match(/<p:bg[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/)
+          if (bgMatch && relMap[bgMatch[1]]) {
+            let target = relMap[bgMatch[1]].replace(/^(\.\.\/)+/, "ppt/")
+            if (!target.startsWith("ppt/")) target = "ppt/" + target
+            const file = zip.file(target) || zip.file(target.toLowerCase())
+            if (file) {
+              const imgBytes = await file.async("uint8array")
+              images.unshift({ bytes: imgBytes, x: 0, y: 0, cx: sldCx, cy: sldCy, isFullSlide: true })
+            }
+          }
+
+          // Check blipFill shapes (<a:blipFill>)
+          const bfRegex = /<a:blipFill[\s\S]*?<a:blip[^>]+(?:r:embed|r:link)="([^"]+)"/g
+          let bfM: RegExpExecArray | null
+          while ((bfM = bfRegex.exec(xml)) !== null) {
+            const rId = bfM[1]
+            if (relMap[rId]) {
+              let target = relMap[rId].replace(/^(\.\.\/)+/, "ppt/")
+              if (!target.startsWith("ppt/")) target = "ppt/" + target
+              const file = zip.file(target) || zip.file(target.toLowerCase())
+              if (file) {
+                const imgBytes = await file.async("uint8array")
+                const alreadyHas = images.some((im) => im.bytes.length === imgBytes.length)
+                if (!alreadyHas) {
+                  images.push({ bytes: imgBytes, x: 0, y: 0, cx: sldCx, cy: sldCy, isFullSlide: false })
+                }
+              }
+            }
+          }
+
+          if (lines.length > 0 || images.length > 0) {
+            rawSlides.push({
+              title: lines[0] || (images.length > 0 ? "" : `Slide ${rawSlides.length + 1}`),
+              bullets: lines.length > 0 ? lines.slice(1) : [],
+              images,
+            })
+          }
         }
       }
     } catch {
       // Fallback
     }
+
+    // Pure-JS fallback using unzipEntries if JSZip wasn't available
+    if (rawSlides.length === 0) {
+      try {
+        const entries = await unzipEntries(bytes)
+        const slideKeys = Object.keys(entries)
+          .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
+          .sort((a, b) => {
+            const numA = parseInt(a.replace(/\D/g, ""), 10)
+            const numB = parseInt(b.replace(/\D/g, ""), 10)
+            return numA - numB
+          })
+        for (const sk of slideKeys) {
+          const xml = entries[sk]
+          const paraRegex = /<a:p[\s>][\s\S]*?<\/a:p>/g
+          let pm: RegExpExecArray | null
+          const lines: string[] = []
+          while ((pm = paraRegex.exec(xml)) !== null) {
+            const tRegex = /<a:t[^>]*>([^<]*)<\/a:t>/g
+            let tm: RegExpExecArray | null
+            let pText = ""
+            while ((tm = tRegex.exec(pm[0])) !== null) {
+              pText += tm[1]
+            }
+            if (pText.trim()) lines.push(pText.trim())
+          }
+          if (lines.length > 0) {
+            rawSlides.push({ title: lines[0], bullets: lines.slice(1), images: [] })
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
   }
 
+  // 2. Text Outline fallback
   if (rawSlides.length === 0) {
     const text = new TextDecoder("utf-8").decode(bytes)
     if (!text || !text.trim()) {
@@ -2788,7 +4005,7 @@ export async function pptToPDF(
         .map((l) => l.trim())
         .filter((l) => l.length > 0)
       if (blines.length > 0) {
-        rawSlides.push({ title: blines[0], bullets: blines.slice(1) })
+        rawSlides.push({ title: blines[0], bullets: blines.slice(1), images: [] })
       }
     }
   }
@@ -2799,7 +4016,6 @@ export async function pptToPDF(
     )
   }
 
-  const baseName = name.replace(/\.[^/.]+$/, "")
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -2812,69 +4028,183 @@ export async function pptToPDF(
   } else if (options.orientation === "portrait") {
     pageWidth = 595
     pageHeight = 842
+  } else if (!options.orientation && sldCx && sldCy) {
+    if (sldCx / sldCy < 1.45) {
+      pageWidth = 792
+      pageHeight = 595
+    }
   }
 
   const slidesPerPage = options.slidesPerPage || 1
   const totalSlides = rawSlides.length
 
+  const embedImageSafely = async (imgBytes: Uint8Array): Promise<any | null> => {
+    if (!imgBytes || imgBytes.length < 4) return null
+    const isPng =
+      imgBytes[0] === 0x89 &&
+      imgBytes[1] === 0x50 &&
+      imgBytes[2] === 0x4e &&
+      imgBytes[3] === 0x47
+    const isJpg = imgBytes[0] === 0xff && imgBytes[1] === 0xd8
+
+    if (isPng) {
+      try {
+        return await doc.embedPng(imgBytes)
+      } catch {}
+    }
+    if (isJpg) {
+      try {
+        return await doc.embedJpg(imgBytes)
+      } catch {}
+    }
+    try {
+      return await doc.embedPng(imgBytes)
+    } catch {
+      try {
+        return await doc.embedJpg(imgBytes)
+      } catch {
+        return null
+      }
+    }
+  }
+
   if (slidesPerPage === 1) {
     for (let i = 0; i < totalSlides; i++) {
       const slide = rawSlides[i]
       const page = doc.addPage([pageWidth, pageHeight])
+      const hasImages = slide.images && slide.images.length > 0
+      const fullSlideImg = slide.images?.find((img) => img.isFullSlide)
 
-      page.drawRectangle({
-        x: 20,
-        y: 20,
-        width: pageWidth - 40,
-        height: pageHeight - 40,
-        color: rgb(0.98, 0.99, 1.0),
-        borderColor: rgb(0.88, 0.91, 0.95),
-        borderWidth: 1,
-      })
-
-      const titleText = sanitizeForWinAnsi(slide.title, fontBold)
-      page.drawText(titleText, {
-        x: 45,
-        y: pageHeight - 70,
-        size: 22,
-        font: fontBold,
-        color: rgb(0.09, 0.12, 0.22),
-      })
-
-      page.drawLine({
-        start: { x: 45, y: pageHeight - 82 },
-        end: { x: pageWidth - 45, y: pageHeight - 82 },
-        thickness: 2,
-        color: rgb(0.92, 0.35, 0.05),
-      })
-
-      let curY = pageHeight - 120
-      for (const bullet of slide.bullets) {
-        if (curY < 60) break
-        const cleanBullet = sanitizeForWinAnsi(bullet, font)
-        page.drawCircle({
-          x: 55,
-          y: curY + 4,
-          size: 3,
-          color: rgb(0.92, 0.35, 0.05),
+      if (fullSlideImg) {
+        // Full-bleed visual slide (designed presentation graphics, photo slide, or scanned page)
+        const pdfImg = await embedImageSafely(fullSlideImg.bytes)
+        if (pdfImg) {
+          page.drawImage(pdfImg, {
+            x: 0,
+            y: 0,
+            width: pageWidth,
+            height: pageHeight,
+          })
+        }
+      } else {
+        page.drawRectangle({
+          x: 20,
+          y: 20,
+          width: pageWidth - 40,
+          height: pageHeight - 40,
+          color: rgb(0.98, 0.99, 1.0),
+          borderColor: rgb(0.88, 0.91, 0.95),
+          borderWidth: 1,
         })
-        page.drawText(cleanBullet, {
-          x: 70,
-          y: curY,
-          size: 13,
+
+        if (slide.title) {
+          const titleText = sanitizeForWinAnsi(slide.title, fontBold)
+          page.drawText(titleText, {
+            x: 45,
+            y: pageHeight - 70,
+            size: 22,
+            font: fontBold,
+            color: rgb(0.09, 0.12, 0.22),
+          })
+
+          page.drawLine({
+            start: { x: 45, y: pageHeight - 82 },
+            end: { x: pageWidth - 45, y: pageHeight - 82 },
+            thickness: 2,
+            color: rgb(0.92, 0.35, 0.05),
+          })
+        }
+
+        // Draw embedded inline pictures
+        if (hasImages) {
+          const scaleX = pageWidth / sldCx
+          const scaleY = pageHeight / sldCy
+          for (const img of slide.images) {
+            const pdfImg = await embedImageSafely(img.bytes)
+            if (pdfImg) {
+              const rawW = img.cx * scaleX
+              const rawH = img.cy * scaleY
+              const rawX = img.x * scaleX
+              const rawY = pageHeight - img.y * scaleY - rawH
+
+              const clampedW = Math.max(30, Math.min(pageWidth - 70, rawW))
+              const clampedH = Math.max(30, Math.min(pageHeight - 120, rawH))
+              const clampedX = Math.max(35, Math.min(pageWidth - 35 - clampedW, rawX))
+              const clampedY = Math.max(35, Math.min(pageHeight - 95 - clampedH, rawY))
+
+              page.drawImage(pdfImg, {
+                x: clampedX,
+                y: clampedY,
+                width: clampedW,
+                height: clampedH,
+              })
+            }
+          }
+        }
+
+        let curY = pageHeight - 120
+        let textStartX = 70
+        let maxTextWidth = pageWidth - 120
+
+        if (hasImages) {
+          // If there is an image on the right half, restrict text to the left column
+          const rightImg = slide.images.find((im) => {
+            const rawX = im.x * (pageWidth / sldCx)
+            return rawX >= pageWidth * 0.35 && rawX < pageWidth - 50
+          })
+          // If there is an image on the left half, move text to the right column
+          const leftImg = slide.images.find((im) => {
+            const rawX = im.x * (pageWidth / sldCx)
+            const rawW = im.cx * (pageWidth / sldCx)
+            return rawX < pageWidth * 0.35 && rawW < pageWidth * 0.65
+          })
+
+          if (rightImg) {
+            const rightX = rightImg.x * (pageWidth / sldCx)
+            maxTextWidth = Math.max(160, rightX - textStartX - 25)
+          } else if (leftImg) {
+            const leftX = leftImg.x * (pageWidth / sldCx)
+            const leftW = leftImg.cx * (pageWidth / sldCx)
+            textStartX = Math.min(pageWidth - 200, Math.max(70, leftX + leftW + 30))
+            maxTextWidth = Math.max(160, pageWidth - textStartX - 50)
+          }
+        }
+
+        for (const bullet of slide.bullets) {
+          if (curY < 60) break
+          const cleanBullet = sanitizeForWinAnsi(bullet, font)
+          const lines = wrapTextLines(cleanBullet, font, 13, maxTextWidth)
+          for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+            if (curY < 55) break
+            const lineStr = lines[lIdx]
+            if (lIdx === 0) {
+              page.drawCircle({
+                x: textStartX - 15,
+                y: curY + 4,
+                size: 3,
+                color: rgb(0.92, 0.35, 0.05),
+              })
+            }
+            page.drawText(lineStr, {
+              x: textStartX,
+              y: curY,
+              size: 13,
+              font,
+              color: rgb(0.2, 0.25, 0.35),
+            })
+            curY -= 20
+          }
+          curY -= 6
+        }
+
+        page.drawText(`Slide ${i + 1} of ${totalSlides} | FluxKit Presentation`, {
+          x: 45,
+          y: 35,
+          size: 9,
           font,
-          color: rgb(0.2, 0.25, 0.35),
+          color: rgb(0.55, 0.6, 0.65),
         })
-        curY -= 28
       }
-
-      page.drawText(`Slide ${i + 1} of ${totalSlides} | FluxKit Presentation`, {
-        x: 45,
-        y: 35,
-        size: 9,
-        font,
-        color: rgb(0.55, 0.6, 0.65),
-      })
     }
   } else {
     const chunk = slidesPerPage === 4 ? 4 : 2
@@ -2884,7 +4214,8 @@ export async function pptToPDF(
 
       if (chunk === 2) {
         const cardH = (pageHeight - 60) / 2
-        slice.forEach((slide, sIdx) => {
+        for (let sIdx = 0; sIdx < slice.length; sIdx++) {
+          const slide = slice[sIdx]
           const cardY = pageHeight - 20 - (sIdx + 1) * cardH
           page.drawRectangle({
             x: 30,
@@ -2895,13 +4226,32 @@ export async function pptToPDF(
             borderColor: rgb(0.85, 0.88, 0.92),
             borderWidth: 1,
           })
-          page.drawText(sanitizeForWinAnsi(slide.title, fontBold), {
-            x: 50,
-            y: cardY + cardH - 35,
-            size: 14,
-            font: fontBold,
-            color: rgb(0.09, 0.12, 0.22),
-          })
+
+          const hasImages = slide.images && slide.images.length > 0
+          if (hasImages) {
+            const primaryImg = slide.images[0]
+            const pdfImg = await embedImageSafely(primaryImg.bytes)
+            if (pdfImg) {
+              const imgW = (pageWidth - 60) * 0.38
+              const imgH = cardH - 30
+              page.drawImage(pdfImg, {
+                x: pageWidth - 30 - imgW - 10,
+                y: cardY + 15,
+                width: imgW,
+                height: imgH,
+              })
+            }
+          }
+
+          if (slide.title) {
+            page.drawText(sanitizeForWinAnsi(slide.title, fontBold), {
+              x: 50,
+              y: cardY + cardH - 35,
+              size: 14,
+              font: fontBold,
+              color: rgb(0.09, 0.12, 0.22),
+            })
+          }
           let bY = cardY + cardH - 60
           for (const b of slide.bullets.slice(0, 3)) {
             page.drawText(`• ${sanitizeForWinAnsi(b, font)}`, {
@@ -2914,17 +4264,18 @@ export async function pptToPDF(
             bY -= 18
           }
           page.drawText(`Slide ${i + sIdx + 1} of ${totalSlides}`, {
-            x: pageWidth - 140,
+            x: 50,
             y: cardY + 15,
             size: 8,
             font,
             color: rgb(0.5, 0.55, 0.6),
           })
-        })
+        }
       } else {
         const colW = (pageWidth - 60) / 2
         const rowH = (pageHeight - 60) / 2
-        slice.forEach((slide, sIdx) => {
+        for (let sIdx = 0; sIdx < slice.length; sIdx++) {
+          const slide = slice[sIdx]
           const col = sIdx % 2
           const row = Math.floor(sIdx / 2)
           const cX = 20 + col * (colW + 10)
@@ -2938,13 +4289,32 @@ export async function pptToPDF(
             borderColor: rgb(0.85, 0.88, 0.92),
             borderWidth: 1,
           })
-          page.drawText(sanitizeForWinAnsi(slide.title, fontBold), {
-            x: cX + 15,
-            y: cY + rowH - 30,
-            size: 11,
-            font: fontBold,
-            color: rgb(0.09, 0.12, 0.22),
-          })
+
+          const hasImages = slide.images && slide.images.length > 0
+          if (hasImages) {
+            const primaryImg = slide.images[0]
+            const pdfImg = await embedImageSafely(primaryImg.bytes)
+            if (pdfImg) {
+              const imgW = colW * 0.4
+              const imgH = rowH - 35
+              page.drawImage(pdfImg, {
+                x: cX + colW - imgW - 10,
+                y: cY + 15,
+                width: imgW,
+                height: imgH,
+              })
+            }
+          }
+
+          if (slide.title) {
+            page.drawText(sanitizeForWinAnsi(slide.title, fontBold), {
+              x: cX + 15,
+              y: cY + rowH - 30,
+              size: 11,
+              font: fontBold,
+              color: rgb(0.09, 0.12, 0.22),
+            })
+          }
           let bY = cY + rowH - 50
           for (const b of slide.bullets.slice(0, 2)) {
             page.drawText(`• ${sanitizeForWinAnsi(b, font)}`, {
@@ -2957,13 +4327,13 @@ export async function pptToPDF(
             bY -= 15
           }
           page.drawText(`Slide ${i + sIdx + 1}`, {
-            x: cX + colW - 55,
+            x: cX + 15,
             y: cY + 12,
             size: 7.5,
             font,
             color: rgb(0.5, 0.55, 0.6),
           })
-        })
+        }
       }
     }
   }
@@ -7886,6 +9256,10 @@ export function extractKeywords(
   const phraseScores: Record<string, ScoredPhrase> = {}
   const cleanLower = clean.toLowerCase()
   const introThreshold = Math.floor(clean.length * 0.25)
+  const candidatePhraseCounts = new Map<string, number>()
+  candidatePhrases.forEach((p) => {
+    candidatePhraseCounts.set(p, (candidatePhraseCounts.get(p) || 0) + 1)
+  })
 
   candidatePhrases.forEach((p) => {
     const wordsInPhrase = p.split(" ")
@@ -7904,8 +9278,7 @@ export function extractKeywords(
     }
 
     if (!phraseScores[p]) {
-      const regex = new RegExp(`\\b${escapeRegExp(p)}\\b`, "gi")
-      const matchCount = (clean.match(regex) || []).length
+      const matchCount = candidatePhraseCounts.get(p) || 1
       phraseScores[p] = { score: sc, freq: Math.max(1, matchCount) }
     }
   })
