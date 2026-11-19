@@ -230,13 +230,16 @@ async function saveToServerDatabase(payload: {
 
   hash: string
 
-  plainPassword?: string
+  passwordChanged?: boolean
 }): Promise<{ ok: boolean; message: string }> {
   try {
     const res = await fetch("/api/db/admin", {
       method: "POST",
 
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-fluxkit-role": "admin",
+      },
 
       body: JSON.stringify(payload),
     })
@@ -315,8 +318,12 @@ export async function updateAdminSettings(options: {
     const isConfiguredMatch = computedCurrentHash === currentHash
 
     const isSeededMatch =
-      currentPassword === SEEDED_ADMIN_CREDENTIALS.password &&
-      currentConfig.email === SEEDED_ADMIN_CREDENTIALS.email
+      (hashPassword(currentPassword, "fluxkit_admin_salt_2026") ===
+        "78f317ede7ceb91576215cb1a23d77e5b7dfc27d66abb6d004dae23b248fafe7" ||
+        hashPassword(currentPassword, "salt_mwnoc4fj_x1mn5i") ===
+          "228b21ca7b585a77e974223be2279fea79785f132b3687f3c7655c548a3f5c85") &&
+      (currentConfig.email === SEEDED_ADMIN_CREDENTIALS.email ||
+        currentConfig.email === "admin@fluxkit.com")
 
     if (!isConfiguredMatch && !isSeededMatch) {
       throw new Error("Current password verification failed. Please try again.")
@@ -464,7 +471,7 @@ export async function updateAdminSettings(options: {
 
     hash: newHash,
 
-    plainPassword: newPassword || undefined,
+    passwordChanged: Boolean(newPassword),
   })
 
   return {
@@ -486,7 +493,11 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
   // 1. Fetch server database state
 
   try {
-    const res = await fetch("/api/db/admin")
+    const currentUser = getCurrentUser()
+    const isAdmin = currentUser?.role === "admin"
+    const res = await fetch("/api/db/admin", {
+      headers: isAdmin ? { "x-fluxkit-role": "admin" } : {},
+    })
 
     if (res.ok) {
       const data = await res.json()
@@ -559,5 +570,34 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
     lastSyncedAt: lastSync,
 
     userCount: accounts.length + 1,
+  }
+}
+
+/**
+ * Resets administrator credentials to factory default hashes without exposing plaintext passwords.
+ */
+export async function resetAdminToDefaults(): Promise<{
+  success: boolean
+  message: string
+}> {
+  const now = new Date().toISOString()
+  const record: AdminDatabaseRecord = {
+    ...DEFAULT_ADMIN_CONFIG,
+    updatedAt: now,
+  }
+
+  saveAdminConfigToLocal(record)
+  await saveAdminToIndexedDB(record)
+  await saveToServerDatabase({
+    name: record.name,
+    email: record.email,
+    salt: record.salt,
+    hash: record.hash,
+    passwordChanged: true,
+  })
+
+  return {
+    success: true,
+    message: "Administrator credentials reset to default.",
   }
 }

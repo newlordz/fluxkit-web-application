@@ -878,41 +878,16 @@ html, body {
   margin-bottom: 24px;
   position: relative;
   width: 100%;
+  container-type: inline-size;
+  container-name: adminbar;
 }
 
 .admin-nav-wrapper {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 8px;
   width: 100%;
-}
-
-.admin-nav-wrapper.has-overflow-left::before {
-  content: "";
-  position: absolute;
-  top: 4px;
-  bottom: 8px;
-  left: 4px;
-  width: 32px;
-  background: linear-gradient(to right, var(--surface), transparent);
-  border-top-left-radius: 10px;
-  border-bottom-left-radius: 10px;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.admin-nav-wrapper.has-overflow-right::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  bottom: 8px;
-  right: 4px;
-  width: 32px;
-  background: linear-gradient(to left, var(--surface), transparent);
-  border-top-right-radius: 10px;
-  border-bottom-right-radius: 10px;
-  pointer-events: none;
-  z-index: 5;
 }
 
 .admin-nav-track {
@@ -928,37 +903,22 @@ html, body {
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 201, 183, 0.45) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   box-sizing: border-box;
 }
 
 .admin-nav-track::-webkit-scrollbar {
-  height: 5px;
-}
-
-.admin-nav-track::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 9999px;
-  margin: 0 10px;
-}
-
-.admin-nav-track::-webkit-scrollbar-thumb {
-  background: rgba(0, 201, 183, 0.35);
-  border-radius: 9999px;
-  transition: background 0.2s ease;
-}
-
-.admin-nav-track::-webkit-scrollbar-thumb:hover {
-  background: var(--accent, #00C9B7);
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .admin-nav-scroll-btn {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 20;
+  flex-shrink: 0;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -968,41 +928,31 @@ html, body {
   background: var(--surface);
   border: 1.5px solid var(--border);
   color: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   padding: 0;
-  backdrop-filter: blur(8px);
-}
-
-.admin-nav-scroll-btn.left {
-  left: -14px;
-}
-
-.admin-nav-scroll-btn.right {
-  right: -14px;
 }
 
 .admin-nav-scroll-btn:hover {
   background: var(--accent, #00C9B7);
   color: #ffffff;
   border-color: var(--accent, #00C9B7);
-  transform: translateY(-50%) scale(1.12);
-  box-shadow: 0 6px 20px rgba(0, 201, 183, 0.4);
+  transform: scale(1.08);
 }
 
 .admin-nav-scroll-btn:active {
-  transform: translateY(-50%) scale(0.95);
+  transform: scale(0.95);
 }
 
 .admin-nav-tab {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: max-content;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border-radius: 9px;
   font-size: 13px;
   font-weight: 600;
@@ -1017,14 +967,34 @@ html, body {
   text-align: center;
 }
 
-/* Explicitly disable the global sidebar nav button.active:before indicator on admin tabs */
+/* Explicitly disable any indicator pseudo-elements on admin tabs */
 .admin-nav-tab::before,
 .admin-nav-tab::after {
   display: none !important;
   content: none !important;
 }
 
-@media (max-width: 1150px) {
+/* Container queries: adapt smoothly to the actual width of the admin card */
+@container adminbar (max-width: 1220px) {
+  .admin-nav-badge {
+    display: none !important;
+  }
+}
+
+@container adminbar (max-width: 780px) {
+  .admin-nav-label {
+    display: none !important;
+  }
+  .admin-nav-tab {
+    flex: 1 1 0 !important;
+    padding: 11px 6px;
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
+/* Media query fallbacks for window size */
+@media (max-width: 1350px) {
   .admin-nav-badge {
     display: none !important;
   }

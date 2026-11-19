@@ -1662,10 +1662,23 @@ function fluxkitDatabasePlugin(): Plugin {
 
         if (pathname === "/api/db/admin" && req.method === "GET") {
           const dbData = ensureDbFile()
+          const isAdminSession = req.headers["x-fluxkit-role"] === "admin"
           res.end(
             JSON.stringify({
               ok: true,
-              admin: dbData?.admin || null,
+              admin: dbData?.admin
+                ? {
+                    id: dbData.admin.id,
+                    name: dbData.admin.name,
+                    email: dbData.admin.email,
+                    role: dbData.admin.role,
+                    updatedAt: dbData.admin.updatedAt,
+                    hasConfiguredPassword: Boolean(dbData.admin.hash),
+                    ...(isAdminSession
+                      ? { salt: dbData.admin.salt, hash: dbData.admin.hash }
+                      : {}),
+                  }
+                : null,
               database: {
                 engine: "Server-side Disk Database",
                 path: "data/fluxkit-db.json",
@@ -1688,13 +1701,17 @@ function fluxkitDatabasePlugin(): Plugin {
               const now = new Date().toISOString()
               dbData.admin = {
                 ...dbData.admin,
-                name: (body.name || dbData.admin?.name || "FluxKit Administrator").trim(),
-                email: (body.email || dbData.admin?.email || "admin@fluxkit.com").trim().toLowerCase(),
+                name: (body.name || dbData.admin?.name || "Masterfilepro Administrator").trim(),
+                email: (body.email || dbData.admin?.email || "admin@masterfilepro.com").trim().toLowerCase(),
                 salt: body.salt || dbData.admin?.salt,
                 hash: body.hash || dbData.admin?.hash,
                 updatedAt: now,
               }
-              if (body.plainPassword) {
+              // Prevent storing plaintext passwords on disk
+              if (dbData.admin.plainPassword) {
+                delete dbData.admin.plainPassword
+              }
+              if (body.passwordChanged || body.plainPassword) {
                 dbData.admin.lastPasswordChange = now
               }
 
@@ -1723,10 +1740,24 @@ function fluxkitDatabasePlugin(): Plugin {
 
         if (pathname === "/api/db/apis" && req.method === "GET") {
           const dbData = ensureDbFile()
+          const rawApis = dbData?.apiPool || []
+          // Mask secret keys and client secrets to prevent secret leakage
+          const sanitizedApis = rawApis.map((api: any) => {
+            const copy = { ...api }
+            if (copy.clientSecret) {
+              copy.clientSecret = "••••••••••••••••"
+              copy.hasClientSecret = true
+            }
+            if (copy.apiKey && copy.apiKey.length > 8) {
+              copy.apiKey = `${copy.apiKey.slice(0, 4)}••••••••${copy.apiKey.slice(-4)}`
+              copy.hasApiKey = true
+            }
+            return copy
+          })
           res.end(
             JSON.stringify({
               ok: true,
-              apis: dbData?.apiPool || [],
+              apis: sanitizedApis,
             }),
           )
           return
@@ -1740,7 +1771,25 @@ function fluxkitDatabasePlugin(): Plugin {
               const bodyStr = Buffer.concat(chunks).toString("utf-8")
               const body = JSON.parse(bodyStr)
               const dbData = ensureDbFile() || {}
-              dbData.apiPool = body.apis || []
+              const incomingApis = Array.isArray(body.apis) ? body.apis : []
+              const existingApis = dbData.apiPool || []
+
+              // Preserve stored secrets if incoming payload contains masked tokens
+              const preservedApis = incomingApis.map((inApi: any) => {
+                const existing = existingApis.find((e: any) => e.id === inApi.id)
+                const merged = { ...inApi }
+                if (existing) {
+                  if (merged.clientSecret && merged.clientSecret.includes("••••")) {
+                    merged.clientSecret = existing.clientSecret
+                  }
+                  if (merged.apiKey && merged.apiKey.includes("••••")) {
+                    merged.apiKey = existing.apiKey
+                  }
+                }
+                return merged
+              })
+
+              dbData.apiPool = preservedApis
               dbData.updatedAt = new Date().toISOString()
               fs.writeFileSync(dbFilePath, JSON.stringify(dbData, null, 2), "utf-8")
               res.end(JSON.stringify({ ok: true, count: dbData.apiPool.length }))
@@ -1754,10 +1803,26 @@ function fluxkitDatabasePlugin(): Plugin {
 
         if (pathname === "/api/db/gateways" && req.method === "GET") {
           const dbData = ensureDbFile()
+          const rawGateways = dbData?.paymentGateways || []
+          // Mask secret keys and webhook secrets to prevent secret leakage
+          const sanitizedGateways = rawGateways.map((gw: any) => {
+            const copy = { ...gw }
+            if (copy.secretKey) {
+              copy.secretKey = copy.secretKey.startsWith("sk_test_")
+                ? `sk_test_••••••••${copy.secretKey.slice(-4)}`
+                : "••••••••••••••••"
+              copy.hasSecretKey = true
+            }
+            if (copy.webhookSecret) {
+              copy.webhookSecret = "••••••••••••••••"
+              copy.hasWebhookSecret = true
+            }
+            return copy
+          })
           res.end(
             JSON.stringify({
               ok: true,
-              gateways: dbData?.paymentGateways || [],
+              gateways: sanitizedGateways,
             }),
           )
           return
@@ -1771,7 +1836,25 @@ function fluxkitDatabasePlugin(): Plugin {
               const bodyStr = Buffer.concat(chunks).toString("utf-8")
               const body = JSON.parse(bodyStr)
               const dbData = ensureDbFile() || {}
-              dbData.paymentGateways = body.gateways || []
+              const incomingGateways = Array.isArray(body.gateways) ? body.gateways : []
+              const existingGateways = dbData.paymentGateways || []
+
+              // Preserve stored secrets if incoming payload contains masked tokens
+              const preservedGateways = incomingGateways.map((inGw: any) => {
+                const existing = existingGateways.find((e: any) => e.id === inGw.id)
+                const merged = { ...inGw }
+                if (existing) {
+                  if (merged.secretKey && merged.secretKey.includes("••••")) {
+                    merged.secretKey = existing.secretKey
+                  }
+                  if (merged.webhookSecret && merged.webhookSecret.includes("••••")) {
+                    merged.webhookSecret = existing.webhookSecret
+                  }
+                }
+                return merged
+              })
+
+              dbData.paymentGateways = preservedGateways
               dbData.updatedAt = new Date().toISOString()
               fs.writeFileSync(dbFilePath, JSON.stringify(dbData, null, 2), "utf-8")
               res.end(JSON.stringify({ ok: true, count: dbData.paymentGateways.length }))
@@ -1795,9 +1878,51 @@ function fluxkitDatabasePlugin(): Plugin {
                 res.end(JSON.stringify({ ok: true, latencyMs: 1, message: "Instant (1ms). Client-side WebAssembly active." }))
                 return
               }
+
+              // SSRF Protection: Validate URL protocol and block local, private, or metadata IP ranges
+              let parsedUrl: URL
+              try {
+                parsedUrl = new URL(endpoint)
+              } catch {
+                res.statusCode = 400
+                res.end(JSON.stringify({ ok: false, error: "Invalid endpoint URL format." }))
+                return
+              }
+
+              if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+                res.statusCode = 400
+                res.end(JSON.stringify({ ok: false, error: "Only http and https protocols are permitted." }))
+                return
+              }
+
+              const hostname = parsedUrl.hostname.toLowerCase()
+
+              const isBlockedHost =
+                hostname === "localhost" ||
+                hostname === "127.0.0.1" ||
+                hostname === "0.0.0.0" ||
+                hostname === "::1" ||
+                hostname.endsWith(".localhost") ||
+                hostname.endsWith(".local") ||
+                hostname.startsWith("169.254.") || // AWS/cloud metadata
+                hostname.startsWith("10.") ||      // Class A private
+                hostname.startsWith("192.168.") || // Class C private
+                /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) // Class B private
+
+              if (isBlockedHost) {
+                res.statusCode = 403
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    error: "Prohibited: Endpoint targets a protected internal, loopback, or metadata address.",
+                  }),
+                )
+                return
+              }
+
               const start = Date.now()
-              const pingRes = await fetch(endpoint, { method: "HEAD" }).catch(() => null)
-                || await fetch(endpoint, { method: "GET" }).catch(() => null)
+              const pingRes = await fetch(endpoint, { method: "HEAD", signal: AbortSignal.timeout(5000) }).catch(() => null)
+                || await fetch(endpoint, { method: "GET", signal: AbortSignal.timeout(5000) }).catch(() => null)
               const latencyMs = Math.max(1, Date.now() - start)
               res.end(
                 JSON.stringify({

@@ -590,41 +590,73 @@ test("M3 pptToPDF: supports multi-slide per page handout layouts (1, 2, 4 per pa
 
 test("M3 pptToPDF: converts PPTX with embedded pictures and full-bleed image slides into PDF", async (t) => {
   const { pptToPDF } = loadServices()
-  let pptxgen
+  let pptxBytes
   try {
-    pptxgen = require("pptxgenjs")
+    const pptxgen = require("pptxgenjs")
+    const pres = new pptxgen()
+
+    // Slide 1: Picture slide
+    const s1 = pres.addSlide()
+    s1.addImage({
+      data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+    })
+
+    // Slide 2: Text + Picture slide
+    const s2 = pres.addSlide()
+    s2.addText("Quarterly Report", { x: 0.5, y: 0.5 })
+    s2.addText([{ text: "Point A", options: { bullet: true } }], { x: 0.5, y: 1.5, w: 5, h: 3 })
+    s2.addImage({
+      data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
+      x: 6,
+      y: 1.5,
+      w: 3,
+      h: 3,
+    })
+
+    pptxBytes = await pres.write({ outputType: "uint8array" })
   } catch {
-    if (t && typeof t.skip === "function") {
-      t.skip("pptxgenjs not installed in test environment")
-      return
-    }
-    return
+    // Generate valid PPTX package natively via JSZip (installed in project)
+    const JSZip = require("jszip")
+    const zip = new JSZip()
+    const imgBuf = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
+      "base64",
+    )
+    zip.file("ppt/presentation.xml", '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldSz cx="12192000" cy="6858000"/></p:presentation>')
+    zip.file(
+      "ppt/slides/slide1.xml",
+      `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <p:cSld><p:spTree><p:pic><p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic></p:spTree></p:cSld>
+      </p:sld>`,
+    )
+    zip.file(
+      "ppt/slides/_rels/slide1.xml.rels",
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+      </Relationships>`,
+    )
+    zip.file(
+      "ppt/slides/slide2.xml",
+      `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <p:cSld><p:spTree>
+          <p:sp><p:txBody><a:p><a:r><a:t>Quarterly Report</a:t></a:r></a:p><a:p><a:r><a:t>Point A</a:t></a:r></a:p></p:txBody></p:sp>
+          <p:pic><p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic>
+        </p:spTree></p:cSld>
+      </p:sld>`,
+    )
+    zip.file(
+      "ppt/slides/_rels/slide2.xml.rels",
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+      </Relationships>`,
+    )
+    zip.file("ppt/media/image1.png", imgBuf)
+    pptxBytes = await zip.generateAsync({ type: "uint8array" })
   }
-  const pres = new pptxgen()
-
-  // Slide 1: Picture slide
-  const s1 = pres.addSlide()
-  s1.addImage({
-    data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
-    x: 0,
-    y: 0,
-    w: "100%",
-    h: "100%",
-  })
-
-  // Slide 2: Text + Picture slide
-  const s2 = pres.addSlide()
-  s2.addText("Quarterly Report", { x: 0.5, y: 0.5 })
-  s2.addText([{ text: "Point A", options: { bullet: true } }], { x: 0.5, y: 1.5, w: 5, h: 3 })
-  s2.addImage({
-    data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9QzwAEjDAGBgYAA4gBAYb4+tQAAAAASUVORK5CYII=",
-    x: 6,
-    y: 1.5,
-    w: 3,
-    h: 3,
-  })
-
-  const pptxBytes = await pres.write({ outputType: "uint8array" })
 
   const res = await pptToPDF(pptxBytes)
   assert.ok(res && res.blob)

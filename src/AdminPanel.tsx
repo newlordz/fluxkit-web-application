@@ -50,6 +50,7 @@ import {
 import {
   getAdminConfig,
   updateAdminSettings,
+  resetAdminToDefaults,
   initializeDatabaseSync,
   type DatabaseStatus,
 } from "./adminDbService"
@@ -1017,11 +1018,7 @@ export default function AdminPanel({
 
       {/* Tabs */}
       <div className="admin-nav-bar" role="navigation" aria-label="Admin Dashboard Navigation">
-        <div
-          className={`admin-nav-wrapper ${
-            canScrollLeft ? "has-overflow-left" : ""
-          } ${canScrollRight ? "has-overflow-right" : ""}`}
-        >
+        <div className="admin-nav-wrapper">
           {canScrollLeft && (
             <button
               type="button"
@@ -6363,12 +6360,7 @@ export default function AdminPanel({
                   )
                 ) {
                   try {
-                    await updateAdminSettings({
-                      newName: "Masterfilepro Administrator",
-                      newEmail: "admin@masterfilepro.com",
-                      newPassword: "botsio212nyc",
-                      overrideAuthCheck: true,
-                    })
+                    await resetAdminToDefaults()
                     setAdminConfig(getAdminConfig())
                     setAdminNameInput("Masterfilepro Administrator")
                     setAdminEmailInput("admin@masterfilepro.com")

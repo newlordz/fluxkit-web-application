@@ -113,8 +113,6 @@ export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
 
 export const SEEDED_ADMIN_CREDENTIALS = {
   email: "admin@masterfilepro.com",
-
-  password: "Admin@FluxKit2026!",
 }
 
 export const DATABASE_ADMIN_SALT = "salt_mwnoc4fj_x1mn5i"
@@ -126,6 +124,9 @@ const SEEDED_ADMIN_SALT = "fluxkit_admin_salt_2026"
 
 const SEEDED_ADMIN_HASH =
   "78f317ede7ceb91576215cb1a23d77e5b7dfc27d66abb6d004dae23b248fafe7"
+
+const SEEDED_ADMIN_MFP_HASH =
+  "609358c3a0495bc10bacd60317db39a3dd058ba81930fea77269dfb4e03f323f"
 
 // --- Storage Keys ---
 
@@ -775,22 +776,14 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
     const isDatabaseHashMatch =
       hashPassword(password, DATABASE_ADMIN_SALT) === DATABASE_ADMIN_HASH
 
-    const isDatabasePasswordMatch = password === "botsio212nyc"
-
-    const isSeededMatch =
-      password === SEEDED_ADMIN_CREDENTIALS.password ||
-      password === "Admin@FluxKit2026!" ||
-      password === "Admin@Masterfilepro2026!"
-
     const isSeededHashMatch =
-      hashPassword(password, SEEDED_ADMIN_SALT) === SEEDED_ADMIN_HASH
+      hashPassword(password, SEEDED_ADMIN_SALT) === SEEDED_ADMIN_HASH ||
+      hashPassword(password, SEEDED_ADMIN_SALT) === SEEDED_ADMIN_MFP_HASH
 
     if (
       !isCustomMatch &&
       !isAdminConfigMatch &&
       !isDatabaseHashMatch &&
-      !isDatabasePasswordMatch &&
-      !isSeededMatch &&
       !isSeededHashMatch
     ) {
       throw new Error("Invalid email or password.")
@@ -798,7 +791,7 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
     // Sync credentials cache to ensure local storage remains in sync with the authenticated password
 
-    if (isDatabaseHashMatch || isDatabasePasswordMatch) {
+    if (isDatabaseHashMatch) {
       saveStoredCredential(cleanEmail, DATABASE_ADMIN_SALT, DATABASE_ADMIN_HASH)
 
       saveStoredCredential(
@@ -806,7 +799,7 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
         DATABASE_ADMIN_SALT,
         DATABASE_ADMIN_HASH,
       )
-    } else if (isSeededMatch || isSeededHashMatch) {
+    } else if (isSeededHashMatch) {
       saveStoredCredential(cleanEmail, SEEDED_ADMIN_SALT, SEEDED_ADMIN_HASH)
     }
 
@@ -854,7 +847,8 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
   if (
     cleanEmail === "alice@fluxkit.com" &&
-    password === "StrongPassword2026!"
+    hashPassword(password, "salt_alice_test_2026") ===
+      "246771268bebc70f5cfc67664b9eb3e609281f72f82b28d213bc51359109471e"
   ) {
     const existing = getRegisteredAccounts().find(
       (a) => a.email.toLowerCase() === cleanEmail,
