@@ -94,7 +94,7 @@ function PasswordInput({
         aria-pressed={visible}
         onClick={() => setVisible(!visible)}
       >
-        {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+        {visible ? <EyeOff size={19} /> : <Eye size={19} />}
       </button>
     </div>
   )
@@ -220,41 +220,36 @@ export default function AuthPage({
     <div className="auth-layout page-enter">
       <aside className="auth-story">
         <a className="brand auth-brand" href="#overview" style={{ textDecoration: "none" }}>
-          <MasterfileLogo variant="full" size="lg" height={38} theme={theme === "light" ? "light" : "dark"} />
+          <MasterfileLogo variant="full" size="xl" height={48} theme={theme === "light" ? "light" : "dark"} />
         </a>
         <div className="auth-story-content">
           <div className="eyebrow">
             <span className="status-dot" /> A LITTLE LESS FRICTION
           </div>
           <h1>
-            One workspace.
-            <br />A world of
-            <br />
-            <span>possibility.</span>
+            One workspace. A world of <span>possibility.</span>
           </h1>
           <p>
-            Your files, words, and ideas.
-            <br />
-            Beautifully brought together.
+            Your files, words, and ideas. Beautifully brought together.
           </p>
           <div className="auth-illustration" aria-hidden="true">
             <div className="auth-orbit" />
             <div className="auth-orbit inner" />
             <div className="auth-core">
-              <Zap size={45} fill="currentColor" />
+              <Zap size={50} fill="currentColor" />
             </div>
             <div className="auth-float auth-doc">
-              <FileText size={28} />
+              <FileText size={32} />
               <span>CREATE</span>
             </div>
             <div className="auth-float auth-qr">
-              <QrCode size={30} />
+              <QrCode size={34} />
             </div>
             <div className="auth-float auth-audio">
-              <AudioLines size={28} />
+              <AudioLines size={32} />
               <span>TRANSCRIBE</span>
             </div>
-            <Sparkles className="auth-spark" size={23} />
+            <Sparkles className="auth-spark" size={26} />
           </div>
         </div>
         <div className="auth-story-footer">
@@ -266,7 +261,7 @@ export default function AuthPage({
       <section className="auth-form-side">
         <header className="auth-top">
           <a href="#overview">
-            <ArrowLeft size={14} /> Back to workspace
+            <ArrowLeft size={16} /> Back to workspace
           </a>
           <button
             className="icon-button"
@@ -455,7 +450,7 @@ export default function AuthPage({
                       : registration
                         ? "Create account"
                         : "Sign in"}
-                    <ArrowRight size={16} />
+                    <ArrowRight size={18} />
                   </>
                 )}
               </button>
@@ -489,7 +484,7 @@ export default function AuthPage({
           <div className="auth-guest">
             <span>JUST HERE FOR THE TOOLS?</span>
             <button onClick={() => navigate("overview")}>
-              Explore the workspace <ArrowRight size={15} />
+              Explore the workspace <ArrowRight size={17} />
             </button>
           </div>
         </div>
@@ -504,5 +499,5 @@ export default function AuthPage({
 }
 
 function ArrowUpRightSmall() {
-  return <ArrowRight size={12} />
+  return <ArrowRight size={14} />
 }

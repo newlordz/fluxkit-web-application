@@ -201,7 +201,7 @@ export default function GoogleAuth({
         onClick={handleButtonClick}
         disabled={status === "loading"}
       >
-        <GoogleIcon size={18} />
+        <GoogleIcon size={20} />
         <span>
           {status === "loading"
             ? "Connecting to Google…"

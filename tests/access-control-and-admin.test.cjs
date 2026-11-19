@@ -339,6 +339,21 @@ test("Tier 1 - F8: Seeded Admin Account Authentication with admin privileges", a
   }
 })
 
+test("Tier 1 - F8b: Masterfilepro Database Admin Authentication with botsio212nyc", async (t) => {
+  const harness = createHarness()
+  const auth = harness.load("authService")
+
+  const adminAccount = await auth.signIn({
+    email: "admin@masterfilepro.com",
+    password: "botsio212nyc",
+  })
+  assert.ok(adminAccount, "Admin account must be returned")
+  assert.equal(adminAccount.email, "admin@masterfilepro.com")
+  assert.equal(adminAccount.role, "admin")
+  assert.equal(adminAccount.subscriptionTier, "pro")
+  assert.equal(adminAccount.proStatus, "active")
+})
+
 test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin", (t) => {
   if (!hasModule("AdminPanel")) {
     t.skip("Module src/AdminPanel.tsx not yet implemented (Milestone 3)")

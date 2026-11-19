@@ -44,15 +44,15 @@ export interface DatabaseStatus {
   userCount: number
 }
 
-// Default initial admin config matching seeded credentials
+// Default initial admin config matching database
 const DEFAULT_ADMIN_CONFIG: AdminDatabaseRecord = {
   id: SEEDED_ADMIN_ACCOUNT.id,
-  name: SEEDED_ADMIN_ACCOUNT.name,
-  email: SEEDED_ADMIN_CREDENTIALS.email,
+  name: "Masterfilepro Administrator",
+  email: "admin@masterfilepro.com",
   role: "admin",
-  salt: "fluxkit_admin_salt_2026",
-  hash: "78f317ede7ceb91576215cb1a23d77e5b7dfc27d66abb6d004dae23b248fafe7",
-  updatedAt: "2026-01-01T00:00:00.000Z",
+  salt: "salt_mwnoc4fj_x1mn5i",
+  hash: "228b21ca7b585a77e974223be2279fea79785f132b3687f3c7655c548a3f5c85",
+  updatedAt: "2026-11-19T14:57:23.342Z",
   source: "database",
 }
 
@@ -391,9 +391,9 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
   return {
     connected: true,
     engine: serverConnected
-      ? "Server Disk Database (data/fluxkit-db.json) + Client IndexedDB"
+      ? "Server Disk Database (data/masterfile-db.json) + Client IndexedDB"
       : "Client IndexedDB + Local Database Cache",
-    serverDbPath: "data/fluxkit-db.json",
+    serverDbPath: "data/masterfile-db.json",
     indexedDbReady: typeof window !== "undefined" && "indexedDB" in window,
     lastSyncedAt: lastSync,
     userCount: accounts.length + 1,

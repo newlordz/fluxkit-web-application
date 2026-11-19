@@ -5138,7 +5138,7 @@ export default function AdminPanel({
                   Database File Location
                 </span>
                 <strong style={{ fontSize: "12px", color: "#00C9B7", fontFamily: "monospace", marginTop: "4px", display: "block" }}>
-                  data/fluxkit-db.json
+                  data/masterfile-db.json
                 </strong>
               </div>
 
@@ -5467,7 +5467,7 @@ export default function AdminPanel({
                 Emergency Factory Reset
               </strong>
               <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-                Reset administrator credentials to the factory default (<code>admin@masterfilepro.com</code> / <code>Admin@Masterfilepro2026!</code>).
+                Reset administrator credentials to the database default (<code>admin@masterfilepro.com</code>).
               </span>
             </div>
 
@@ -5483,7 +5483,7 @@ export default function AdminPanel({
                     await updateAdminSettings({
                       newName: "Masterfilepro Administrator",
                       newEmail: "admin@masterfilepro.com",
-                      newPassword: "Admin@FluxKit2026!",
+                      newPassword: "botsio212nyc",
                       overrideAuthCheck: true,
                     })
                     setAdminConfig(getAdminConfig())
