@@ -4905,6 +4905,53 @@ export default function AdminPanel({
           className="page-enter"
           style={{ display: "flex", flexDirection: "column", gap: "24px" }}
         >
+          {/* Quick-switch Banner to Payment Gateways */}
+          <div
+            style={{
+              padding: "14px 18px",
+              background:
+                "linear-gradient(90deg, rgba(0,201,183,0.12) 0%, rgba(59,130,246,0.12) 100%)",
+              border: "1px solid rgba(0,201,183,0.35)",
+              borderRadius: "10px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <CreditCard size={22} color="#00C9B7" />
+              <div>
+                <strong style={{ fontSize: "14px", display: "block" }}>
+                  Looking for Payment Gateways (Paystack, Stripe)?
+                </strong>
+                <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  Configure Paystack, Stripe, and customer checkout credentials.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("integrations")}
+              style={{
+                fontSize: "12px",
+                padding: "8px 14px",
+                borderRadius: "6px",
+                background: "#00C9B7",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <CreditCard size={14} /> Open Payment Gateways (Paystack) →
+            </button>
+          </div>
+
           {/* Header Overview Banner */}
           <div
             style={{
