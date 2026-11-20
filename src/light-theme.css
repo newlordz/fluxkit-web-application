@@ -107,8 +107,9 @@
 }
 
 :root[data-theme='light'] .brand-mark {
+  display: inline-block;
   color: var(--accent);
-  background: linear-gradient(135deg, #06204D 0%, #00C9B7 100%);
+  background: linear-gradient(135deg, #06204D 0%, #00A896 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
