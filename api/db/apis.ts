@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -6,16 +7,20 @@ const DB_PATH_2 = path.join(process.cwd(), "data", "fluxkit-db.json")
 const TMP_PATH = path.join("/tmp", "masterfile-db.json")
 
 function readDb(): any {
+  // 1. Check temporary serverless storage
   try {
     if (fs.existsSync(TMP_PATH)) {
-      return JSON.parse(fs.readFileSync(TMP_PATH, "utf8"))
+      const content = fs.readFileSync(TMP_PATH, "utf8")
+      return JSON.parse(content)
     }
   } catch {}
 
+  // 2. Check bundled database files
   for (const p of [DB_PATH_1, DB_PATH_2]) {
     try {
       if (fs.existsSync(p)) {
-        return JSON.parse(fs.readFileSync(p, "utf8"))
+        const content = fs.readFileSync(p, "utf8")
+        return JSON.parse(content)
       }
     } catch {}
   }
@@ -24,11 +29,13 @@ function readDb(): any {
 
 function writeDb(data: any): boolean {
   let ok = false
+  // 1. Write to /tmp on serverless environments
   try {
     fs.writeFileSync(TMP_PATH, JSON.stringify(data, null, 2), "utf8")
     ok = true
   } catch {}
 
+  // 2. Write to project disk if writable (local dev)
   for (const p of [DB_PATH_1, DB_PATH_2]) {
     try {
       fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
@@ -44,7 +51,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST,PUT")
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization",
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-fluxkit-role, X-Fluxkit-Role",
   )
 
   if (req.method === "OPTIONS") {
@@ -57,8 +64,24 @@ export default async function handler(req: any, res: any) {
   try {
     const db = readDb()
 
+    // Check if caller is authenticated admin
+    const roleHeader =
+      (req.headers?.["x-fluxkit-role"] || req.headers?.["X-Fluxkit-Role"] || "")
+        .toString()
+        .toLowerCase()
+    const isAdmin = roleHeader === "admin"
+
     if (req.method === "GET") {
       const rawApis = Array.isArray(db.apiPool) ? db.apiPool : []
+
+      if (isAdmin) {
+        // Authenticated admin receives full unmasked keys for management and sync
+        const payload = { ok: true, apis: rawApis, isAdmin: true }
+        res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+        return
+      }
+
+      // Anonymous / public callers receive sanitized tokens to prevent secret leakage
       const sanitizedApis = rawApis.map((api: any) => {
         const copy = { ...api }
         if (copy.clientSecret) {
@@ -68,11 +91,13 @@ export default async function handler(req: any, res: any) {
         if (copy.apiKey && copy.apiKey.length > 8) {
           copy.apiKey = `${copy.apiKey.slice(0, 4)}••••••••${copy.apiKey.slice(-4)}`
           copy.hasApiKey = true
+        } else if (copy.apiKey) {
+          copy.hasApiKey = true
         }
         return copy
       })
 
-      const payload = { ok: true, apis: sanitizedApis }
+      const payload = { ok: true, apis: sanitizedApis, isAdmin: false }
       res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
       return
     }
@@ -93,6 +118,7 @@ export default async function handler(req: any, res: any) {
       const incomingApis = Array.isArray(body.apis) ? body.apis : []
       const existingApis = Array.isArray(db.apiPool) ? db.apiPool : []
 
+      // Preserve stored secrets if incoming payload contains masked tokens
       const preservedApis = incomingApis.map((inApi: any) => {
         const existing = existingApis.find((e: any) => e.id === inApi.id)
         const merged = { ...inApi }
@@ -109,9 +135,14 @@ export default async function handler(req: any, res: any) {
 
       db.apiPool = preservedApis
       db.updatedAt = new Date().toISOString()
-      writeDb(db)
+      const saved = writeDb(db)
 
-      const payload = { ok: true, count: preservedApis.length }
+      const payload = {
+        ok: true,
+        count: preservedApis.length,
+        persisted: saved,
+        message: "API pool configuration successfully synchronized with server database.",
+      }
       res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
       return
     }

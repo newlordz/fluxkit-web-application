@@ -38,6 +38,7 @@ import {
   Sparkles,
   Layers,
   Download,
+  Upload,
   UserCheck,
   Filter,
 } from "lucide-react"
@@ -231,6 +232,7 @@ export default function AdminPanel({
     {},
   )
   const [editingApiId, setEditingApiId] = useState<string | null>(null)
+  const apiImportFileRef = useRef<HTMLInputElement>(null)
   const [editApiKeyInput, setEditApiKeyInput] = useState("")
   const [editApiSecretInput, setEditApiSecretInput] = useState("")
   const [editApiQuotaInput, setEditApiQuotaInput] = useState<number>(500)
@@ -4993,6 +4995,94 @@ export default function AdminPanel({
                 <ExternalLink size={13} /> Free APIs Directory
               </a>
 
+              <input
+                type="file"
+                ref={apiImportFileRef}
+                accept=".json,application/json"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  try {
+                    const text = await file.text()
+                    const parsed = JSON.parse(text)
+                    const list = Array.isArray(parsed) ? parsed : parsed.apis
+                    if (!Array.isArray(list) || list.length === 0) {
+                      showToast("Invalid API backup file.")
+                      return
+                    }
+                    setCloudApis(list)
+                    const res = await saveCloudApis(list)
+                    if (res.syncedToServer) {
+                      showToast(`Imported ${list.length} APIs and synced with server database.`)
+                    } else {
+                      showToast(`Imported ${list.length} APIs locally to this device.`)
+                    }
+                  } catch {
+                    showToast("Failed to parse API backup file.")
+                  }
+                  if (e.target) e.target.value = ""
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const dataStr =
+                      "data:text/json;charset=utf-8," +
+                      encodeURIComponent(JSON.stringify(cloudApis, null, 2))
+                    const downloadAnchor = document.createElement("a")
+                    downloadAnchor.setAttribute("href", dataStr)
+                    downloadAnchor.setAttribute(
+                      "download",
+                      `fluxkit-apis-config-${new Date().toISOString().slice(0, 10)}.json`,
+                    )
+                    document.body.appendChild(downloadAnchor)
+                    downloadAnchor.click()
+                    downloadAnchor.remove()
+                    showToast("API keys exported successfully as JSON.")
+                  } catch {
+                    showToast("Failed to export API keys.")
+                  }
+                }}
+                style={{
+                  fontSize: "12px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+                title="Download JSON backup of your configured API keys to easily transfer them to another device"
+              >
+                <Download size={13} /> Export Keys (JSON)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => apiImportFileRef.current?.click()}
+                style={{
+                  fontSize: "12px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+                title="Upload or paste API keys JSON backup on this device"
+              >
+                <Upload size={13} /> Import Keys
+              </button>
+
               <button
                 type="button"
                 onClick={async () => {
@@ -5038,6 +5128,44 @@ export default function AdminPanel({
               >
                 <Plus size={14} /> Add Free / Custom API
               </button>
+            </div>
+          </div>
+
+          {/* Cross-Device Sync Guidance Notice */}
+          <div
+            style={{
+              background: "rgba(0, 201, 183, 0.06)",
+              border: "1px solid rgba(0, 201, 183, 0.22)",
+              borderRadius: "10px",
+              padding: "12px 16px",
+              marginBottom: "20px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "12px",
+              fontSize: "12.5px",
+              lineHeight: "1.5",
+              color: "var(--text)",
+            }}
+          >
+            <Database
+              size={18}
+              style={{ color: "#00C9B7", flexShrink: 0, marginTop: "2px" }}
+            />
+            <div>
+              <div
+                style={{
+                  fontWeight: 600,
+                  color: "#00C9B7",
+                  marginBottom: "3px",
+                }}
+              >
+                Cross-Device Key Sync & Production Hosting Guide
+              </div>
+              <div style={{ color: "var(--muted)", fontSize: "12px" }}>
+                • <strong>Server Database:</strong> Keys saved in this panel are backed by your server database (<code style={{ color: "#ba9aee" }}>/api/db/apis</code>) and automatically synchronize when you log in as Admin on another laptop.<br />
+                • <strong>Hosting Dashboard (Permanent Zero-Maintenance):</strong> On serverless hosts (Vercel, Netlify), you can set your keys in your project's <strong>Environment Variables</strong> (e.g. <code style={{ color: "#ba9aee" }}>VITE_ADOBE_CLIENT_ID</code>, <code style={{ color: "#ba9aee" }}>VITE_GROQ_API_KEY</code>, <code style={{ color: "#ba9aee" }}>VITE_OCRSPACE_API_KEY</code>). They are immediately active across all devices.<br />
+                • <strong>Instant Transfer:</strong> Click <strong>Export Keys (JSON)</strong> on one laptop and <strong>Import Keys</strong> on another to instantly clone your configuration.
+              </div>
             </div>
           </div>
 
@@ -6608,9 +6736,13 @@ export default function AdminPanel({
                                     return a
                                   })
                                   setCloudApis(updated)
-                                  await saveCloudApis(updated)
+                                  const saveRes = await saveCloudApis(updated)
                                   setEditingApiId(null)
-                                  showToast(`${api.name} configuration saved.`)
+                                  if (saveRes.syncedToServer) {
+                                    showToast(`${api.name} configuration saved to server database & this device.`)
+                                  } else {
+                                    showToast(`${api.name} configuration saved on this device.`)
+                                  }
                                 }}
                                 style={{
                                   fontSize: "11px",

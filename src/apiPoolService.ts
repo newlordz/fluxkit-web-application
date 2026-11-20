@@ -39,6 +39,10 @@ const STORAGE_KEY = "fluxkit_cloud_apis_config_v2"
 
 const getEnv = (key: string): string => {
   try {
+    const meta = new Function("return import.meta")()
+    if (meta?.env?.[key]) return meta.env[key]
+  } catch {}
+  try {
     if (typeof process !== "undefined" && process?.env && process.env[key]) {
       return process.env[key] || ""
     }
@@ -97,6 +101,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Server-grade Ghostscript & LibreOffice engine for heavy PDF shrinking and cross-format conversion. 25 free credits/day (750/mo).",
     dashboardUrl: "https://cloudconvert.com/dashboard/api/v2/keys",
+    apiKey: getEnv("VITE_CLOUDCONVERT_API_KEY"),
     endpoint: "https://api.cloudconvert.com/v2",
     monthlyQuota: 750,
     usedThisMonth: 0,
@@ -113,6 +118,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "High-speed document conversion and compression. 250 free conversions included on registration.",
     dashboardUrl: "https://www.convertapi.com/a",
+    apiKey: getEnv("VITE_CONVERTAPI_SECRET") || getEnv("VITE_CONVERTAPI_KEY"),
     endpoint: "https://v2.convertapi.com",
     monthlyQuota: 250,
     usedThisMonth: 0,
@@ -165,6 +171,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Intelligent lossy compression for PNG, JPEG, and WebP images. 500 image compressions free every month.",
     dashboardUrl: "https://tinypng.com/developers",
+    apiKey: getEnv("VITE_TINIFY_API_KEY") || getEnv("VITE_TINIFY_KEY"),
     endpoint: "https://api.tinify.com/shrink",
     monthlyQuota: 500,
     usedThisMonth: 0,
@@ -183,6 +190,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Ultra-fast Audio-to-Text using OpenAI Whisper Large v3. 14,400 seconds (~4 hours) of audio transcribed free every day.",
     dashboardUrl: "https://console.groq.com/keys",
+    apiKey: getEnv("VITE_GROQ_API_KEY") || getEnv("VITE_GROQ_WHISPER_KEY"),
     endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
     monthlyQuota: 14400,
     usedThisMonth: 0,
@@ -201,6 +209,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Document Summarizer, Grammar Fixer, and smart drafting. 1,500 requests/day (45,000/mo) completely free.",
     dashboardUrl: "https://aistudio.google.com/app/apikey",
+    apiKey: getEnv("VITE_GOOGLE_AI_KEY") || getEnv("VITE_GEMINI_API_KEY"),
     endpoint: "https://generativelanguage.googleapis.com/v1beta",
     monthlyQuota: 45000,
     usedThisMonth: 0,
@@ -217,6 +226,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Document and text translation across 60+ languages. 50,000 words free every single day.",
     dashboardUrl: "https://mymemory.translated.net/doc/keygen.php",
+    apiKey: getEnv("VITE_MYMEMORY_KEY"),
     endpoint: "https://api.mymemory.translated.net/get",
     monthlyQuota: 50000,
     usedThisMonth: 0,
@@ -300,7 +310,10 @@ export function getCloudApis(category?: string): CloudApiConfig[] {
 /**
  * Save updated APIs to localStorage, IndexedDB and server database
  */
-export async function saveCloudApis(apis: CloudApiConfig[]): Promise<void> {
+export async function saveCloudApis(
+  apis: CloudApiConfig[],
+): Promise<{ ok: boolean; syncedToServer: boolean }> {
+  let syncedToServer = false
   try {
     const sorted = [...apis].sort((a, b) => a.priority - b.priority)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted))
@@ -311,14 +324,33 @@ export async function saveCloudApis(apis: CloudApiConfig[]): Promise<void> {
       )
     }
 
-    // Write to server disk database
-    await fetch("/api/db/apis", {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    }
+    try {
+      const storedUser = localStorage.getItem("fluxkit-current-user")
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser)
+        if (parsed?.role === "admin") {
+          headers["x-fluxkit-role"] = "admin"
+        }
+      }
+    } catch {}
+
+    // Write to server disk/serverless database
+    const res = await fetch("/api/db/apis", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ apis: sorted }),
     }).catch(() => null)
+
+    if (res && res.ok) {
+      syncedToServer = true
+    }
+    return { ok: true, syncedToServer }
   } catch (err) {
     console.warn("Failed to persist cloud APIs:", err)
+    return { ok: false, syncedToServer: false }
   }
 }
 
@@ -564,12 +596,48 @@ export async function testApiHealth(
  */
 export async function syncCloudApisWithServer(): Promise<CloudApiConfig[]> {
   try {
-    const res = await fetch("/api/db/apis")
-    if (res.ok) {
+    const headers: Record<string, string> = {}
+    try {
+      const storedUser = localStorage.getItem("fluxkit-current-user")
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser)
+        if (parsed?.role === "admin") {
+          headers["x-fluxkit-role"] = "admin"
+        }
+      }
+    } catch {}
+
+    const res = await fetch("/api/db/apis", { headers }).catch(() => null)
+    if (res && res.ok) {
       const data = await res.json()
       if (Array.isArray(data.apis) && data.apis.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.apis))
-        return data.apis
+        const local = getCloudApis()
+        // Merge without losing local unmasked credentials if response had masked tokens
+        const merged = data.apis.map((srvApi: CloudApiConfig) => {
+          const locApi = local.find((l) => l.id === srvApi.id)
+          if (!locApi) return srvApi
+          const copy = { ...srvApi }
+          if (
+            copy.apiKey &&
+            copy.apiKey.includes("••••") &&
+            locApi.apiKey &&
+            !locApi.apiKey.includes("••••")
+          ) {
+            copy.apiKey = locApi.apiKey
+          }
+          if (
+            copy.clientSecret &&
+            copy.clientSecret.includes("••••") &&
+            locApi.clientSecret &&
+            !locApi.clientSecret.includes("••••")
+          ) {
+            copy.clientSecret = locApi.clientSecret
+          }
+          return copy
+        })
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        return merged
       }
     }
   } catch {

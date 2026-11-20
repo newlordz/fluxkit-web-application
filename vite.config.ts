@@ -1789,7 +1789,21 @@ function fluxkitDatabasePlugin(): Plugin {
         if (pathname === "/api/db/apis" && req.method === "GET") {
           const dbData = ensureDbFile()
           const rawApis = dbData?.apiPool || []
-          // Mask secret keys and client secrets to prevent secret leakage
+          const roleHeader = (req.headers["x-fluxkit-role"] || req.headers["X-Fluxkit-Role"] || "").toString().toLowerCase()
+          const isAdmin = roleHeader === "admin"
+
+          if (isAdmin) {
+            res.end(
+              JSON.stringify({
+                ok: true,
+                apis: rawApis,
+                isAdmin: true,
+              }),
+            )
+            return
+          }
+
+          // Mask secret keys and client secrets to prevent secret leakage for anonymous callers
           const sanitizedApis = rawApis.map((api: any) => {
             const copy = { ...api }
             if (copy.clientSecret) {
@@ -1799,6 +1813,8 @@ function fluxkitDatabasePlugin(): Plugin {
             if (copy.apiKey && copy.apiKey.length > 8) {
               copy.apiKey = `${copy.apiKey.slice(0, 4)}••••••••${copy.apiKey.slice(-4)}`
               copy.hasApiKey = true
+            } else if (copy.apiKey) {
+              copy.hasApiKey = true
             }
             return copy
           })
@@ -1806,6 +1822,7 @@ function fluxkitDatabasePlugin(): Plugin {
             JSON.stringify({
               ok: true,
               apis: sanitizedApis,
+              isAdmin: false,
             }),
           )
           return
