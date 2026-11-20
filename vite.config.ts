@@ -31,6 +31,25 @@ export default defineConfig(({ mode }) => {
             if (id.includes("lucide-react")) {
               return "lucide-icons"
             }
+            if (
+              id.includes("AdminPanel") ||
+              id.includes("adminDbService") ||
+              id.includes("paymentIntegrationService") ||
+              id.includes("apiPoolService") ||
+              id.includes("pageManagerService")
+            ) {
+              return "admin-portal"
+            }
+            if (
+              id.includes("VisitorPassStudio") ||
+              id.includes("ImageShowcase") ||
+              id.includes("imageShowcaseService")
+            ) {
+              return "studio-tools"
+            }
+            if (id.includes("dataConversionService")) {
+              return "data-conversions"
+            }
             if (id.includes("node_modules")) {
               return "vendor"
             }

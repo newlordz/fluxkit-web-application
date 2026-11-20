@@ -142,9 +142,18 @@ const GOOGLE_CLIENT_ID_KEY = "fluxkit-google-client-id"
 
 const RESET_TOKENS_KEY = "fluxkit-reset-tokens"
 
+const LOGIN_ATTEMPTS_KEY = "fluxkit-login-attempts"
+
 interface ResetTokenRecord {
   code: string
   expiresAt: number
+  attempts?: number
+  lastRequestedAt?: number
+}
+
+interface LoginAttemptRecord {
+  count: number
+  lockoutUntil?: number
 }
 
 interface StoredCredential {
@@ -232,6 +241,8 @@ export function saveStoredResetToken(email: string, code: string): void {
     tokens[email.toLowerCase()] = {
       code,
       expiresAt: Date.now() + 15 * 60 * 1000,
+      attempts: 0,
+      lastRequestedAt: Date.now(),
     }
 
     storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
@@ -254,6 +265,74 @@ export function clearStoredResetToken(email: string): void {
   } catch {
     /* storage might fail */
   }
+}
+
+export function getStoredLoginAttempts(): Record<string, LoginAttemptRecord> {
+  const storage = getStorage()
+
+  if (!storage) return {}
+
+  try {
+    const raw = storage.getItem(LOGIN_ATTEMPTS_KEY)
+
+    if (!raw) return {}
+
+    return JSON.parse(raw) as Record<string, LoginAttemptRecord>
+  } catch {
+    return {}
+  }
+}
+
+export function checkLoginLockout(email: string): void {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  if (!cleanEmail) return
+
+  const attempts = getStoredLoginAttempts()
+  const record = attempts[cleanEmail]
+  if (!record) return
+
+  if (record.lockoutUntil && Date.now() < record.lockoutUntil) {
+    const remainingSec = Math.ceil((record.lockoutUntil - Date.now()) / 1000)
+    const mins = Math.ceil(remainingSec / 60)
+    throw new Error(
+      `Too many failed sign-in attempts. Account temporarily locked for security. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`,
+    )
+  }
+}
+
+export function recordFailedLogin(email: string): void {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  if (!cleanEmail) return
+
+  const storage = getStorage()
+  if (!storage || typeof storage.setItem !== "function") return
+
+  try {
+    const attempts = getStoredLoginAttempts()
+    const record = attempts[cleanEmail] || { count: 0 }
+    record.count = (record.count || 0) + 1
+    if (record.count >= 5) {
+      record.lockoutUntil = Date.now() + 5 * 60 * 1000 // 5-minute lockout
+    }
+    attempts[cleanEmail] = record
+    storage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts))
+  } catch {}
+}
+
+export function clearFailedLogins(email: string): void {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  if (!cleanEmail) return
+
+  const storage = getStorage()
+  if (!storage || typeof storage.setItem !== "function") return
+
+  try {
+    const attempts = getStoredLoginAttempts()
+    if (attempts[cleanEmail]) {
+      delete attempts[cleanEmail]
+      storage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts))
+    }
+  } catch {}
 }
 
 // Pure JavaScript synchronous SHA-256 implementation
@@ -783,8 +862,10 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
   const password = values.password || ""
 
+  checkLoginLockout(cleanEmail)
+
   if (!cleanEmail || !password) {
-    throw new Error("Invalid email or password.")
+    throw new Error("Email and password are required.")
   }
 
   // 1. Seeded or Custom Admin Account Check (supports password & email change backed by database)
@@ -846,8 +927,11 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
       !isDatabaseHashMatch &&
       !isSeededHashMatch
     ) {
+      recordFailedLogin(cleanEmail)
       throw new Error("Invalid email or password.")
     }
+
+    clearFailedLogins(cleanEmail)
 
     // Sync credentials cache to ensure local storage remains in sync with the authenticated password
 
@@ -938,6 +1022,8 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
       message: "Successfully signed in.",
     }
 
+    clearFailedLogins(cleanEmail)
+
     saveCurrentUser(aliceUser)
 
     return aliceUser
@@ -950,6 +1036,7 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
   const found = accounts.find((a) => a.email.toLowerCase() === cleanEmail)
 
   if (!found) {
+    recordFailedLogin(cleanEmail)
     throw new Error("Invalid email or password.")
   }
 
@@ -964,14 +1051,18 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
       )
     }
 
+    recordFailedLogin(cleanEmail)
     throw new Error("Invalid email or password.")
   }
 
   const computedHash = hashPassword(password, userCred.salt)
 
   if (computedHash !== userCred.hash) {
+    recordFailedLogin(cleanEmail)
     throw new Error("Invalid email or password.")
   }
+
+  clearFailedLogins(cleanEmail)
 
   const now = new Date().toISOString()
 
@@ -995,6 +1086,22 @@ async function localRequestPasswordReset(
 
   if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     throw new Error("Please enter a valid email address.")
+  }
+
+  // Rate limiting: prevent spamming reset code generation (30-second cooldown)
+  const tokens = getStoredResetTokens()
+  const existing = tokens[cleanEmail]
+  if (
+    existing &&
+    existing.lastRequestedAt &&
+    Date.now() - existing.lastRequestedAt < 30 * 1000
+  ) {
+    const waitSec = Math.ceil(
+      (30 * 1000 - (Date.now() - existing.lastRequestedAt)) / 1000,
+    )
+    throw new Error(
+      `Please wait ${waitSec} second${waitSec > 1 ? "s" : ""} before requesting another reset code.`,
+    )
   }
 
   // Generate 6-digit verification code
@@ -1040,6 +1147,7 @@ export function verifyResetCode(email: string, code: string): boolean {
   const cleanCode = (code || "").trim()
   if (!cleanEmail || !cleanCode) return false
 
+  const storage = getStorage()
   const tokens = getStoredResetTokens()
   const record = tokens[cleanEmail]
   if (!record) return false
@@ -1049,7 +1157,26 @@ export function verifyResetCode(email: string, code: string): boolean {
     return false
   }
 
-  return record.code === cleanCode
+  // Enforce brute-force attempt lockout on reset codes (max 5 tries)
+  if (record.attempts !== undefined && record.attempts >= 5) {
+    clearStoredResetToken(cleanEmail)
+    throw new Error(
+      "Too many failed verification attempts. This reset code has been invalidated for security. Please request a new code.",
+    )
+  }
+
+  if (record.code !== cleanCode) {
+    record.attempts = (record.attempts || 0) + 1
+    if (storage && typeof storage.setItem === "function") {
+      try {
+        tokens[cleanEmail] = record
+        storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
+      } catch {}
+    }
+    return false
+  }
+
+  return true
 }
 
 export async function completePasswordReset(
@@ -1106,6 +1233,7 @@ export async function completePasswordReset(
   }
 
   clearStoredResetToken(cleanEmail)
+  clearFailedLogins(cleanEmail)
 
   return {
     success: true,
@@ -1113,6 +1241,49 @@ export async function completePasswordReset(
       "Your password has been successfully reset. You can now sign in with your new password.",
     user,
   }
+}
+
+/**
+ * Modern PBKDF2 Password Hashing with SHA-256 and configurable iterations (default 100,000)
+ * Uses browser Web Cryptography API where available with graceful fallback.
+ */
+export async function hashPasswordPBKDF2(
+  password: string,
+  salt: string,
+  iterations = 100000,
+): Promise<string> {
+  if (
+    typeof crypto !== "undefined" &&
+    crypto.subtle &&
+    typeof crypto.subtle.importKey === "function"
+  ) {
+    try {
+      const enc = new TextEncoder()
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw",
+        enc.encode(password),
+        { name: "PBKDF2" },
+        false,
+        ["deriveBits"],
+      )
+      const bits = await crypto.subtle.deriveBits(
+        {
+          name: "PBKDF2",
+          salt: enc.encode(salt),
+          iterations,
+          hash: "SHA-256",
+        },
+        keyMaterial,
+        256,
+      )
+      return Array.from(new Uint8Array(bits))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")
+    } catch {
+      /* fallback below */
+    }
+  }
+  return hashPassword(password, salt)
 }
 
 // --- Client Google / Gmail Authentication & Account Management ---

@@ -100,9 +100,19 @@ export function cleanReadableLines(lines: string[]): string[] {
     })
 }
 
-export { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
+export async function getPdfJsLibrary(): Promise<any> {
+  const mod = await import("./pdfEngine")
+  return mod.getPdfJsLibrary()
+}
 
-import { getPdfJsLibrary, renderPdfPageToDataUrl } from "./pdfEngine"
+export async function renderPdfPageToDataUrl(
+  fileOrBuffer: File | ArrayBuffer | Uint8Array,
+  pageNumber: number = 1,
+  scale: number = 1.2,
+): Promise<string | null> {
+  const mod = await import("./pdfEngine")
+  return mod.renderPdfPageToDataUrl(fileOrBuffer, pageNumber, scale)
+}
 
 export function getFileKey(file: File, index?: number): string {
   return `${file.name}-${file.size}-${file.lastModified || index || 0}`
