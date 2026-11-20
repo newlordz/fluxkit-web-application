@@ -1,3 +1,25 @@
+import fs from "fs"
+import path from "path"
+
+function getStoredSecret(provider: string, field: "clientSecret" | "apiKey"): string {
+  try {
+    const dbPaths = [
+      path.join(process.cwd(), "data", "masterfile-db.json"),
+      path.join(process.cwd(), "data", "fluxkit-db.json"),
+      path.join("/tmp", "masterfile-db.json"),
+    ]
+    for (const p of dbPaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, "utf8")
+        const data = JSON.parse(content)
+        const match = data?.apiPool?.find((a: any) => a.provider === provider)
+        if (match && match[field]) return match[field]
+      }
+    }
+  } catch {}
+  return ""
+}
+
 function getAdobeCredentials(req: any = {}, body: any = {}) {
   const q = req.query || {}
   const clientId =
@@ -6,6 +28,7 @@ function getAdobeCredentials(req: any = {}, body: any = {}) {
     req.headers?.["x-adobe-client-id"] ||
     process.env.VITE_ADOBE_CLIENT_ID ||
     process.env.ADOBE_CLIENT_ID ||
+    getStoredSecret("adobe", "apiKey") ||
     ""
   const clientSecret =
     q.clientSecret ||
@@ -13,6 +36,7 @@ function getAdobeCredentials(req: any = {}, body: any = {}) {
     req.headers?.["x-adobe-client-secret"] ||
     process.env.VITE_ADOBE_CLIENT_SECRET ||
     process.env.ADOBE_CLIENT_SECRET ||
+    getStoredSecret("adobe", "clientSecret") ||
     ""
   return { clientId, clientSecret }
 }

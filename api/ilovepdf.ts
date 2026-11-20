@@ -1,3 +1,25 @@
+import fs from "fs"
+import path from "path"
+
+function getStoredSecret(provider: string, field: "clientSecret" | "apiKey"): string {
+  try {
+    const dbPaths = [
+      path.join(process.cwd(), "data", "masterfile-db.json"),
+      path.join(process.cwd(), "data", "fluxkit-db.json"),
+      path.join("/tmp", "masterfile-db.json"),
+    ]
+    for (const p of dbPaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, "utf8")
+        const data = JSON.parse(content)
+        const match = data?.apiPool?.find((a: any) => a.provider === provider)
+        if (match && match[field]) return match[field]
+      }
+    }
+  } catch {}
+  return ""
+}
+
 function getILovePdfCredentials(req: any = {}, body: any = {}) {
   const q = req.query || {}
   const publicKey =
@@ -6,6 +28,7 @@ function getILovePdfCredentials(req: any = {}, body: any = {}) {
     req.headers?.["x-ilovepdf-public-key"] ||
     process.env.VITE_ILOVEPDF_PUBLIC_KEY ||
     process.env.ILOVEPDF_PUBLIC_KEY ||
+    getStoredSecret("ilovepdf", "apiKey") ||
     ""
   const secretKey =
     q.secretKey ||
@@ -13,6 +36,7 @@ function getILovePdfCredentials(req: any = {}, body: any = {}) {
     req.headers?.["x-ilovepdf-secret-key"] ||
     process.env.VITE_ILOVEPDF_SECRET_KEY ||
     process.env.ILOVEPDF_SECRET_KEY ||
+    getStoredSecret("ilovepdf", "clientSecret") ||
     ""
   return { publicKey, secretKey }
 }
@@ -224,11 +248,6 @@ export default async function handler(req: any, res: any) {
       compressedSize: resultBuffer.length,
       originalSize,
       ratio: Math.round(((originalSize - resultBuffer.length) / originalSize) * 100),
-      provider: "ilovepdf",
-    }
-      compressedSize: compressedBuffer.length,
-      originalSize,
-      ratio: Math.round(((originalSize - compressedBuffer.length) / originalSize) * 100),
       provider: "ilovepdf",
     }
 

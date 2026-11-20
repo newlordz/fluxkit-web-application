@@ -9,6 +9,7 @@ import {
   generateSalt,
   hashPassword,
   getStoredCredentials,
+  pushUserToCloud,
 } from "./authService"
 export { isRootAdmin } from "./authService"
 import { tools } from "./config"
@@ -560,6 +561,7 @@ export function requestProApproval(userId: string): UserAccount {
   if (current && current.id === userId) {
     saveCurrentUser(updated)
   }
+  pushUserToCloud(updated)
   return updated
 }
 
@@ -603,6 +605,7 @@ export function approveProSubscription(userId: string): UserAccount {
   if (current && current.id === userId) {
     saveCurrentUser(updated)
   }
+  pushUserToCloud(updated)
   return updated
 }
 
@@ -651,10 +654,105 @@ export function revokeProSubscription(userId: string): UserAccount {
   if (current && current.id === userId) {
     saveCurrentUser(updated)
   }
+  pushUserToCloud(updated)
   return updated
 }
 
 export function getAllUsers(): UserAccount[] {
+  return getRegisteredAccounts()
+}
+
+/**
+ * Push an individual user update or creation to the serverless database.
+ */
+export async function pushUserToServer(user: UserAccount): Promise<void> {
+  pushUserToCloud(user)
+}
+
+/**
+ * Push batch users to the serverless database.
+ */
+export async function pushUsersToServer(users: UserAccount[]): Promise<void> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return
+  try {
+    await fetch("/api/db/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ users }),
+    })
+  } catch (err) {
+    console.warn("Failed to push users to server:", err)
+  }
+}
+
+/**
+ * Remove a user from the serverless database.
+ */
+export async function deleteUserFromServer(userId: string): Promise<void> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return
+  try {
+    await fetch("/api/db/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", userId }),
+    })
+  } catch (err) {
+    console.warn("Failed to delete user on server:", err)
+  }
+}
+
+/**
+ * Synchronize registered users with the serverless database.
+ * Fetches all registered accounts from /api/db/users so that administrators
+ * see all users across all devices and browsers in real time.
+ */
+export async function syncUsersWithServer(): Promise<UserAccount[]> {
+  if (typeof window === "undefined" || typeof fetch !== "function") {
+    return getRegisteredAccounts()
+  }
+  try {
+    const res = await fetch("/api/db/users", { method: "GET" })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && Array.isArray(data.users)) {
+        const localAccounts = getRegisteredAccounts()
+        const mergedMap = new Map<string, UserAccount>()
+
+        for (const u of data.users) {
+          if (u && u.email) {
+            mergedMap.set(u.email.toLowerCase(), u)
+          }
+        }
+
+        const unpushed: UserAccount[] = []
+        for (const u of localAccounts) {
+          if (u && u.email) {
+            const emailKey = u.email.toLowerCase()
+            if (!mergedMap.has(emailKey)) {
+              mergedMap.set(emailKey, u)
+              unpushed.push(u)
+            } else {
+              const serverAcc = mergedMap.get(emailKey)!
+              if (u.proStatus !== "none" && serverAcc.proStatus === "none") {
+                mergedMap.set(emailKey, { ...serverAcc, ...u })
+              }
+            }
+          }
+        }
+
+        const mergedList = Array.from(mergedMap.values())
+        saveRegisteredAccounts(mergedList)
+
+        if (unpushed.length > 0) {
+          pushUsersToServer(unpushed).catch(() => {})
+        }
+
+        return mergedList
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to sync users with server:", err)
+  }
   return getRegisteredAccounts()
 }
 
@@ -686,6 +784,7 @@ export function updateUserRole(
   if (current && current.id === userId) {
     saveCurrentUser(updated)
   }
+  pushUserToCloud(updated)
   return updated
 }
 
@@ -703,6 +802,7 @@ export function deleteUser(userId: string): void {
       a.email.toLowerCase() !== "admin@fluxkit.com",
   )
   saveRegisteredAccounts(filtered)
+  deleteUserFromServer(userId).catch(() => {})
 }
 
 export function createUserByAdmin(payload: {
@@ -756,6 +856,7 @@ export function createUserByAdmin(payload: {
 
   accounts.push(newUser)
   saveRegisteredAccounts(accounts)
+  pushUserToCloud(newUser)
   return newUser
 }
 
@@ -867,6 +968,8 @@ export function updateUserDetails(
   if (current && current.id === userId) {
     saveCurrentUser(updated)
   }
+
+  pushUserToCloud(updated)
 
   return updated
 }

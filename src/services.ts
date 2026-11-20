@@ -2121,6 +2121,15 @@ function isLikelyWordHeading(
   const trimmed = line.trim()
   if (!trimmed) return false
 
+  // 0. Explicit exclusions: Signatures, dates, form underscores, and metadata
+  if (
+    /__+/.test(trimmed) ||
+    /^(signature|signed|signatory|sign\s*here|authorized\s*sign|approved\s*by|witness|date\b|name\b|title\b|director|secretary)/i.test(trimmed) ||
+    /\b(signature|signed\s*by|witnessed\s*by|date:)\b/i.test(trimmed)
+  ) {
+    return false
+  }
+
   // 1. PDF.js font size / weight detection
   if (pageHeadings && pageHeadings.includes(trimmed)) return true
 
@@ -2207,8 +2216,8 @@ export async function pdfToWord(
 
         if (response.ok) {
           const data = await response.json()
-          if ((data.ok || data.success) && (data.base64 || data.docxBase64)) {
-            const rawBase64 = data.base64 || data.docxBase64
+          const rawBase64 = data.docxBase64 || data.base64 || data.pdfBase64
+          if ((data.ok || data.success) && rawBase64) {
             const docxBinary = atob(rawBase64)
             const docxBytes = new Uint8Array(docxBinary.length)
             for (let i = 0; i < docxBinary.length; i++) {
@@ -2275,8 +2284,8 @@ export async function pdfToWord(
 
         if (response.ok) {
           const data = await response.json()
-          if ((data.ok || data.success) && (data.base64 || data.docxBase64)) {
-            const rawBase64 = data.base64 || data.docxBase64
+          const rawBase64 = data.docxBase64 || data.base64 || data.pdfBase64
+          if ((data.ok || data.success) && rawBase64) {
             const docxBinary = atob(rawBase64)
             const docxBytes = new Uint8Array(docxBinary.length)
             for (let i = 0; i < docxBinary.length; i++) {
@@ -2442,7 +2451,21 @@ export async function pdfToWord(
         if (trimmed.length === 0) return
         const escaped = escapeXml(trimmed)
 
-        if (layout === "clean") {
+        const columnarParts = trimmed.split(/\s{4,}|\t+/).filter(Boolean)
+        const isSignatureOrFormLine =
+          /__+|signature\b|signatory|signed\s+by|approved\s+by|authorized|witness\b|date\s*:/i.test(
+            trimmed,
+          )
+
+        if (columnarParts.length === 2 && !trimmed.startsWith("http")) {
+          // Render side-by-side signature or dual-column blocks in a borderless table
+          docBodyXml += `<w:tbl><w:tblPr><w:tblW w:w="9600" w:type="dxa"/><w:tblBorders><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders></w:tblPr><w:tr><w:tc><w:tcPr><w:tcW w:w="4800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(columnarParts[0].trim())}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="4800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(columnarParts[1].trim())}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+        } else if (columnarParts.length === 3 && !trimmed.startsWith("http")) {
+          docBodyXml += `<w:tbl><w:tblPr><w:tblW w:w="9600" w:type="dxa"/><w:tblBorders><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders></w:tblPr><w:tr><w:tc><w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(columnarParts[0].trim())}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(columnarParts[1].trim())}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(columnarParts[2].trim())}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+        } else if (isSignatureOrFormLine) {
+          // Signature lines: preserve line breaks and tight spacing without oversized heading fonts
+          docBodyXml += `<w:p><w:pPr><w:spacing w:before="120" w:after="60"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/><w:color w:val="334155"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
+        } else if (layout === "clean") {
           docBodyXml += `<w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`
         } else if (layout === "compact") {
           docBodyXml += `<w:p><w:pPr><w:spacing w:after="60"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>${escaped}</w:t></w:r></w:p>`

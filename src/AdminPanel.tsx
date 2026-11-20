@@ -68,6 +68,7 @@ import {
   setBulkToolPrices,
   setCategoryPrice,
   getAllUsers,
+  syncUsersWithServer,
   approveProSubscription,
   revokeProSubscription,
   updateUserRole,

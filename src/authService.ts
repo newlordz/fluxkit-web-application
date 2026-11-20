@@ -621,6 +621,17 @@ export function saveRegisteredAccounts(accounts: UserAccount[]): void {
   } catch {}
 }
 
+export function pushUserToCloud(user: UserAccount): void {
+  if (typeof window === "undefined" || typeof fetch !== "function") return
+  try {
+    fetch("/api/db/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user }),
+    }).catch(() => {})
+  } catch {}
+}
+
 export function saveCurrentUser(user: UserAccount): void {
   const storage = getStorage()
 
@@ -645,6 +656,9 @@ export function saveCurrentUser(user: UserAccount): void {
     }
 
     storage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(accounts))
+
+    // Automatically sync updated account with serverless cloud database
+    pushUserToCloud(user)
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
@@ -676,6 +690,9 @@ export function updateRegisteredAccount(user: UserAccount): void {
     }
 
     storage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(accounts))
+
+    // Automatically sync updated account with serverless cloud database
+    pushUserToCloud(user)
 
     const current = getCurrentUser()
 
