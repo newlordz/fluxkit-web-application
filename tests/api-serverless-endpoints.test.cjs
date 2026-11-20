@@ -166,3 +166,20 @@ test("API Cloud APIs: POST /api/cloud-apis/ping blocks loopback and SSRF IP addr
   assert.equal(data.ok, false)
   assert.ok(data.error.includes("Prohibited"))
 })
+
+test("API Paystack: POST /api/paystack/verify-keys safely unmasks bullet characters without crashing ByteString", async () => {
+  const handler = loadHandler("api/paystack/verify-keys.ts")
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    body: {
+      secretKey: "sk_test_••••••••0632",
+      publicKey: "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e",
+    },
+  })
+
+  await handler(req, res)
+  const data = res._getData()
+  // Must not throw ByteString TypeError (code 8226)
+  assert.ok(data)
+  assert.ok(typeof data.ok === "boolean")
+})

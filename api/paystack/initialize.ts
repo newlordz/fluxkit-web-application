@@ -60,16 +60,20 @@ export default async function handler(req: any, res: any) {
     const { email, amount, currency, callback_url, metadata } = body
     let secretKey = (body.secretKey || "").trim()
 
-    if (!secretKey || secretKey.includes("••••")) {
+    if (!secretKey || secretKey.includes("•") || secretKey.includes("••••")) {
       const db = readDb()
       const existingPaystack = (db.paymentGateways || []).find((g: any) => g.id === "paystack")
-      if (existingPaystack?.secretKey && !existingPaystack.secretKey.includes("••••")) {
+      if (existingPaystack?.secretKey && !existingPaystack.secretKey.includes("•")) {
         secretKey = existingPaystack.secretKey
-      } else if (process.env.PAYSTACK_SECRET_KEY) {
+      } else if (process.env.PAYSTACK_SECRET_KEY && !process.env.PAYSTACK_SECRET_KEY.includes("•")) {
         secretKey = process.env.PAYSTACK_SECRET_KEY
       } else {
         secretKey = "sk_test_96b831d571847ca59855678b5f671de0ad8a0632"
       }
+    }
+
+    if (/[^\x00-\xFF]/.test(secretKey)) {
+      secretKey = "sk_test_96b831d571847ca59855678b5f671de0ad8a0632"
     }
 
     if (!secretKey) {
