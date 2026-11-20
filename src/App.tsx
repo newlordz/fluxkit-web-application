@@ -7,6 +7,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   Command,
@@ -67,6 +68,7 @@ import {
   isToolPro,
   getFormattedToolPrice,
   syncToolTiersFromDatabase,
+  getToolPaymentStatus,
 } from "./adminService"
 
 import {
@@ -154,11 +156,17 @@ function ToolCard({
   tool,
 
   navigate,
+
+  currentUser,
 }: {
   tool: Tool
 
   navigate: (id: string) => void
+
+  currentUser: UserAccount | null
 }) {
+  const payStatus = getToolPaymentStatus(tool.id, currentUser)
+
   return (
     <button
       className={`tool-card ${getToolThemeClass(tool)}`}
@@ -180,31 +188,101 @@ function ToolCard({
         <span
           style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
         >
-          <span
-            style={{
-              fontSize: "11px",
+          {(() => {
+            if (payStatus.badgeType === "paid") {
+              return (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "2px 7px",
+                    borderRadius: "4px",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    background: "rgba(16,185,129,0.18)",
+                    color: "#10b981",
+                    border: "1px solid rgba(16,185,129,0.35)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <CheckCircle2 size={11} /> {payStatus.statusLabel}
+                </span>
+              )
+            }
+            if (payStatus.badgeType === "all-access") {
+              return (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "2px 7px",
+                    borderRadius: "4px",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    background: "rgba(168,85,247,0.18)",
+                    color: "#c084fc",
+                    border: "1px solid rgba(168,85,247,0.35)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <Sparkles size={11} /> PRO UNLOCKED
+                </span>
+              )
+            }
+            if (payStatus.badgeType === "admin") {
+              return (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "2px 7px",
+                    borderRadius: "4px",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    background: "rgba(59,130,246,0.18)",
+                    color: "#60a5fa",
+                    border: "1px solid rgba(59,130,246,0.35)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <ShieldCheck size={11} /> ADMIN
+                </span>
+              )
+            }
+            return (
+              <span
+                style={{
+                  fontSize: "11px",
 
-              padding: "2px 6px",
+                  padding: "2px 6px",
 
-              borderRadius: "4px",
+                  borderRadius: "4px",
 
-              fontWeight: 700,
+                  fontWeight: 700,
 
-              whiteSpace: "nowrap",
+                  whiteSpace: "nowrap",
 
-              flexShrink: 0,
+                  flexShrink: 0,
 
-              background: isToolPro(tool.id)
-                ? "rgba(0,201,183,0.15)"
-                : "rgba(16,185,129,0.15)",
+                  background: isToolPro(tool.id)
+                    ? "rgba(0,201,183,0.15)"
+                    : "rgba(16,185,129,0.15)",
 
-              color: isToolPro(tool.id) ? "#00C9B7" : "#10b981",
-            }}
-          >
-            {isToolPro(tool.id)
-              ? `PRO · ${getFormattedToolPrice(tool.id, undefined, "month")}`
-              : "FREE"}
-          </span>
+                  color: isToolPro(tool.id) ? "#00C9B7" : "#10b981",
+                }}
+              >
+                {isToolPro(tool.id)
+                  ? `PRO · ${getFormattedToolPrice(tool.id, undefined, "month")}`
+                  : "FREE"}
+              </span>
+            )
+          })()}
           <span
             className={`tool-badge ${
               tool.integrationRequired
@@ -1376,7 +1454,12 @@ export default function App() {
               </div>
               <div className="tool-grid">
                 {filtered.map((t) => (
-                  <ToolCard key={t.id} tool={t} navigate={navigate} />
+                  <ToolCard
+                    key={t.id}
+                    tool={t}
+                    navigate={navigate}
+                    currentUser={currentUser}
+                  />
                 ))}
               </div>
               {!filtered.length && (
@@ -2186,6 +2269,7 @@ export default function App() {
               <AudioToText
                 key={`${page}-${stagedFiles[0]?.name || "empty"}`}
                 initialFile={stagedFiles[0]}
+                currentUser={currentUser}
                 onComplete={() =>
                   setActivity((a) => [
                     {
@@ -2216,6 +2300,7 @@ export default function App() {
             ) : (
               <VisitorPassStudio
                 navigate={navigate}
+                currentUser={currentUser}
                 onComplete={() =>
                   setActivity((a) => [
                     {
@@ -2249,6 +2334,7 @@ export default function App() {
                 tool={selected}
                 initialFiles={stagedFiles}
                 navigate={navigate}
+                currentUser={currentUser}
                 onComplete={(name) =>
                   setActivity((a) => [
                     {

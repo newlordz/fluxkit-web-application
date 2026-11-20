@@ -14,6 +14,8 @@ import {
   Pause,
   Play,
   RefreshCw,
+  ShieldCheck,
+  Sparkles,
   X,
 } from "lucide-react"
 import {
@@ -39,6 +41,8 @@ import {
   waitForPoll,
 } from "./transcriptionService"
 import { useNotify } from "./Notifications"
+import { getCurrentUser, type UserAccount } from "./authService"
+import { getToolPaymentStatus } from "./adminService"
 
 const previewLimit = 25 * 1024 * 1024
 const size = (bytes: number) =>
@@ -60,9 +64,11 @@ const labels: Record<JobStatus, string> = {
 export default function AudioToText({
   onComplete,
   initialFile,
+  currentUser,
 }: {
   onComplete?: () => void
   initialFile?: File
+  currentUser?: UserAccount | null
 }) {
   const notify = useNotify()
   const [capabilities, setCapabilities] = useState<TranscriptionCapabilities>()
@@ -597,7 +603,105 @@ export default function AudioToText({
 
   return (
     <div className="page-enter tool-page">
-      <div className="eyebrow">AUDIO TOOLS</div>
+      <div
+        className="eyebrow"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          flexWrap: "wrap",
+        }}
+      >
+        <span>AUDIO TOOLS</span>
+        {(() => {
+          const user = currentUser || getCurrentUser()
+          const payStatus = getToolPaymentStatus("audio-text", user)
+          if (payStatus.badgeType === "paid") {
+            return (
+              <span
+                style={{
+                  fontSize: "11px",
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  background: "rgba(16,185,129,0.15)",
+                  color: "#10b981",
+                  border: "1px solid rgba(16,185,129,0.35)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <CheckCircle2 size={12} /> Paid · Active{" "}
+                {payStatus.plan ? payStatus.plan.toUpperCase() : "MONTHLY"} Pass
+                {payStatus.expiresAt && (
+                  <span
+                    style={{
+                      opacity: 0.8,
+                      fontWeight: 400,
+                      textTransform: "none",
+                    }}
+                  >
+                    (renews{" "}
+                    {new Date(payStatus.expiresAt).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                    )
+                  </span>
+                )}
+              </span>
+            )
+          }
+          if (payStatus.badgeType === "all-access") {
+            return (
+              <span
+                style={{
+                  fontSize: "11px",
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  background: "rgba(168,85,247,0.15)",
+                  color: "#c084fc",
+                  border: "1px solid rgba(168,85,247,0.35)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <Sparkles size={12} /> All-Access Pro Unlocked
+              </span>
+            )
+          }
+          if (payStatus.badgeType === "admin") {
+            return (
+              <span
+                style={{
+                  fontSize: "11px",
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  background: "rgba(59,130,246,0.15)",
+                  color: "#60a5fa",
+                  border: "1px solid rgba(59,130,246,0.35)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <ShieldCheck size={12} /> Admin Access
+              </span>
+            )
+          }
+          return null
+        })()}
+      </div>
       <h1>Audio to Text</h1>
       <p className="page-subtitle">
         Turn a recording into words you can work with. Upload, transcribe, and

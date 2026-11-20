@@ -280,6 +280,93 @@ export function canUserAccessTool(
   return false
 }
 
+export type ToolPaymentStatus = {
+  isProTool: boolean
+  isUnlocked: boolean
+  statusLabel: string
+  badgeType: "free" | "pro-locked" | "paid" | "all-access" | "admin"
+  plan?: "monthly" | "yearly"
+  renewsAt?: string
+  expiresAt?: string
+}
+
+export function getToolPaymentStatus(
+  toolId: string,
+  user: UserAccount | null,
+): ToolPaymentStatus {
+  const isPro = isToolPro(toolId)
+  if (!isPro) {
+    return {
+      isProTool: false,
+      isUnlocked: true,
+      statusLabel: "FREE",
+      badgeType: "free",
+    }
+  }
+
+  if (!user) {
+    return {
+      isProTool: true,
+      isUnlocked: false,
+      statusLabel: `PRO · ${getFormattedToolPrice(toolId, undefined, "month")}`,
+      badgeType: "pro-locked",
+    }
+  }
+
+  if (user.role === "admin" || user.role === "sub-admin") {
+    return {
+      isProTool: true,
+      isUnlocked: true,
+      statusLabel: "ADMIN ACCESS",
+      badgeType: "admin",
+    }
+  }
+
+  if (user.subscriptionTier === "pro" && user.proStatus === "active") {
+    return {
+      isProTool: true,
+      isUnlocked: true,
+      statusLabel: "ALL-ACCESS PRO",
+      badgeType: "all-access",
+    }
+  }
+
+  const sub = (user as any).toolSubscriptions?.[toolId]
+  const isUnlockedList =
+    user.unlockedTools &&
+    Array.isArray(user.unlockedTools) &&
+    user.unlockedTools.includes(toolId)
+
+  if (isUnlockedList) {
+    if (sub && sub.expiresAt && new Date(sub.expiresAt).getTime() < Date.now()) {
+      return {
+        isProTool: true,
+        isUnlocked: false,
+        statusLabel: "EXPIRED",
+        badgeType: "pro-locked",
+        expiresAt: sub.expiresAt,
+      }
+    }
+    const cycleLabel = sub?.plan === "yearly" ? "YEARLY" : "MONTHLY"
+    return {
+      isProTool: true,
+      isUnlocked: true,
+      statusLabel: `PAID · ${cycleLabel}`,
+      badgeType: "paid",
+      plan: sub?.plan || "monthly",
+      renewsAt: sub?.renewsAt,
+      expiresAt: sub?.expiresAt,
+    }
+  }
+
+  return {
+    isProTool: true,
+    isUnlocked: false,
+    statusLabel: `PRO · ${getFormattedToolPrice(toolId, undefined, "month")}`,
+    badgeType: "pro-locked",
+  }
+}
+
 export function unlockSingleToolForUser(
   userId: string,
   toolId: string,

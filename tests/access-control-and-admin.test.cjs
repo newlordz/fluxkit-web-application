@@ -1106,3 +1106,53 @@ test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", (t) 
     admin.deleteUser(subAdmin.id)
   })
 })
+
+test("Tier 4 - S6: Tool payment status accurately shows Paid, Subscribed, or Pro tier", (t) => {
+  if (!hasModule("adminService")) {
+    t.skip("Module src/adminService.ts not yet implemented")
+    return
+  }
+
+  const harness = createHarness()
+  const admin = harness.load("adminService")
+  admin.setToolTier("pdf-organizer", "pro")
+  admin.setToolTier("merge-pdf", "standard")
+
+  // 1. Free / Standard tool
+  const freeStatus = admin.getToolPaymentStatus("merge-pdf", null)
+  assert.equal(freeStatus.badgeType, "free")
+  assert.equal(freeStatus.isUnlocked, true)
+
+  // 2. Unauthenticated guest on Pro tool
+  const guestStatus = admin.getToolPaymentStatus("pdf-organizer", null)
+  assert.equal(guestStatus.badgeType, "pro-locked")
+  assert.equal(guestStatus.isUnlocked, false)
+
+  // 3. Authenticated standard user who paid for single tool
+  const paidUser = admin.unlockSingleToolForUser("usr_single_paid", "pdf-organizer", "monthly")
+  const paidStatus = admin.getToolPaymentStatus("pdf-organizer", paidUser)
+  assert.equal(paidStatus.badgeType, "paid")
+  assert.equal(paidStatus.isUnlocked, true)
+  assert.match(paidStatus.statusLabel, /PAID/i)
+
+  // 4. All-Access Pro subscriber
+  const proUser = {
+    id: "usr_pro_all",
+    role: "user",
+    subscriptionTier: "pro",
+    proStatus: "active",
+  }
+  const allAccessStatus = admin.getToolPaymentStatus("pdf-organizer", proUser)
+  assert.equal(allAccessStatus.badgeType, "all-access")
+  assert.equal(allAccessStatus.isUnlocked, true)
+  assert.match(allAccessStatus.statusLabel, /ALL-ACCESS/i)
+
+  // 5. Administrator
+  const adminUser = {
+    id: "usr_admin",
+    role: "admin",
+  }
+  const adminStatus = admin.getToolPaymentStatus("pdf-organizer", adminUser)
+  assert.equal(adminStatus.badgeType, "admin")
+  assert.equal(adminStatus.isUnlocked, true)
+})
