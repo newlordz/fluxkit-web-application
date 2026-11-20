@@ -69,6 +69,7 @@ import {
   setCategoryPrice,
   getAllUsers,
   syncUsersWithServer,
+  pushUsersToServer,
   approveProSubscription,
   revokeProSubscription,
   updateUserRole,
@@ -467,6 +468,12 @@ export default function AdminPanel({
     subscriptionTier: "standard",
   })
   const [newUserError, setNewUserError] = useState("")
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importText, setImportText] = useState("")
+  const [importTier, setImportTier] = useState<"standard" | "pro">("standard")
+  const [importRole, setImportRole] = useState<"user" | "sub-admin">("user")
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState("")
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [passwordTargetUser, setPasswordTargetUser] =
     useState<UserAccount | null>(null)
@@ -902,6 +909,73 @@ export default function AdminPanel({
       showToast(`User "${created.name}" created successfully.`)
     } catch (err: any) {
       setNewUserError(err.message || "Failed to create user.")
+    }
+  }
+
+  const handleBatchImportUsers = async () => {
+    const lines = importText
+      .split(/[\r\n]+/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    if (lines.length === 0) {
+      setImportError("Please enter at least one user email or line.")
+      return
+    }
+
+    setIsImporting(true)
+    setImportError("")
+    try {
+      const existing = getAllUsers()
+      const newAccounts: UserAccount[] = []
+      const now = new Date().toISOString()
+
+      for (const line of lines) {
+        // Supported formats: email OR email, name OR email, name, role, tier
+        const parts = line.split(",").map((p) => p.trim())
+        const email = parts[0]?.toLowerCase()
+        if (!email || !email.includes("@")) continue
+
+        if (existing.some((e) => e.email.toLowerCase() === email)) continue
+        if (newAccounts.some((n) => n.email.toLowerCase() === email)) continue
+
+        const name = parts[1] || email.split("@")[0].replace(/[._-]/g, " ")
+        const role = (parts[2] as any) || importRole
+        const tier = (parts[3] as any) || importTier
+        const proStatus = tier === "pro" ? "active" : "none"
+
+        newAccounts.push({
+          id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+          name,
+          email,
+          provider: "email",
+          role: role === "admin" || role === "sub-admin" ? role : "user",
+          subscriptionTier: tier === "pro" ? "pro" : "standard",
+          proStatus,
+          createdAt: now,
+          lastLoginAt: now,
+        })
+      }
+
+      if (newAccounts.length === 0) {
+        setImportError(
+          "All entered email addresses already exist in directory or are invalid.",
+        )
+        setIsImporting(false)
+        return
+      }
+
+      await pushUsersToServer(newAccounts)
+      const refreshed = await syncUsersWithServer()
+      setUserList(refreshed)
+      setShowImportModal(false)
+      setImportText("")
+      showToast(
+        `Successfully imported ${newAccounts.length} user accounts to cloud database.`,
+      )
+    } catch (err: any) {
+      setImportError(err.message || "Failed to import users.")
+    } finally {
+      setIsImporting(false)
     }
   }
 
@@ -2226,6 +2300,28 @@ export default function AdminPanel({
               </button>
               <button
                 type="button"
+                className="secondary"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                }}
+                onClick={() => {
+                  setImportError("")
+                  setImportText("")
+                  setShowImportModal(true)
+                }}
+                title="Batch import user accounts directly into cloud database"
+              >
+                <Upload size={14} /> Import Users
+              </button>
+              <button
+                type="button"
                 className="primary"
                 style={{
                   display: "inline-flex",
@@ -3460,6 +3556,236 @@ export default function AdminPanel({
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Batch Import Users Modal */}
+          {showImportModal && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.7)",
+                backdropFilter: "blur(4px)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 999999,
+                padding: "20px",
+              }}
+              onClick={() => setShowImportModal(false)}
+            >
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  maxWidth: "520px",
+                  width: "100%",
+                  boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div>
+                    <h3
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: 700,
+                        margin: 0,
+                        color: "var(--text)",
+                      }}
+                    >
+                      Batch Import Users to Cloud Database
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                        margin: "4px 0 0",
+                      }}
+                    >
+                      Paste email addresses below to immediately register and approve them in the central cloud database.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowImportModal(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {importError && (
+                  <div
+                    style={{
+                      background: "rgba(239, 68, 68, 0.15)",
+                      color: "#ef4444",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      marginBottom: "14px",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                    }}
+                  >
+                    {importError}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: "12px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      marginBottom: "6px",
+                      color: "var(--text)",
+                    }}
+                  >
+                    User List (One per line)
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder={`user1@gmail.com\nuser2@example.com, Sarah Connor\nuser3@firm.com, John Doe, user, pro`}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      fontSize: "12px",
+                      fontFamily: "monospace",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      color: "var(--text)",
+                      boxSizing: "border-box",
+                      resize: "vertical",
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Format: <code>email</code> or <code>email, Full Name, role, tier</code>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                    marginBottom: "18px",
+                  }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        marginBottom: "4px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Default Tier
+                    </label>
+                    <select
+                      value={importTier}
+                      onChange={(e) => setImportTier(e.target.value as any)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        fontSize: "12px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      <option value="standard">Standard Tier</option>
+                      <option value="pro">Pro (Instant Active)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        marginBottom: "4px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Default Role
+                    </label>
+                    <select
+                      value={importRole}
+                      onChange={(e) => setImportRole(e.target.value as any)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        fontSize: "12px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      <option value="user">Standard User</option>
+                      <option value="sub-admin">Sub-Admin</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setShowImportModal(false)}
+                    disabled={isImporting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={handleBatchImportUsers}
+                    disabled={isImporting}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <Upload size={14} />
+                    {isImporting ? "Importing to Cloud..." : "Import to Cloud Database"}
+                  </button>
+                </div>
               </div>
             </div>
           )}
