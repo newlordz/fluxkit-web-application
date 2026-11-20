@@ -471,18 +471,14 @@ function FilePreviewCard({
           className="dpm-file-preview-card__grip"
           style={{
             display: "inline-flex",
-
             alignItems: "center",
-
             gap: "2px",
-
             color: "var(--muted)",
-
             cursor: "grab",
           }}
           title="Grab and move this card to set merge order"
         >
-          <GripVertical size={16} />
+          <GripVertical size={16} style={{ pointerEvents: "none" }} />
         </div>
         <div className="dpm-file-preview-card__actions">
           <button
@@ -747,7 +743,7 @@ function FileCard({
       onDragEnd={onDragEnd}
     >
       <div className="dpm-file-card__grip" title="Grab & move">
-        <GripVertical size={16} />
+        <GripVertical size={16} style={{ pointerEvents: "none" }} />
       </div>
 
       {/* Mini Thumbnail Preview */}
@@ -1129,6 +1125,12 @@ export default function DocumentPreviewModal({
 
   const [orderedFiles, setOrderedFiles] = useState<File[]>([...files])
 
+  useEffect(() => {
+    if (files && files.length > 0) {
+      setOrderedFiles([...files])
+    }
+  }, [files])
+
   const dragIndexRef = useRef<number | null>(null)
 
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null)
@@ -1434,7 +1436,6 @@ export default function DocumentPreviewModal({
 
   const handleFileDragStart = (e: React.DragEvent, i: number) => {
     dragIndexRef.current = i
-    setDragSourceIndex(i)
     e.dataTransfer.effectAllowed = "move"
     try {
       e.dataTransfer.setData("text/plain", `${i}`)
@@ -1442,10 +1443,15 @@ export default function DocumentPreviewModal({
     } catch {
       // ignore
     }
+    // Defer state update so Chromium/Safari does not cancel native drag on DOM re-render
+    setTimeout(() => {
+      setDragSourceIndex(i)
+    }, 0)
   }
 
   const handleFileDragOver = (e: React.DragEvent, i: number) => {
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = "move"
     if (dragOverIndex !== i) {
       setDragOverIndex(i)
@@ -1454,12 +1460,14 @@ export default function DocumentPreviewModal({
 
   const handleFileDragEnter = (e: React.DragEvent, i: number) => {
     e.preventDefault()
+    e.stopPropagation()
     if (dragOverIndex !== i) {
       setDragOverIndex(i)
     }
   }
 
   const handleFileDragLeave = (e: React.DragEvent, i: number) => {
+    e.stopPropagation()
     if (e.currentTarget && e.currentTarget.contains(e.relatedTarget as Node)) {
       return
     }

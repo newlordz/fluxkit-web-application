@@ -7003,7 +7003,9 @@ export default function ToolPage({
                             e.dataTransfer.effectAllowed = "move"
                             e.dataTransfer.setData("text/plain", `${i}`)
                             fileDragIndexRef.current = i
-                            setFileDragSourceIndex(i)
+                            setTimeout(() => {
+                              setFileDragSourceIndex(i)
+                            }, 0)
                           }}
                           onDragOver={(e) => {
                             e.preventDefault()
@@ -7069,7 +7071,7 @@ export default function ToolPage({
                               cursor: "grab",
                             }}
                           >
-                            <GripVertical size={15} />
+                            <GripVertical size={15} style={{ pointerEvents: "none" }} />
                           </span>
                         )}
                         <FileText size={18} />

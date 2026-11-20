@@ -1312,6 +1312,7 @@
 .dpm-file-preview-canvas__overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(2px);
   display: flex;
