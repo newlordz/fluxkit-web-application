@@ -578,6 +578,35 @@ function currencyApiPlugin(): Plugin {
           req.on("end", () => {
             try {
               const body = bodyStr ? JSON.parse(bodyStr) : {}
+              if (body.action === "fetch_live") {
+                fetch("https://open.er-api.com/v6/latest/USD")
+                  .then((r) => r.json())
+                  .then((data) => {
+                    const ghs = data?.rates?.GHS
+                    if (typeof ghs === "number" && ghs > 0) {
+                      exchangeRate = Math.round(ghs * 100) / 100
+                    }
+                    res.end(
+                      JSON.stringify({
+                        success: true,
+                        rate: exchangeRate,
+                        message: `Synchronized with live foreign exchange market: 1 USD = ${exchangeRate} GHS.`,
+                        updatedAt: new Date().toISOString(),
+                      }),
+                    )
+                  })
+                  .catch(() => {
+                    res.end(
+                      JSON.stringify({
+                        success: true,
+                        rate: exchangeRate,
+                        message: `Using current rate: 1 USD = ${exchangeRate} GHS.`,
+                        updatedAt: new Date().toISOString(),
+                      }),
+                    )
+                  })
+                return
+              }
               if (body.action === "set_rate" && typeof body.rate === "number" && body.rate > 0) {
                 exchangeRate = Math.round(body.rate * 100) / 100
                 res.end(

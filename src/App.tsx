@@ -78,6 +78,7 @@ import {
 import {
   getActiveCurrency,
   setActiveCurrency,
+  syncLiveExchangeRate,
   type SupportedCurrency,
 } from "./currencyService"
 
@@ -319,6 +320,7 @@ export default function App() {
     syncCloudApisWithServer().catch(() => null)
 
     syncGatewaysWithServer().catch(() => null)
+    syncLiveExchangeRate().catch(() => null)
   }, [])
 
   useEffect(() => {

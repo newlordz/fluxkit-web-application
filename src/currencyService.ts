@@ -176,6 +176,97 @@ export function setExchangeRate(rate: number): void {
 }
 
 /**
+ * Synchronizes the exchange rate with /api/currency (backed by live market feed)
+ * or falls back directly to the global open exchange rate API.
+ */
+export async function syncLiveExchangeRate(
+  forceFresh = false,
+): Promise<{ rate: number; isLive: boolean }> {
+  // 1. Try local backend endpoint first
+  try {
+    const endpoint = forceFresh ? "/api/currency?live=true" : "/api/currency"
+    const res = await fetch(endpoint, { method: "GET" })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && typeof data.rate === "number" && data.rate > 0) {
+        setExchangeRate(data.rate)
+        return { rate: data.rate, isLive: Boolean(data.isLive) }
+      }
+    }
+  } catch {}
+
+  // 2. Direct fallback to live exchange rate API (works in all environments, zero dependencies)
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD")
+    if (res.ok) {
+      const data = await res.json()
+      const liveGhs = data?.rates?.GHS
+      if (typeof liveGhs === "number" && liveGhs > 0) {
+        const rounded = Math.round(liveGhs * 100) / 100
+        setExchangeRate(rounded)
+        return { rate: rounded, isLive: true }
+      }
+    }
+  } catch {}
+
+  return { rate: getExchangeRate(), isLive: false }
+}
+
+/**
+ * Request server to fetch and apply fresh live market rate
+ */
+export async function fetchAndApplyLiveMarketRate(): Promise<{
+  success: boolean
+  rate: number
+  message: string
+}> {
+  try {
+    const res = await fetch("/api/currency", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "fetch_live" }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && typeof data.rate === "number" && data.rate > 0) {
+        setExchangeRate(data.rate)
+        return {
+          success: true,
+          rate: data.rate,
+          message:
+            data.message ||
+            `Live market rate synchronized: 1 USD = ${data.rate} GHS`,
+        }
+      }
+    }
+  } catch {}
+
+  // Client-side direct live market fallback
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD")
+    if (res.ok) {
+      const data = await res.json()
+      const liveGhs = data?.rates?.GHS
+      if (typeof liveGhs === "number" && liveGhs > 0) {
+        const rounded = Math.round(liveGhs * 100) / 100
+        setExchangeRate(rounded)
+        return {
+          success: true,
+          rate: rounded,
+          message: `Live market rate synchronized: 1 USD = ${rounded} GHS`,
+        }
+      }
+    }
+  } catch {}
+
+  return {
+    success: false,
+    rate: getExchangeRate(),
+    message: "Could not reach live market feed. Using current rate.",
+  }
+}
+
+/**
  * Perform backend currency conversion (Dollar <-> Cedi)
  * Sends request to backend /api/currency or /api/convert endpoint,
  * with deterministic offline fallback if server is unreachable.

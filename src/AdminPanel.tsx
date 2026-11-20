@@ -82,6 +82,7 @@ import {
   getExchangeRate,
   setExchangeRate,
   convertCurrencyOnBackend,
+  fetchAndApplyLiveMarketRate,
   type SupportedCurrency,
 } from "./currencyService"
 import {
@@ -536,6 +537,30 @@ export default function AdminPanel({
     )
     showToast(`Exchange rate updated: 1 USD = ${parsed.toFixed(2)} GHS`)
     setTimeout(() => setRateSuccessMsg(""), 3500)
+  }
+
+  // Fetch real-time market exchange rate
+  const handleFetchLiveRate = async () => {
+    setIsUpdatingRate(true)
+    const res = await fetchAndApplyLiveMarketRate()
+    setIsUpdatingRate(false)
+    if (res.success && res.rate > 0) {
+      setRateInput(res.rate.toString())
+      setExchangeRate(res.rate)
+      setExchangeRateState(res.rate)
+
+      const updatedGhs: Record<string, number> = {}
+      for (const [id, usd] of Object.entries(toolPrices)) {
+        updatedGhs[id] = Math.round(usd * res.rate * 100) / 100
+      }
+      setGhsPrices(updatedGhs)
+      setCalcGhs((parseFloat(calcUsd || "0") * res.rate).toFixed(2))
+      setRateSuccessMsg(res.message)
+      showToast(res.message)
+      setTimeout(() => setRateSuccessMsg(""), 3500)
+    } else {
+      showToast(res.message)
+    }
   }
 
   // Real-time backend conversion when user edits USD price
@@ -1486,6 +1511,28 @@ export default function AdminPanel({
                   onClick={handleUpdateBackendRate}
                 >
                   {isUpdatingRate ? "Syncing..." : "Update Rate"}
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    fontSize: "11px",
+                    padding: "4px 10px",
+                    borderRadius: "5px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    background: "rgba(0, 201, 183, 0.12)",
+                    border: "1px solid rgba(0, 201, 183, 0.35)",
+                    color: "var(--accent)",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  disabled={isUpdatingRate}
+                  onClick={handleFetchLiveRate}
+                  title="Fetch current live real-time rate from foreign exchange market"
+                >
+                  <RefreshCw size={11} />
+                  <span>Sync Live Rate</span>
                 </button>
                 {rateSuccessMsg && (
                   <span

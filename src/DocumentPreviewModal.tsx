@@ -114,8 +114,19 @@ export async function renderPdfPageToDataUrl(
   return mod.renderPdfPageToDataUrl(fileOrBuffer, pageNumber, scale)
 }
 
+const fileKeyMap = new WeakMap<File, string>()
+let fileKeyCounter = 0
+
 export function getFileKey(file: File, index?: number): string {
-  return `${file.name}-${file.size}-${file.lastModified || index || 0}`
+  if (file && typeof file === "object") {
+    let key = fileKeyMap.get(file)
+    if (!key) {
+      key = `file_${++fileKeyCounter}_${file.name}_${file.size}_${file.lastModified || 0}`
+      fileKeyMap.set(file, key)
+    }
+    return key
+  }
+  return `file_${index || 0}`
 }
 
 export async function loadFilePreview(
@@ -353,7 +364,13 @@ interface FilePreviewCardProps {
 
   onDragStart: (e: React.DragEvent, i: number) => void
 
-  onDragEnter: (i: number) => void
+  onDragEnter: (e: React.DragEvent, i: number) => void
+
+  onDragOver: (e: React.DragEvent, i: number) => void
+
+  onDragLeave: (e: React.DragEvent, i: number) => void
+
+  onDrop: (e: React.DragEvent, i: number) => void
 
   onDragEnd: () => void
 
@@ -380,6 +397,12 @@ function FilePreviewCard({
   onDragStart,
 
   onDragEnter,
+
+  onDragOver,
+
+  onDragLeave,
+
+  onDrop,
 
   onDragEnd,
 
@@ -435,14 +458,17 @@ function FilePreviewCard({
         .join(" ")}
       draggable
       onDragStart={(e) => onDragStart(e, index)}
-      onDragEnter={() => onDragEnter(index)}
+      onDragEnter={(e) => onDragEnter(e, index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDragLeave={(e) => onDragLeave(e, index)}
+      onDrop={(e) => onDrop(e, index)}
       onDragEnd={onDragEnd}
-      onDragOver={(e) => e.preventDefault()}
     >
       {/* Card Header */}
       <div className="dpm-file-preview-card__header">
         <span className="dpm-file-preview-card__order">#{index + 1}</span>
         <div
+          className="dpm-file-preview-card__grip"
           style={{
             display: "inline-flex",
 
@@ -451,6 +477,8 @@ function FilePreviewCard({
             gap: "2px",
 
             color: "var(--muted)",
+
+            cursor: "grab",
           }}
           title="Grab and move this card to set merge order"
         >
@@ -461,7 +489,10 @@ function FilePreviewCard({
             type="button"
             className="dpm-icon-btn"
             disabled={index === 0}
-            onClick={() => onMove(index, index - 1)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(index, index - 1)
+            }}
             title="Move earlier in merge order"
             aria-label={`Move ${file.name} earlier`}
           >
@@ -471,7 +502,10 @@ function FilePreviewCard({
             type="button"
             className="dpm-icon-btn"
             disabled={index === total - 1}
-            onClick={() => onMove(index, index + 1)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(index, index + 1)
+            }}
             title="Move later in merge order"
             aria-label={`Move ${file.name} later`}
           >
@@ -480,7 +514,10 @@ function FilePreviewCard({
           <button
             type="button"
             className="dpm-icon-btn dpm-icon-btn--danger"
-            onClick={() => onRemove(index)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove(index)
+            }}
             title={`Remove ${file.name}`}
             aria-label={`Remove ${file.name}`}
           >
@@ -492,17 +529,22 @@ function FilePreviewCard({
       {/* Card Preview Canvas */}
       <div
         className="dpm-file-preview-canvas"
-        onClick={() => onInspect(file, index)}
-        title="Click to inspect enlarged preview"
+        onClick={(e) => {
+          e.stopPropagation()
+          onInspect(file, index)
+        }}
+        title="Click to inspect enlarged preview. Grab card to set merge order."
       >
         {localImg ? (
           <img
             src={localImg}
             alt={`Preview of ${file.name}`}
             className="dpm-file-preview-canvas__img"
+            draggable={false}
+            style={{ pointerEvents: "none", userSelect: "none" }}
           />
         ) : preview?.textLines && preview.textLines.length > 0 ? (
-          <div className="dpm-file-preview-canvas__paper">
+          <div className="dpm-file-preview-canvas__paper" style={{ pointerEvents: "none", userSelect: "none" }}>
             <div className="dpm-file-preview-canvas__line dpm-file-preview-canvas__line--title" />
             {preview.textLines.map((line, li) => (
               <div key={li} className="dpm-file-preview-canvas__text-flow">
@@ -511,7 +553,7 @@ function FilePreviewCard({
             ))}
           </div>
         ) : (
-          <div className="dpm-file-preview-canvas__paper">
+          <div className="dpm-file-preview-canvas__paper" style={{ pointerEvents: "none", userSelect: "none" }}>
             <div
               style={{
                 display: "flex",
@@ -529,6 +571,10 @@ function FilePreviewCard({
                 padding: "12px",
 
                 textAlign: "center",
+
+                pointerEvents: "none",
+
+                userSelect: "none",
               }}
             >
               <FileText
@@ -562,10 +608,17 @@ function FilePreviewCard({
         )}
 
         {/* Page Count Badge */}
-        <span className="dpm-file-preview-canvas__badge">
+        <span className="dpm-file-preview-canvas__badge" style={{ pointerEvents: "none", userSelect: "none" }}>
           {preview?.pageCount ?? 1} page
           {(preview?.pageCount ?? 1) !== 1 ? "s" : ""}
         </span>
+
+        {/* Drop target badge when dragged over */}
+        {isDragOver && (
+          <div className="dpm-drop-overlay">
+            <span>Drop to move here</span>
+          </div>
+        )}
 
         {/* Hover Click to Preview */}
         <div className="dpm-file-preview-canvas__overlay">
@@ -620,7 +673,13 @@ interface FileCardProps {
 
   onDragStart: (e: React.DragEvent, i: number) => void
 
-  onDragEnter: (i: number) => void
+  onDragEnter: (e: React.DragEvent, i: number) => void
+
+  onDragOver: (e: React.DragEvent, i: number) => void
+
+  onDragLeave: (e: React.DragEvent, i: number) => void
+
+  onDrop: (e: React.DragEvent, i: number) => void
 
   onDragEnd: () => void
 
@@ -647,6 +706,12 @@ function FileCard({
   onDragStart,
 
   onDragEnter,
+
+  onDragOver,
+
+  onDragLeave,
+
+  onDrop,
 
   onDragEnd,
 
@@ -675,9 +740,11 @@ function FileCard({
         .join(" ")}
       draggable
       onDragStart={(e) => onDragStart(e, index)}
-      onDragEnter={() => onDragEnter(index)}
+      onDragEnter={(e) => onDragEnter(e, index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDragLeave={(e) => onDragLeave(e, index)}
+      onDrop={(e) => onDrop(e, index)}
       onDragEnd={onDragEnd}
-      onDragOver={(e) => e.preventDefault()}
     >
       <div className="dpm-file-card__grip" title="Grab & move">
         <GripVertical size={16} />
@@ -686,13 +753,21 @@ function FileCard({
       {/* Mini Thumbnail Preview */}
       <div
         className="dpm-file-card__thumb"
-        onClick={() => onInspect?.(file, index)}
+        onClick={(e) => {
+          e.stopPropagation()
+          onInspect?.(file, index)
+        }}
         title="Click to inspect preview"
       >
         {preview?.imageUrl ? (
-          <img src={preview.imageUrl} alt={file.name} />
+          <img
+            src={preview.imageUrl}
+            alt={file.name}
+            draggable={false}
+            style={{ pointerEvents: "none", userSelect: "none" }}
+          />
         ) : (
-          <div className="dpm-file-card__thumb-lines">
+          <div className="dpm-file-card__thumb-lines" style={{ pointerEvents: "none", userSelect: "none" }}>
             <div
               className="dpm-file-card__thumb-line"
               style={{ width: "80%" }}
@@ -789,7 +864,13 @@ interface InteractivePageCardProps {
 
   onDragStart: (e: React.DragEvent, i: number) => void
 
-  onDragEnter: (i: number) => void
+  onDragEnter: (e: React.DragEvent, i: number) => void
+
+  onDragOver: (e: React.DragEvent, i: number) => void
+
+  onDragLeave: (e: React.DragEvent, i: number) => void
+
+  onDrop: (e: React.DragEvent, i: number) => void
 
   onDragEnd: () => void
 
@@ -819,6 +900,12 @@ function InteractivePageCard({
 
   onDragEnter,
 
+  onDragOver,
+
+  onDragLeave,
+
+  onDrop,
+
   onDragEnd,
 
   onToggleSplit,
@@ -847,9 +934,11 @@ function InteractivePageCard({
           .join(" ")}
         draggable
         onDragStart={(e) => onDragStart(e, index)}
-        onDragEnter={() => onDragEnter(index)}
+        onDragEnter={(e) => onDragEnter(e, index)}
+        onDragOver={(e) => onDragOver(e, index)}
+        onDragLeave={(e) => onDragLeave(e, index)}
+        onDrop={(e) => onDrop(e, index)}
         onDragEnd={onDragEnd}
-        onDragOver={(e) => e.preventDefault()}
         onClick={() => onInspect(pageNum, pageData)}
         title="Click to view full preview & inspect text. Drag to rearrange."
       >
@@ -860,9 +949,11 @@ function InteractivePageCard({
               src={pageImage}
               alt={`Page ${pageNum}`}
               className="dpm-page-thumb__embedded-img"
+              draggable={false}
+              style={{ pointerEvents: "none", userSelect: "none" }}
             />
           ) : hasText ? (
-            <div className="dpm-page-thumb__text-flow">
+            <div className="dpm-page-thumb__text-flow" style={{ pointerEvents: "none", userSelect: "none" }}>
               {previewLines.map((line, li) => (
                 <div key={li} className="dpm-page-thumb__text-line">
                   {line}
@@ -870,7 +961,7 @@ function InteractivePageCard({
               ))}
             </div>
           ) : (
-            <div className="dpm-page-thumb__lines">
+            <div className="dpm-page-thumb__lines" style={{ pointerEvents: "none", userSelect: "none" }}>
               <div className="dpm-page-thumb__line" />
               <div className="dpm-page-thumb__line" />
               <div className="dpm-page-thumb__line" />
@@ -1040,6 +1131,8 @@ export default function DocumentPreviewModal({
 
   const dragIndexRef = useRef<number | null>(null)
 
+  const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null)
+
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   const [arrangeViewMode, setArrangeViewMode] = useState<"grid" | "list">(
@@ -1176,6 +1269,10 @@ export default function DocumentPreviewModal({
   // Page Drag & Drop
 
   const pageDragIndexRef = useRef<number | null>(null)
+
+  const [pageDragSourceIndex, setPageDragSourceIndex] = useState<number | null>(
+    null,
+  )
 
   const [pageDragOverIndex, setPageDragOverIndex] = useState<number | null>(
     null,
@@ -1333,37 +1430,83 @@ export default function DocumentPreviewModal({
     setInspectDocModal({ file, index })
   }
 
-  // File Drag Handlers
+  // File Drag & Drop Handlers
 
   const handleFileDragStart = (e: React.DragEvent, i: number) => {
-    e.dataTransfer.effectAllowed = "move"
-
-    e.dataTransfer.setData("text/plain", `${i}`)
-
     dragIndexRef.current = i
+    setDragSourceIndex(i)
+    e.dataTransfer.effectAllowed = "move"
+    try {
+      e.dataTransfer.setData("text/plain", `${i}`)
+      e.dataTransfer.setData("application/x-fluxkit-file", `${i}`)
+    } catch {
+      // ignore
+    }
   }
 
-  const handleFileDragEnter = (i: number) => {
-    if (dragIndexRef.current === null || dragIndexRef.current === i) return
+  const handleFileDragOver = (e: React.DragEvent, i: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (dragOverIndex !== i) {
+      setDragOverIndex(i)
+    }
+  }
 
-    setDragOverIndex(i)
+  const handleFileDragEnter = (e: React.DragEvent, i: number) => {
+    e.preventDefault()
+    if (dragOverIndex !== i) {
+      setDragOverIndex(i)
+    }
+  }
 
-    setOrderedFiles((prev) => {
-      const copy = [...prev]
+  const handleFileDragLeave = (e: React.DragEvent, i: number) => {
+    if (e.currentTarget && e.currentTarget.contains(e.relatedTarget as Node)) {
+      return
+    }
+    if (dragOverIndex === i) {
+      setDragOverIndex(null)
+    }
+  }
 
-      const [moved] = copy.splice(dragIndexRef.current!, 1)
+  const handleFileDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault()
+    e.stopPropagation()
 
-      copy.splice(i, 0, moved)
+    let source = dragIndexRef.current
+    if (source === null) {
+      const text =
+        e.dataTransfer.getData("application/x-fluxkit-file") ||
+        e.dataTransfer.getData("text/plain")
+      if (text) {
+        const parsed = parseInt(text, 10)
+        if (!isNaN(parsed)) source = parsed
+      }
+    }
 
-      dragIndexRef.current = i
+    if (source !== null && source !== targetIndex) {
+      setOrderedFiles((prev) => {
+        const copy = [...prev]
+        const [moved] = copy.splice(source!, 1)
+        copy.splice(targetIndex, 0, moved)
+        return copy
+      })
 
-      return copy
-    })
+      if (inspectDocModal && inspectDocModal.index === source) {
+        setInspectDocModal({
+          file: orderedFiles[targetIndex] || inspectDocModal.file,
+          index: targetIndex,
+        })
+      }
+    }
+
+    dragIndexRef.current = null
+    setDragSourceIndex(null)
+    setDragOverIndex(null)
   }
 
   const handleFileDragEnd = () => {
     dragIndexRef.current = null
-
+    setDragSourceIndex(null)
     setDragOverIndex(null)
   }
 
@@ -1375,38 +1518,76 @@ export default function DocumentPreviewModal({
     }
   }
 
-  // Page Drag Handlers (Moving pages within the document)
+  // Page Drag & Drop Handlers (Moving pages within the document)
 
   const handlePageDragStart = (e: React.DragEvent, i: number) => {
-    e.dataTransfer.effectAllowed = "move"
-
-    e.dataTransfer.setData("text/plain", `${i}`)
-
     pageDragIndexRef.current = i
+    setPageDragSourceIndex(i)
+    e.dataTransfer.effectAllowed = "move"
+    try {
+      e.dataTransfer.setData("text/plain", `${i}`)
+      e.dataTransfer.setData("application/x-fluxkit-page", `${i}`)
+    } catch {
+      // ignore
+    }
   }
 
-  const handlePageDragEnter = (i: number) => {
-    if (pageDragIndexRef.current === null || pageDragIndexRef.current === i)
+  const handlePageDragOver = (e: React.DragEvent, i: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (pageDragOverIndex !== i) {
+      setPageDragOverIndex(i)
+    }
+  }
+
+  const handlePageDragEnter = (e: React.DragEvent, i: number) => {
+    e.preventDefault()
+    if (pageDragOverIndex !== i) {
+      setPageDragOverIndex(i)
+    }
+  }
+
+  const handlePageDragLeave = (e: React.DragEvent, i: number) => {
+    if (e.currentTarget && e.currentTarget.contains(e.relatedTarget as Node)) {
       return
+    }
+    if (pageDragOverIndex === i) {
+      setPageDragOverIndex(null)
+    }
+  }
 
-    setPageDragOverIndex(i)
+  const handlePageDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault()
+    e.stopPropagation()
 
-    setPageOrder((prev) => {
-      const copy = [...prev]
+    let source = pageDragIndexRef.current
+    if (source === null) {
+      const text =
+        e.dataTransfer.getData("application/x-fluxkit-page") ||
+        e.dataTransfer.getData("text/plain")
+      if (text) {
+        const parsed = parseInt(text, 10)
+        if (!isNaN(parsed)) source = parsed
+      }
+    }
 
-      const [moved] = copy.splice(pageDragIndexRef.current!, 1)
+    if (source !== null && source !== targetIndex) {
+      setPageOrder((prev) => {
+        const copy = [...prev]
+        const [moved] = copy.splice(source!, 1)
+        copy.splice(targetIndex, 0, moved)
+        return copy
+      })
+    }
 
-      copy.splice(i, 0, moved)
-
-      pageDragIndexRef.current = i
-
-      return copy
-    })
+    pageDragIndexRef.current = null
+    setPageDragSourceIndex(null)
+    setPageDragOverIndex(null)
   }
 
   const handlePageDragEnd = () => {
     pageDragIndexRef.current = null
-
+    setPageDragSourceIndex(null)
     setPageDragOverIndex(null)
   }
 
@@ -1655,10 +1836,13 @@ export default function DocumentPreviewModal({
                             index={i}
                             total={orderedFiles.length}
                             preview={preview}
-                            isDragSource={dragIndexRef.current === i}
+                            isDragSource={dragSourceIndex === i}
                             isDragOver={dragOverIndex === i}
                             onDragStart={handleFileDragStart}
                             onDragEnter={handleFileDragEnter}
+                            onDragOver={handleFileDragOver}
+                            onDragLeave={handleFileDragLeave}
+                            onDrop={handleFileDrop}
                             onDragEnd={handleFileDragEnd}
                             onRemove={handleFileRemove}
                             onInspect={handleInspectDoc}
@@ -1681,10 +1865,13 @@ export default function DocumentPreviewModal({
                             index={i}
                             total={orderedFiles.length}
                             preview={preview}
-                            isDragSource={dragIndexRef.current === i}
+                            isDragSource={dragSourceIndex === i}
                             isDragOver={dragOverIndex === i}
                             onDragStart={handleFileDragStart}
                             onDragEnter={handleFileDragEnter}
+                            onDragOver={handleFileDragOver}
+                            onDragLeave={handleFileDragLeave}
+                            onDrop={handleFileDrop}
                             onDragEnd={handleFileDragEnd}
                             onRemove={handleFileRemove}
                             onInspect={handleInspectDoc}
@@ -1747,10 +1934,13 @@ export default function DocumentPreviewModal({
                       pageImage={pImg}
                       isSplitAfter={splitPoints.has(pageNum)}
                       isLast={idx === pageOrder.length - 1}
-                      isDragSource={pageDragIndexRef.current === idx}
+                      isDragSource={pageDragSourceIndex === idx}
                       isDragOver={pageDragOverIndex === idx}
                       onDragStart={handlePageDragStart}
                       onDragEnter={handlePageDragEnter}
+                      onDragOver={handlePageDragOver}
+                      onDragLeave={handlePageDragLeave}
+                      onDrop={handlePageDrop}
                       onDragEnd={handlePageDragEnd}
                       onToggleSplit={handleToggleSplit}
                       onInspect={(num, data) => handleInspectPage(num, data)}

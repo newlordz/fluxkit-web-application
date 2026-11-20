@@ -1133,13 +1133,52 @@
   transform: scale(0.96);
   border-style: dashed;
   border-color: var(--accent, #aa91ff);
+  box-shadow: none;
 }
 
 .dpm-file-preview-card--over {
-  border-color: var(--accent, #aa91ff);
-  background: rgba(170, 145, 255, 0.12);
+  border-color: #00C9B7 !important;
+  background: rgba(0, 201, 183, 0.08) !important;
   transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 12px 28px rgba(170, 145, 255, 0.25);
+  box-shadow: 0 12px 28px rgba(0, 201, 183, 0.25) !important;
+}
+
+.dpm-drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 201, 183, 0.16);
+  border: 2px dashed #00C9B7;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #00877a;
+  font-weight: 700;
+  font-size: 12px;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  z-index: 5;
+  letter-spacing: 0.3px;
+  animation: dpm-chip-in 0.18s ease-out;
+}
+
+[data-theme="dark"] .dpm-drop-overlay {
+  background: rgba(0, 201, 183, 0.24);
+  color: #5ffce9;
+}
+
+.dpm-file-preview-card__grip {
+  cursor: grab;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.dpm-file-preview-card__grip:hover {
+  color: var(--accent, #00C9B7);
+  transform: scale(1.15);
+}
+
+.dpm-file-preview-card:active .dpm-file-preview-card__grip {
+  cursor: grabbing;
 }
 
 .dpm-file-preview-card__header {

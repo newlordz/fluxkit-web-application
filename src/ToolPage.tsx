@@ -842,6 +842,8 @@ export default function ToolPage({
   )
 
   const fileDragIndexRef = useRef<number | null>(null)
+  const [fileDragSourceIndex, setFileDragSourceIndex] = useState<number | null>(null)
+  const [fileDragOverIndex, setFileDragOverIndex] = useState<number | null>(null)
 
   // Drag & Drop Feedback State
 
@@ -6989,49 +6991,71 @@ export default function ToolPage({
 
                 {files.length > 0 && (
                   <div className="file-list">
-                    {files.map((file, i) => (
-                      <div
-                        className="file-row file-row-animated"
-                        key={`${file.name}-${i}`}
-                        draggable={files.length > 1}
-                        onDragStart={(e) => {
-                          e.dataTransfer.effectAllowed = "move"
-
-                          e.dataTransfer.setData("text/plain", `${i}`)
-
-                          fileDragIndexRef.current = i
-                        }}
-                        onDragEnter={() => {
-                          if (
-                            fileDragIndexRef.current === null ||
-                            fileDragIndexRef.current === i
-                          )
-                            return
-
-                          setFiles((prev) => {
-                            const copy = [...prev]
-
-                            const [moved] = copy.splice(
-                              fileDragIndexRef.current!,
-
-                              1,
-                            )
-
-                            copy.splice(i, 0, moved)
-
+                    {files.map((file, i) => {
+                      const isSource = fileDragSourceIndex === i
+                      const isOver = fileDragOverIndex === i
+                      return (
+                        <div
+                          className={`file-row file-row-animated ${isSource ? "opacity-40" : ""} ${isOver ? "border-teal-500 shadow-md ring-2 ring-teal-500/20" : ""}`}
+                          key={`${file.name}-${file.size}-${file.lastModified || i}`}
+                          draggable={files.length > 1}
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = "move"
+                            e.dataTransfer.setData("text/plain", `${i}`)
                             fileDragIndexRef.current = i
-
-                            return copy
-                          })
-                        }}
-                        onDragEnd={() => {
-                          fileDragIndexRef.current = null
-                        }}
-                        onDragOver={(e) => e.preventDefault()}
-                        style={{
-                          cursor: files.length > 1 ? "grab" : "default",
-                        }}
-                      >
+                            setFileDragSourceIndex(i)
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = "move"
+                            if (fileDragOverIndex !== i) {
+                              setFileDragOverIndex(i)
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            e.preventDefault()
+                            if (fileDragOverIndex !== i) {
+                              setFileDragOverIndex(i)
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (e.currentTarget && e.currentTarget.contains(e.relatedTarget as Node)) return
+                            if (fileDragOverIndex === i) {
+                              setFileDragOverIndex(null)
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            let source = fileDragIndexRef.current
+                            if (source === null) {
+                              const text = e.dataTransfer.getData("text/plain")
+                              if (text) {
+                                const parsed = parseInt(text, 10)
+                                if (!isNaN(parsed)) source = parsed
+                              }
+                            }
+                            if (source !== null && source !== i) {
+                              setFiles((prev) => {
+                                const copy = [...prev]
+                                const [moved] = copy.splice(source!, 1)
+                                copy.splice(i, 0, moved)
+                                return copy
+                              })
+                            }
+                            fileDragIndexRef.current = null
+                            setFileDragSourceIndex(null)
+                            setFileDragOverIndex(null)
+                          }}
+                          onDragEnd={() => {
+                            fileDragIndexRef.current = null
+                            setFileDragSourceIndex(null)
+                            setFileDragOverIndex(null)
+                          }}
+                          style={{
+                            cursor: files.length > 1 ? "grab" : "default",
+                          }}
+                        >
                         {files.length > 1 && (
                           <span
                             title="Grab and move to reorder file"
@@ -7119,7 +7143,7 @@ export default function ToolPage({
                           <X size={15} />
                         </button>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
 
