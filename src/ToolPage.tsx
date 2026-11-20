@@ -46,6 +46,7 @@ import {
   Minimize2,
   Minus,
   Monitor,
+  Palette,
   PenLine,
   PenTool,
   Presentation,

@@ -387,9 +387,39 @@ export default function AdminPanel({
   const [isRefreshingUsers, setIsRefreshingUsers] = useState(false)
 
   useEffect(() => {
+    let mounted = true
     syncUsersWithServer().then((users) => {
-      setUserList(users)
+      if (mounted) setUserList(users)
     })
+
+    // Real-time background sync polling every 12 seconds
+    const interval = setInterval(() => {
+      syncUsersWithServer().then((users) => {
+        if (mounted) setUserList(users)
+      })
+    }, 12000)
+
+    const handleFocus = () => {
+      syncUsersWithServer().then((users) => {
+        if (mounted) setUserList(users)
+      })
+    }
+
+    const handleSynced = (e: any) => {
+      if (mounted && Array.isArray(e.detail)) {
+        setUserList(e.detail)
+      }
+    }
+
+    window.addEventListener("focus", handleFocus)
+    window.addEventListener("fluxkit-users-synced", handleSynced)
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+      window.removeEventListener("focus", handleFocus)
+      window.removeEventListener("fluxkit-users-synced", handleSynced)
+    }
   }, [])
 
   const handleRefreshUsers = async () => {
@@ -397,7 +427,7 @@ export default function AdminPanel({
     try {
       const updated = await syncUsersWithServer()
       setUserList(updated)
-      showToast(`Cloud Sync: ${updated.length} user accounts loaded.`)
+      showToast(`Cloud Sync Complete: ${updated.length} accounts synchronized.`)
     } catch {
       showToast("Cloud sync failed. Using local cached directory.")
     } finally {
@@ -2086,6 +2116,31 @@ export default function AdminPanel({
                   }}
                 >
                   {userList.length} Total
+                </span>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    background: "rgba(16, 185, 129, 0.12)",
+                    color: "#10b981",
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                  title="Bi-directional real-time cloud synchronization active across all devices"
+                >
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: "#10b981",
+                      display: "inline-block",
+                    }}
+                  />
+                  Live Cloud Sync
                 </span>
               </div>
               <p

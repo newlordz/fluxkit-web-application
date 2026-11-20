@@ -716,6 +716,17 @@ export async function syncUsersWithServer(): Promise<UserAccount[]> {
       const data = await res.json()
       if (data && Array.isArray(data.users)) {
         const localAccounts = getRegisteredAccounts()
+        const current = getCurrentUser()
+        if (
+          current &&
+          current.email &&
+          !localAccounts.some(
+            (a) => a.email.toLowerCase() === current.email.toLowerCase(),
+          )
+        ) {
+          localAccounts.push(current)
+        }
+
         const mergedMap = new Map<string, UserAccount>()
 
         for (const u of data.users) {
@@ -743,8 +754,27 @@ export async function syncUsersWithServer(): Promise<UserAccount[]> {
         const mergedList = Array.from(mergedMap.values())
         saveRegisteredAccounts(mergedList)
 
+        // If current user is logged in, ensure their session reflects the latest cloud status (e.g. if approved as Pro by admin)
+        if (current && current.email) {
+          const fresh = mergedMap.get(current.email.toLowerCase())
+          if (
+            fresh &&
+            (fresh.proStatus !== current.proStatus ||
+              fresh.subscriptionTier !== current.subscriptionTier ||
+              fresh.role !== current.role)
+          ) {
+            saveCurrentUser(fresh)
+          }
+        }
+
         if (unpushed.length > 0) {
           pushUsersToServer(unpushed).catch(() => {})
+        }
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("fluxkit-users-synced", { detail: mergedList }),
+          )
         }
 
         return mergedList

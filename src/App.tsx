@@ -68,6 +68,7 @@ import {
   isToolPro,
   getFormattedToolPrice,
   syncToolTiersFromDatabase,
+  syncUsersWithServer,
   getToolPaymentStatus,
 } from "./adminService"
 
@@ -401,6 +402,16 @@ export default function App() {
     syncGatewaysWithServer().catch(() => null)
     syncLiveExchangeRate().catch(() => null)
     syncToolTiersFromDatabase().catch(() => null)
+    syncUsersWithServer().catch(() => null)
+
+    const handleFocus = () => {
+      syncUsersWithServer().catch(() => null)
+      syncToolTiersFromDatabase().catch(() => null)
+    }
+    window.addEventListener("focus", handleFocus)
+    return () => {
+      window.removeEventListener("focus", handleFocus)
+    }
   }, [])
 
   useEffect(() => {
