@@ -113,12 +113,26 @@ export default async function handler(req: any, res: any) {
       // Handle single user upsert
       if (body.user && typeof body.user === "object") {
         const incoming = body.user as StoredUserAccount
+        const isRoot =
+          incoming.id === "usr_admin_default" ||
+          incoming.email?.trim().toLowerCase() === "admin@masterfilepro.com" ||
+          incoming.email?.trim().toLowerCase() === "admin@fluxkit.com"
+
+        if (isRoot) {
+          incoming.role = "admin"
+          incoming.subscriptionTier = "pro"
+          incoming.proStatus = "active"
+        }
+
         const idx = db.users.findIndex(
           (u: any) =>
             u.id === incoming.id ||
             u.email?.trim().toLowerCase() === incoming.email?.trim().toLowerCase(),
         )
         if (idx >= 0) {
+          if (isRoot) {
+            incoming.name = db.users[idx].name || incoming.name
+          }
           db.users[idx] = { ...db.users[idx], ...incoming }
         } else {
           db.users.push(incoming)
@@ -129,12 +143,26 @@ export default async function handler(req: any, res: any) {
       if (Array.isArray(body.users)) {
         for (const incoming of body.users) {
           if (!incoming || !incoming.email) continue
+          const isRoot =
+            incoming.id === "usr_admin_default" ||
+            incoming.email?.trim().toLowerCase() === "admin@masterfilepro.com" ||
+            incoming.email?.trim().toLowerCase() === "admin@fluxkit.com"
+
+          if (isRoot) {
+            incoming.role = "admin"
+            incoming.subscriptionTier = "pro"
+            incoming.proStatus = "active"
+          }
+
           const idx = db.users.findIndex(
             (u: any) =>
               u.id === incoming.id ||
               u.email?.trim().toLowerCase() === incoming.email?.trim().toLowerCase(),
           )
           if (idx >= 0) {
+            if (isRoot) {
+              incoming.name = db.users[idx].name || incoming.name
+            }
             db.users[idx] = { ...db.users[idx], ...incoming }
           } else {
             db.users.push(incoming)
@@ -142,9 +170,15 @@ export default async function handler(req: any, res: any) {
         }
       }
 
-      // Handle user deletion
+      // Handle user deletion - protect root admin
       if (body.action === "delete" && body.userId) {
-        db.users = db.users.filter((u: any) => u.id !== body.userId)
+        db.users = db.users.filter(
+          (u: any) =>
+            u.id !== body.userId &&
+            u.id !== "usr_admin_default" &&
+            u.email?.trim().toLowerCase() !== "admin@masterfilepro.com" &&
+            u.email?.trim().toLowerCase() !== "admin@fluxkit.com",
+        )
       }
 
       db.updatedAt = new Date().toISOString()
@@ -171,7 +205,13 @@ export default async function handler(req: any, res: any) {
         body = JSON.parse(str || "{}")
       }
       if (body?.userId) {
-        db.users = db.users.filter((u: any) => u.id !== body.userId)
+        db.users = db.users.filter(
+          (u: any) =>
+            u.id !== body.userId &&
+            u.id !== "usr_admin_default" &&
+            u.email?.trim().toLowerCase() !== "admin@masterfilepro.com" &&
+            u.email?.trim().toLowerCase() !== "admin@fluxkit.com",
+        )
         writeDb(db)
       }
       const payload = { ok: true, users: db.users, count: db.users.length }

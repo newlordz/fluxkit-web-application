@@ -277,7 +277,8 @@ export async function updateAdminSettings(options: {
 }): Promise<{ success: boolean; message: string }> {
   const currentConfig = getAdminConfig()
 
-  const cleanName = (options.newName || currentConfig.name || "").trim()
+  // Root admin display name and status are locked; only email and password can change
+  const cleanName = currentConfig.name || "Masterfilepro Administrator"
 
   const cleanEmail = (options.newEmail || currentConfig.email || "")
     .trim()

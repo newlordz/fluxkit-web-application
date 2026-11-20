@@ -18,6 +18,7 @@ import {
   Check,
   CreditCard,
   Key,
+  RotateCcw,
   Globe,
   RefreshCw,
   Eye,
@@ -78,6 +79,7 @@ import {
   createUserByAdmin,
   changeUserPassword,
   updateUserDetails,
+  requireUserPasswordReset,
 } from "./adminService"
 import {
   getActiveCurrency,
@@ -505,6 +507,7 @@ export default function AdminPanel({
     subscriptionTier: "standard",
     proStatus: "none",
   })
+  const [editUserRequireReset, setEditUserRequireReset] = useState(false)
   const [editUserError, setEditUserError] = useState("")
 
   useEffect(() => {
@@ -794,12 +797,20 @@ export default function AdminPanel({
   }
 
   const handleApprovePro = (userId: string) => {
+    if (isRootAdmin(userId)) {
+      showToast("Root administrator Pro status is permanently active and locked.")
+      return
+    }
     approveProSubscription(userId)
     setUserList(getAllUsers())
     showToast("User subscription successfully approved.")
   }
 
   const handleRevokePro = (userId: string) => {
+    if (isRootAdmin(userId)) {
+      showToast("Root administrator Pro status is permanently active and locked.")
+      return
+    }
     revokeProSubscription(userId)
     setUserList(getAllUsers())
     showToast("User subscription reverted to standard.")
@@ -810,7 +821,7 @@ export default function AdminPanel({
     currentRole: "admin" | "sub-admin" | "user",
   ) => {
     if (isRootAdmin(userId)) {
-      showToast("Root administrator account is locked and cannot be demoted.")
+      showToast("Root administrator account is locked and cannot have its role changed.")
       return
     }
     const nextRole = currentRole === "admin" ? "user" : "admin"
@@ -827,8 +838,8 @@ export default function AdminPanel({
     userId: string,
     newRole: "admin" | "sub-admin" | "user",
   ) => {
-    if (isRootAdmin(userId) && newRole !== "admin") {
-      showToast("Root administrator account is locked and cannot be demoted.")
+    if (isRootAdmin(userId)) {
+      showToast("Root administrator account is locked and cannot have its role changed.")
       return
     }
     try {
@@ -861,7 +872,27 @@ export default function AdminPanel({
     }
   }
 
+  const handleToggleRequirePasswordReset = (u: UserAccount) => {
+    try {
+      const nextVal = !u.requirePasswordReset
+      requireUserPasswordReset(u.id, nextVal)
+      setUserList(getAllUsers())
+      showToast(
+        nextVal
+          ? `Password reset required for ${u.name} upon next sign-in.`
+          : `Password reset requirement cleared for ${u.name}.`,
+      )
+    } catch (err: any) {
+      showToast(err.message || "Failed to update password policy.")
+    }
+  }
+
   const handleOpenChangePassword = (u: UserAccount) => {
+    // Only allow root admin password modification via modal
+    if (!isRootAdmin(u)) {
+      showToast("Administrators cannot view or set users' passwords directly. Use 'Require Reset' instead.")
+      return
+    }
     setPasswordTargetUser(u)
     setNewPasswordValue("")
     setConfirmPasswordValue("")
@@ -988,6 +1019,7 @@ export default function AdminPanel({
       subscriptionTier: u.subscriptionTier || "standard",
       proStatus: u.proStatus || "none",
     })
+    setEditUserRequireReset(!!u.requirePasswordReset)
     setEditUserError("")
     setShowEditUserModal(true)
   }
@@ -996,12 +1028,31 @@ export default function AdminPanel({
     if (e) e.preventDefault()
     if (!editingUser) return
     setEditUserError("")
+
+    const isRoot = isRootAdmin(editingUser)
+
     try {
-      const updated = updateUserDetails(editingUser.id, editUserForm)
+      const updated = updateUserDetails(editingUser.id, {
+        ...editUserForm,
+        ...(isRoot
+          ? {
+              name: editingUser.name,
+              role: "admin",
+              subscriptionTier: "pro",
+              proStatus: "active",
+            }
+          : {
+              requirePasswordReset: editUserRequireReset,
+            }),
+      })
       setUserList(getAllUsers())
       setShowEditUserModal(false)
       setEditingUser(null)
-      showToast(`User "${updated.name}" updated successfully.`)
+      showToast(
+        isRoot
+          ? `Root administrator credentials updated successfully.`
+          : `User "${updated.name}" updated successfully.`,
+      )
     } catch (err: any) {
       setEditUserError(err.message || "Failed to update user details.")
     }
@@ -3125,30 +3176,58 @@ export default function AdminPanel({
                                 <Lock size={11} /> PERMANENT PRO
                               </span>
                             ) : (
-                              <span
+                              <div
                                 style={{
-                                  padding: "3px 8px",
-                                  borderRadius: "4px",
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  background: isProActive
-                                    ? "rgba(16,185,129,0.15)"
-                                    : isPending
-                                      ? "rgba(234,179,8,0.15)"
-                                      : "var(--surface)",
-                                  color: isProActive
-                                    ? "#10b981"
-                                    : isPending
-                                      ? "#eab308"
-                                      : "var(--muted)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  flexWrap: "wrap",
                                 }}
                               >
-                                {isProActive
-                                  ? "ACTIVE PRO"
-                                  : isPending
-                                    ? "PENDING APPROVAL"
-                                    : "STANDARD"}
-                              </span>
+                                <span
+                                  style={{
+                                    padding: "3px 8px",
+                                    borderRadius: "4px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    background: isProActive
+                                      ? "rgba(16,185,129,0.15)"
+                                      : isPending
+                                        ? "rgba(234,179,8,0.15)"
+                                        : "var(--surface)",
+                                    color: isProActive
+                                      ? "#10b981"
+                                      : isPending
+                                        ? "#eab308"
+                                        : "var(--muted)",
+                                  }}
+                                >
+                                  {isProActive
+                                    ? "ACTIVE PRO"
+                                    : isPending
+                                      ? "PENDING APPROVAL"
+                                      : "STANDARD"}
+                                </span>
+                                {u.requirePasswordReset && (
+                                  <span
+                                    style={{
+                                      padding: "2px 6px",
+                                      borderRadius: "4px",
+                                      fontSize: "10px",
+                                      fontWeight: 600,
+                                      background: "rgba(245, 158, 11, 0.15)",
+                                      color: "#f59e0b",
+                                      border: "1px solid rgba(245, 158, 11, 0.35)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "3px",
+                                    }}
+                                    title="User will be prompted to choose a new password upon next sign-in"
+                                  >
+                                    <RotateCcw size={10} /> Reset Req
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td
@@ -3235,15 +3314,30 @@ export default function AdminPanel({
                                       padding: "4px 8px",
                                       fontSize: "11px",
                                       borderRadius: "4px",
-                                      border: "1px solid var(--border)",
+                                      border: u.requirePasswordReset
+                                        ? "1px solid rgba(245, 158, 11, 0.5)"
+                                        : "1px solid var(--border)",
                                       display: "inline-flex",
                                       alignItems: "center",
                                       gap: "3px",
+                                      color: u.requirePasswordReset
+                                        ? "#f59e0b"
+                                        : "var(--text)",
+                                      background: u.requirePasswordReset
+                                        ? "rgba(245, 158, 11, 0.12)"
+                                        : undefined,
                                     }}
-                                    onClick={() => handleOpenChangePassword(u)}
-                                    title={`Change password for ${u.name}`}
+                                    onClick={() => handleToggleRequirePasswordReset(u)}
+                                    title={
+                                      u.requirePasswordReset
+                                        ? "Password reset is enforced on next login (click to cancel)"
+                                        : `Require ${u.name} to reset password on next login`
+                                    }
                                   >
-                                    <Key size={12} /> Password
+                                    <RotateCcw size={12} />{" "}
+                                    {u.requirePasswordReset
+                                      ? "Reset Required"
+                                      : "Require Reset"}
                                   </button>
                                   <button
                                     className="secondary"
@@ -3834,7 +3928,15 @@ export default function AdminPanel({
                       gap: "8px",
                     }}
                   >
-                    <Edit2 size={18} color="#00C9B7" /> Edit User Account
+                    {isRootAdmin(editingUser) ? (
+                      <>
+                        <Lock size={18} color="#eab308" /> Edit Root Administrator
+                      </>
+                    ) : (
+                      <>
+                        <Edit2 size={18} color="#00C9B7" /> Edit User Account
+                      </>
+                    )}
                   </h3>
                   <button
                     onClick={() => setShowEditUserModal(false)}
@@ -3849,6 +3951,29 @@ export default function AdminPanel({
                     ✕
                   </button>
                 </div>
+
+                {isRootAdmin(editingUser) && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "rgba(234, 179, 8, 0.12)",
+                      border: "1px solid rgba(234, 179, 8, 0.35)",
+                      borderRadius: "8px",
+                      color: "#eab308",
+                      fontSize: "12px",
+                      marginBottom: "14px",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "8px",
+                      lineHeight: "1.45",
+                    }}
+                  >
+                    <Lock size={15} style={{ flexShrink: 0, marginTop: "2px" }} />
+                    <div>
+                      <strong>Root Administrator Account:</strong> Status, role, tier, and display name are permanently locked. The only attributes that can be changed are <strong>email</strong> and <strong>password</strong>.
+                    </div>
+                  </div>
+                )}
 
                 {editUserError && (
                   <div
@@ -3870,19 +3995,27 @@ export default function AdminPanel({
                   <div style={{ marginBottom: "12px" }}>
                     <label
                       style={{
-                        display: "block",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
                         fontSize: "12px",
                         fontWeight: 600,
                         color: "var(--muted)",
                         marginBottom: "4px",
                       }}
                     >
-                      Full Name
+                      <span>Full Name</span>
+                      {isRootAdmin(editingUser) && (
+                        <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          <Lock size={10} /> Locked
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
                       required
                       value={editUserForm.name}
+                      disabled={isRootAdmin(editingUser)}
                       onChange={(e) =>
                         setEditUserForm({
                           ...editUserForm,
@@ -3892,11 +4025,13 @@ export default function AdminPanel({
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        background: "var(--bg)",
+                        background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
                         border: "1px solid var(--border)",
                         borderRadius: "8px",
                         color: "var(--text)",
                         fontSize: "13px",
+                        cursor: isRootAdmin(editingUser) ? "not-allowed" : "text",
+                        opacity: isRootAdmin(editingUser) ? 0.75 : 1,
                       }}
                     />
                   </div>
@@ -3904,20 +4039,27 @@ export default function AdminPanel({
                   <div style={{ marginBottom: "12px" }}>
                     <label
                       style={{
-                        display: "block",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
                         fontSize: "12px",
                         fontWeight: 600,
                         color: "var(--muted)",
                         marginBottom: "4px",
                       }}
                     >
-                      Email Address
+                      <span>Email Address</span>
+                      {isRootAdmin(editingUser) && (
+                        <span style={{ color: "#00C9B7", fontSize: "11px", fontWeight: 600 }}>
+                          Editable
+                        </span>
+                      )}
                     </label>
                     <input
                       type="email"
                       required
                       value={editUserForm.email}
-                      disabled={isRootAdmin(editingUser)}
+                      disabled={false}
                       onChange={(e) =>
                         setEditUserForm({
                           ...editUserForm,
@@ -3927,16 +4069,12 @@ export default function AdminPanel({
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        background: isRootAdmin(editingUser)
-                          ? "rgba(255,255,255,0.03)"
-                          : "var(--bg)",
-                        border: "1px solid var(--border)",
+                        background: "var(--bg)",
+                        border: isRootAdmin(editingUser) ? "1px solid rgba(0, 201, 183, 0.45)" : "1px solid var(--border)",
                         borderRadius: "8px",
                         color: "var(--text)",
                         fontSize: "13px",
-                        cursor: isRootAdmin(editingUser)
-                          ? "not-allowed"
-                          : "text",
+                        cursor: "text",
                       }}
                     />
                   </div>
@@ -3953,17 +4091,24 @@ export default function AdminPanel({
                     <div>
                       <label
                         style={{
-                          display: "block",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
                           fontSize: "12px",
                           fontWeight: 600,
                           color: "var(--muted)",
                           marginBottom: "4px",
                         }}
                       >
-                        Role
+                        <span>Role</span>
+                        {isRootAdmin(editingUser) && (
+                          <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                            <Lock size={10} /> Locked
+                          </span>
+                        )}
                       </label>
                       <select
-                        value={editUserForm.role}
+                        value={isRootAdmin(editingUser) ? "admin" : editUserForm.role}
                         disabled={isRootAdmin(editingUser)}
                         onChange={(e) =>
                           setEditUserForm({
@@ -3974,36 +4119,44 @@ export default function AdminPanel({
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          background: "var(--bg)",
+                          background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
                           border: "1px solid var(--border)",
                           borderRadius: "8px",
-                          color: "var(--text)",
+                          color: isRootAdmin(editingUser) ? "#eab308" : "var(--text)",
                           fontSize: "13px",
                           cursor: isRootAdmin(editingUser)
                             ? "not-allowed"
                             : "pointer",
+                          opacity: isRootAdmin(editingUser) ? 0.75 : 1,
                         }}
                       >
                         <option value="user">Standard User</option>
                         <option value="sub-admin">Sub-Admin</option>
-                        <option value="admin">Full Admin</option>
+                        <option value="admin">Full Admin (Locked for Root)</option>
                       </select>
                     </div>
 
                     <div>
                       <label
                         style={{
-                          display: "block",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
                           fontSize: "12px",
                           fontWeight: 600,
                           color: "var(--muted)",
                           marginBottom: "4px",
                         }}
                       >
-                        Subscription Tier
+                        <span>Subscription Tier</span>
+                        {isRootAdmin(editingUser) && (
+                          <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                            <Lock size={10} /> Locked
+                          </span>
+                        )}
                       </label>
                       <select
-                        value={editUserForm.subscriptionTier}
+                        value={isRootAdmin(editingUser) ? "pro" : editUserForm.subscriptionTier}
                         disabled={isRootAdmin(editingUser)}
                         onChange={(e) =>
                           setEditUserForm({
@@ -4016,18 +4169,19 @@ export default function AdminPanel({
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          background: "var(--bg)",
+                          background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
                           border: "1px solid var(--border)",
                           borderRadius: "8px",
-                          color: "var(--text)",
+                          color: isRootAdmin(editingUser) ? "#10b981" : "var(--text)",
                           fontSize: "13px",
                           cursor: isRootAdmin(editingUser)
                             ? "not-allowed"
                             : "pointer",
+                          opacity: isRootAdmin(editingUser) ? 0.75 : 1,
                         }}
                       >
                         <option value="standard">Standard Tier</option>
-                        <option value="pro">Pro Tier</option>
+                        <option value="pro">Pro Tier (Permanent for Root)</option>
                       </select>
                     </div>
                   </div>
@@ -4035,17 +4189,24 @@ export default function AdminPanel({
                   <div style={{ marginBottom: "18px" }}>
                     <label
                       style={{
-                        display: "block",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
                         fontSize: "12px",
                         fontWeight: 600,
                         color: "var(--muted)",
                         marginBottom: "4px",
                       }}
                     >
-                      Pro Activation Status
+                      <span>Pro Activation Status</span>
+                      {isRootAdmin(editingUser) && (
+                        <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          <Lock size={10} /> Locked
+                        </span>
+                      )}
                     </label>
                     <select
-                      value={editUserForm.proStatus}
+                      value={isRootAdmin(editingUser) ? "active" : editUserForm.proStatus}
                       disabled={isRootAdmin(editingUser)}
                       onChange={(e) =>
                         setEditUserForm({
@@ -4056,21 +4217,102 @@ export default function AdminPanel({
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        background: "var(--bg)",
+                        background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
                         border: "1px solid var(--border)",
                         borderRadius: "8px",
-                        color: "var(--text)",
+                        color: isRootAdmin(editingUser) ? "#10b981" : "var(--text)",
                         fontSize: "13px",
                         cursor: isRootAdmin(editingUser)
                           ? "not-allowed"
                           : "pointer",
+                        opacity: isRootAdmin(editingUser) ? 0.75 : 1,
                       }}
                     >
                       <option value="none">None / Inactive</option>
                       <option value="pending">Pending Approval</option>
-                      <option value="active">Active Pro</option>
+                      <option value="active">Active Pro (Permanent for Root)</option>
                     </select>
                   </div>
+
+                  {/* Security & Password Policy section */}
+                  {!isRootAdmin(editingUser) ? (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "14px",
+                        background: "rgba(255,255,255,0.02)",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12.5px",
+                          fontWeight: 600,
+                          color: "var(--text)",
+                          marginBottom: "6px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <RotateCcw size={14} color="#f59e0b" />
+                        Password & Security Policy
+                      </div>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "10px",
+                          cursor: "pointer",
+                          fontSize: "12.5px",
+                          color: "var(--text)",
+                          marginTop: "6px",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editUserRequireReset}
+                          onChange={(e) =>
+                            setEditUserRequireReset(e.target.checked)
+                          }
+                          style={{ marginTop: "3px" }}
+                        />
+                        <div>
+                          <strong>Require password reset upon next sign-in</strong>
+                          <p
+                            style={{
+                              margin: "3px 0 0 0",
+                              fontSize: "11.5px",
+                              color: "var(--muted)",
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            When enabled, the user will be prompted to choose a new password upon their next login. For privacy and security, administrators cannot view or set users' plaintext passwords.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "12px",
+                        background: "rgba(234,179,8,0.06)",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(234,179,8,0.25)",
+                        marginBottom: "16px",
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      <strong style={{ color: "#eab308" }}>Root Administrator Account</strong>
+                      <p style={{ margin: "4px 0 0 0" }}>
+                        Root administrator credentials and password can be updated under the <strong>Admin Settings</strong> tab.
+                      </p>
+                    </div>
+                  )}
 
                   <div
                     style={{
@@ -4109,8 +4351,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* Change Password Modal */}
-          {showPasswordModal && passwordTargetUser && (
+          {/* Change Root Admin Password Modal */}
+          {showPasswordModal && passwordTargetUser && isRootAdmin(passwordTargetUser) && (
             <div
               style={{
                 position: "fixed",
@@ -4153,7 +4395,7 @@ export default function AdminPanel({
                       gap: "8px",
                     }}
                   >
-                    <Key size={18} color="#eab308" /> Change Password
+                    <Key size={18} color="#eab308" /> Change Root Admin Password
                   </h3>
                   <button
                     onClick={() => setShowPasswordModal(false)}
@@ -7833,28 +8075,54 @@ export default function AdminPanel({
                     style={{
                       fontSize: "12px",
                       color: "var(--muted)",
-                      display: "block",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                       marginBottom: "6px",
                     }}
                   >
-                    Administrator Display Name
+                    <span>Administrator Display Name</span>
+                    <span
+                      style={{
+                        color: "#eab308",
+                        fontSize: "11px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "3px",
+                      }}
+                    >
+                      <Lock size={10} /> (Locked)
+                    </span>
                   </label>
                   <input
-                    required
+                    disabled
                     type="text"
                     value={adminNameInput}
-                    onChange={(e) => setAdminNameInput(e.target.value)}
                     placeholder="e.g. Masterfilepro Administrator"
                     style={{
                       width: "100%",
                       padding: "9px 12px",
                       fontSize: "13px",
                       borderRadius: "6px",
-                      background: "var(--bg)",
+                      background: "rgba(255,255,255,0.03)",
                       border: "1px solid var(--border)",
                       color: "var(--text)",
+                      cursor: "not-allowed",
+                      opacity: 0.75,
                     }}
                   />
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--muted)",
+                      marginTop: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <Lock size={10} color="#eab308" /> Root administrator name and status are locked. Only email and password can be updated.
+                  </div>
                 </div>
 
                 <div>
@@ -7862,11 +8130,22 @@ export default function AdminPanel({
                     style={{
                       fontSize: "12px",
                       color: "var(--muted)",
-                      display: "block",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                       marginBottom: "6px",
                     }}
                   >
-                    Administrator Email Address
+                    <span>Administrator Email Address</span>
+                    <span
+                      style={{
+                        color: "#00C9B7",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      (Editable)
+                    </span>
                   </label>
                   <input
                     required
@@ -7880,7 +8159,7 @@ export default function AdminPanel({
                       fontSize: "13px",
                       borderRadius: "6px",
                       background: "var(--bg)",
-                      border: "1px solid var(--border)",
+                      border: "1px solid rgba(0, 201, 183, 0.4)",
                       color: "var(--text)",
                     }}
                   />

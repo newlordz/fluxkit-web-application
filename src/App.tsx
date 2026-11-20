@@ -95,6 +95,8 @@ import AdminPanel from "./AdminPanel"
 
 import ProActivationModal from "./ProActivationModal"
 
+import ForcedPasswordResetModal from "./ForcedPasswordResetModal"
+
 import ImageShowcaseViewer from "./ImageShowcaseViewer"
 
 import VisitorPassStudio from "./VisitorPassStudio"
@@ -2411,6 +2413,23 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {currentUser && currentUser.requirePasswordReset && (
+        <ForcedPasswordResetModal
+          user={currentUser}
+          onPasswordResetComplete={(updatedUser) => {
+            setCurrentUser(updatedUser)
+            notify(
+              "Your password has been successfully updated! Welcome to your workspace.",
+              "success",
+            )
+          }}
+          onSignOut={() => {
+            signOut()
+            setCurrentUser(null)
+          }}
+        />
+      )}
     </div>
   )
 }

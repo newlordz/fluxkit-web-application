@@ -10,6 +10,7 @@ import {
   hashPassword,
   getStoredCredentials,
   pushUserToCloud,
+  SEEDED_ADMIN_ACCOUNT,
 } from "./authService"
 export { isRootAdmin } from "./authService"
 import { tools } from "./config"
@@ -566,6 +567,11 @@ export function requestProApproval(userId: string): UserAccount {
 }
 
 export function approveProSubscription(userId: string): UserAccount {
+  if (isRootAdmin(userId)) {
+    throw new Error(
+      "Root administrator Pro status is permanently active and locked.",
+    )
+  }
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.id === userId)
   let updated: UserAccount
@@ -790,7 +796,7 @@ export function updateUserRole(
   userId: string,
   role: "admin" | "sub-admin" | "user",
 ): UserAccount {
-  if (isRootAdmin(userId) && role !== "admin") {
+  if (isRootAdmin(userId)) {
     throw new Error(
       "The root administrator account is permanently locked and cannot be demoted.",
     )
@@ -912,6 +918,8 @@ export function updateUserDetails(
     role?: "admin" | "sub-admin" | "user"
     subscriptionTier?: "standard" | "pro"
     proStatus?: "active" | "pending" | "none"
+    requirePasswordReset?: boolean
+    newPassword?: string
   },
 ): UserAccount {
   const accounts = getRegisteredAccounts()
@@ -920,14 +928,16 @@ export function updateUserDetails(
 
   if (idx < 0) {
     const current = getCurrentUser()
-    if (!current || current.id !== userId) {
+    if (!current || (!isRoot && current.id !== userId)) {
       throw new Error("User account not found.")
     }
   }
 
-  const existing = idx >= 0 ? accounts[idx] : getCurrentUser()!
+  const existing =
+    idx >= 0 ? accounts[idx] : isRoot ? SEEDED_ADMIN_ACCOUNT : getCurrentUser()!
 
-  // Guard: root admin cannot be demoted or stripped of Pro
+  // Guard: root admin cannot change status (role, subscriptionTier, proStatus, or name)
+  // The only things able to change for the main root admin are email and password
   let role = updates.role !== undefined ? updates.role : existing.role
   let subscriptionTier =
     updates.subscriptionTier !== undefined
@@ -935,11 +945,15 @@ export function updateUserDetails(
       : existing.subscriptionTier
   let proStatus =
     updates.proStatus !== undefined ? updates.proStatus : existing.proStatus
+  let name = updates.name !== undefined ? updates.name.trim() : existing.name
 
   if (isRoot) {
     role = "admin"
     subscriptionTier = "pro"
     proStatus = "active"
+    name = existing.name // Root admin display name is locked
+  } else if (!name) {
+    throw new Error("User name cannot be empty.")
   }
 
   let email = existing.email
@@ -972,13 +986,53 @@ export function updateUserDetails(
       }
     }
     email = newEmail
+
+    if (isRoot) {
+      const storage = getStorage()
+      if (storage) {
+        try {
+          const raw = storage.getItem("fluxkit-admin-config")
+          const parsed = raw ? JSON.parse(raw) : {}
+          const updatedConfig = {
+            ...parsed,
+            id: existing.id || "usr_admin_default",
+            name: existing.name || "Masterfilepro Administrator",
+            email: newEmail,
+            role: "admin",
+            updatedAt: new Date().toISOString(),
+          }
+          storage.setItem("fluxkit-admin-config", JSON.stringify(updatedConfig))
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("fluxkit-admin-config-changed", {
+                detail: updatedConfig,
+              }),
+            )
+          }
+        } catch {}
+      }
+
+      if (typeof window !== "undefined" && typeof fetch === "function") {
+        fetch("/api/db/admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: newEmail }),
+        }).catch(() => {})
+      }
+    }
   }
 
-  const name =
-    updates.name !== undefined ? updates.name.trim() : existing.name
-  if (!name) {
-    throw new Error("User name cannot be empty.")
+  if (updates.newPassword) {
+    if (updates.newPassword.length < 8) {
+      throw new Error("Password must be at least 8 characters long.")
+    }
+    changeAccountPassword(email, updates.newPassword)
   }
+
+  let requirePasswordReset =
+    updates.requirePasswordReset !== undefined
+      ? updates.requirePasswordReset
+      : existing.requirePasswordReset
 
   const updated: UserAccount = {
     ...existing,
@@ -987,19 +1041,62 @@ export function updateUserDetails(
     role,
     subscriptionTier,
     proStatus,
+    requirePasswordReset,
   }
 
   if (idx >= 0) {
     accounts[idx] = updated
     saveRegisteredAccounts(accounts)
+  } else if (isRoot) {
+    accounts.push(updated)
+    saveRegisteredAccounts(accounts)
   }
 
   const current = getCurrentUser()
-  if (current && current.id === userId) {
+  if (
+    current &&
+    (current.id === userId ||
+      (isRoot && isRootAdmin(current)) ||
+      current.email.toLowerCase() === existing.email.toLowerCase())
+  ) {
     saveCurrentUser(updated)
   }
 
   pushUserToCloud(updated)
 
+  return updated
+}
+
+/**
+ * Enforce or clear the "Require Password Reset on Next Login" security policy for a user
+ */
+export function requireUserPasswordReset(
+  userIdOrEmail: string,
+  requireReset: boolean = true,
+): UserAccount {
+  const accounts = getRegisteredAccounts()
+  const idx = accounts.findIndex(
+    (a) =>
+      a.id === userIdOrEmail ||
+      a.email.toLowerCase() === userIdOrEmail.toLowerCase(),
+  )
+  if (idx < 0) {
+    throw new Error("User account not found.")
+  }
+
+  const updated: UserAccount = {
+    ...accounts[idx],
+    requirePasswordReset: requireReset,
+  }
+
+  accounts[idx] = updated
+  saveRegisteredAccounts(accounts)
+
+  const current = getCurrentUser()
+  if (current && (current.id === updated.id || current.email.toLowerCase() === updated.email.toLowerCase())) {
+    saveCurrentUser(updated)
+  }
+
+  pushUserToCloud(updated)
   return updated
 }

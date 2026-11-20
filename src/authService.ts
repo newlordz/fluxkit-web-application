@@ -35,6 +35,8 @@ export interface UserAccount {
 
   lastLoginAt: string
 
+  requirePasswordReset?: boolean
+
   message?: string
 }
 
@@ -74,12 +76,13 @@ export function isRootAdmin(
     )
   }
 
+  const cleanEmail = (userOrEmail.email || "").trim().toLowerCase()
+
   return (
     userOrEmail.id === "usr_admin_default" ||
-    userOrEmail.role === "admin" ||
-    userOrEmail.email.trim().toLowerCase() === "admin@masterfilepro.com" ||
-    userOrEmail.email.trim().toLowerCase() === "admin@fluxkit.com" ||
-    userOrEmail.email.trim().toLowerCase() === activeAdminEmail
+    cleanEmail === "admin@masterfilepro.com" ||
+    cleanEmail === "admin@fluxkit.com" ||
+    cleanEmail === activeAdminEmail
   )
 }
 
@@ -796,9 +799,58 @@ export function changeAccountPassword(
 
   saveStoredCredential(cleanEmail, salt, hash)
 
+  if (isRootAdmin(cleanEmail)) {
+    saveStoredCredential("admin@masterfilepro.com", salt, hash)
+    saveStoredCredential("admin@fluxkit.com", salt, hash)
+    const activeAdminEmail = getActiveAdminEmail()
+    if (activeAdminEmail) {
+      saveStoredCredential(activeAdminEmail, salt, hash)
+    }
+
+    const storage = getStorage()
+    if (storage) {
+      try {
+        const raw = storage.getItem("fluxkit-admin-config")
+        const parsed = raw ? JSON.parse(raw) : {}
+        const updatedConfig = {
+          ...parsed,
+          salt,
+          hash,
+          updatedAt: new Date().toISOString(),
+          lastPasswordChange: new Date().toISOString(),
+        }
+        storage.setItem("fluxkit-admin-config", JSON.stringify(updatedConfig))
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("fluxkit-admin-config-changed", {
+              detail: updatedConfig,
+            }),
+          )
+        }
+      } catch {}
+    }
+
+    if (typeof window !== "undefined" && typeof fetch === "function") {
+      fetch("/api/db/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanEmail,
+          salt,
+          hash,
+          newPassword: true,
+        }),
+      }).catch(() => {})
+    }
+  }
+
   const current = getCurrentUser()
 
-  if (current && current.email.toLowerCase() === cleanEmail) {
+  if (
+    current &&
+    (current.email.toLowerCase() === cleanEmail ||
+      (isRootAdmin(current) && isRootAdmin(cleanEmail)))
+  ) {
     saveCurrentUser({
       ...current,
 
@@ -1247,6 +1299,16 @@ export async function completePasswordReset(
       accounts.push(user)
       saveRegisteredAccounts(accounts)
     }
+  } else {
+    user.requirePasswordReset = false
+    const existingIdx = accounts.findIndex((a) => a.email.toLowerCase() === cleanEmail)
+    if (existingIdx >= 0) {
+      accounts[existingIdx] = {
+        ...accounts[existingIdx],
+        requirePasswordReset: false,
+      }
+      saveRegisteredAccounts(accounts)
+    }
   }
 
   clearStoredResetToken(cleanEmail)
@@ -1257,6 +1319,60 @@ export async function completePasswordReset(
     message:
       "Your password has been successfully reset. You can now sign in with your new password.",
     user,
+  }
+}
+
+/**
+ * Forced Password Reset upon next login
+ * Allows an authenticated or logged-in user whose administrator set requirePasswordReset
+ * to choose a secure new password without needing an email verification token.
+ */
+export async function completeForcedPasswordReset(
+  email: string,
+  newPassword: string,
+): Promise<{ success: boolean; message: string; user: UserAccount }> {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  assertConnected(cleanEmail)
+
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    throw new Error("Please enter a valid email address.")
+  }
+
+  if (!newPassword || newPassword.length < 12) {
+    throw new Error("Password must be at least 12 characters long.")
+  }
+
+  changeAccountPassword(cleanEmail, newPassword)
+
+  const accounts = getRegisteredAccounts()
+  const idx = accounts.findIndex((a) => a.email.toLowerCase() === cleanEmail)
+  let updatedUser: UserAccount
+
+  if (idx >= 0) {
+    accounts[idx] = {
+      ...accounts[idx],
+      requirePasswordReset: false,
+      lastLoginAt: new Date().toISOString(),
+    }
+    saveRegisteredAccounts(accounts)
+    updatedUser = accounts[idx]
+  } else {
+    const current = getCurrentUser()
+    updatedUser = {
+      ...(current || SEEDED_ADMIN_ACCOUNT),
+      email: cleanEmail,
+      requirePasswordReset: false,
+      lastLoginAt: new Date().toISOString(),
+    }
+  }
+
+  saveCurrentUser(updatedUser)
+  clearFailedLogins(cleanEmail)
+
+  return {
+    success: true,
+    message: "Your password has been successfully updated. Welcome to your workspace!",
+    user: updatedUser,
   }
 }
 

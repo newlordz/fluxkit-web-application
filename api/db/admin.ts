@@ -171,12 +171,15 @@ export default async function handler(req: any, res: any) {
         updatedTiers = true
       }
 
-      // Handle Admin credential synchronization
+      // Handle Admin credential synchronization - lock status, role, tier, name
       if (body.email) {
         db.admin = {
           ...(db.admin || DEFAULT_ADMIN),
-          name: body.name || db.admin?.name || "Masterfilepro Administrator",
+          name: db.admin?.name || "Masterfilepro Administrator",
           email: body.email.trim().toLowerCase(),
+          role: "admin",
+          subscriptionTier: "pro",
+          proStatus: "active",
           salt: body.salt || db.admin?.salt || DEFAULT_ADMIN.salt,
           hash: body.hash || db.admin?.hash || DEFAULT_ADMIN.hash,
           updatedAt: now,
