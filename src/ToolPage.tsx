@@ -4187,6 +4187,82 @@ export default function ToolPage({
                     aria-label={`Color ${c}`}
                   />
                 ))}
+
+                {/* Full Spectrum Color Picker (16M Colors) */}
+                <label
+                  title="Choose custom color from full spectrum"
+                  style={{
+                    position: "relative",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "24px",
+                    height: "24px",
+                    borderRadius: "50%",
+                    cursor: "pointer",
+                    background:
+                      "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
+                    padding: "2px",
+                    marginLeft: "4px",
+                    boxShadow: ![
+                      "#0f172a",
+                      "#4f46e5",
+                      "#059669",
+                      "#dc2626",
+                      "#d97706",
+                      "#0284c7",
+                      "#9333ea",
+                      "#ec4899",
+                      "#64748b",
+                      "#ffffff",
+                    ].includes(brushColor)
+                      ? "0 0 0 2px #6366f1, 0 2px 8px rgba(99, 102, 241, 0.4)"
+                      : "none",
+                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      borderRadius: "50%",
+                      background: brushColor,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1.5px solid rgba(255, 255, 255, 0.9)",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <Palette
+                      size={10}
+                      color="#ffffff"
+                      style={{
+                        filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.8))",
+                      }}
+                    />
+                  </span>
+                  <input
+                    type="color"
+                    value={brushColor}
+                    onChange={(e) => {
+                      setBrushColor(e.target.value)
+                      if (activeShapeTool === "eraser") setActiveShapeTool("pen")
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      opacity: 0,
+                      cursor: "pointer",
+                      padding: 0,
+                      border: "none",
+                    }}
+                    aria-label="Full color spectrum picker"
+                  />
+                </label>
               </div>
 
               {/* Brush Thickness Slider */}

@@ -476,7 +476,11 @@ export async function testApiHealth(
   const start = performance.now()
   try {
     if (api.provider === "adobe") {
-      const res = await fetch("/api/adobe-pdf/status")
+      const q = new URLSearchParams()
+      if (api.apiKey) q.set("clientId", api.apiKey)
+      if (api.clientSecret) q.set("clientSecret", api.clientSecret)
+      const qs = q.toString() ? `?${q.toString()}` : ""
+      const res = await fetch(`/api/adobe-pdf/status${qs}`)
       const latencyMs = Math.round(performance.now() - start)
       if (res.ok) {
         const data = await res.json()
@@ -499,7 +503,11 @@ export async function testApiHealth(
     }
 
     if (api.provider === "ilovepdf") {
-      const res = await fetch("/api/ilovepdf/status")
+      const q = new URLSearchParams()
+      if (api.apiKey) q.set("publicKey", api.apiKey)
+      if (api.clientSecret) q.set("secretKey", api.clientSecret)
+      const qs = q.toString() ? `?${q.toString()}` : ""
+      const res = await fetch(`/api/ilovepdf/status${qs}`)
       const latencyMs = Math.round(performance.now() - start)
       if (res.ok) {
         const data = await res.json()
@@ -522,7 +530,10 @@ export async function testApiHealth(
     }
 
     if (api.provider === "ocrspace") {
-      const res = await fetch("/api/ocr-space/status")
+      const q = new URLSearchParams()
+      if (api.apiKey) q.set("apiKey", api.apiKey)
+      const qs = q.toString() ? `?${q.toString()}` : ""
+      const res = await fetch(`/api/ocr-space/status${qs}`)
       const latencyMs = Math.round(performance.now() - start)
       if (res.ok) {
         return {
