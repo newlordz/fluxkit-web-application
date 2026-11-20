@@ -384,6 +384,26 @@ export default function AdminPanel({
   }, [])
 
   const [userList, setUserList] = useState<UserAccount[]>(getAllUsers)
+  const [isRefreshingUsers, setIsRefreshingUsers] = useState(false)
+
+  useEffect(() => {
+    syncUsersWithServer().then((users) => {
+      setUserList(users)
+    })
+  }, [])
+
+  const handleRefreshUsers = async () => {
+    setIsRefreshingUsers(true)
+    try {
+      const updated = await syncUsersWithServer()
+      setUserList(updated)
+      showToast(`Cloud Sync: ${updated.length} user accounts loaded.`)
+    } catch {
+      showToast("Cloud sync failed. Using local cached directory.")
+    } finally {
+      setIsRefreshingUsers(false)
+    }
+  }
   const [customPages, setCustomPages] = useState<CustomPage[]>(getCustomPages)
   const [gateways, setGateways] =
     useState<PaymentGatewayConfig[]>(getAllGateways)
@@ -2106,6 +2126,26 @@ export default function AdminPanel({
                   borderRadius: "8px",
                   border: "1px solid var(--border)",
                 }}
+                onClick={handleRefreshUsers}
+                disabled={isRefreshingUsers}
+                title="Synchronize user directory with serverless cloud database"
+              >
+                <RefreshCw size={14} className={isRefreshingUsers ? "spin" : ""} />
+                {isRefreshingUsers ? "Syncing..." : "Sync Cloud"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                }}
                 onClick={() => handleExportUsers("csv")}
                 title="Export user directory as CSV"
               >
@@ -2633,76 +2673,155 @@ export default function AdminPanel({
                 </tr>
               </thead>
               <tbody>
-                {userList.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      style={{
-                        padding: "24px",
-                        textAlign: "center",
-                        color: "var(--muted)",
-                      }}
-                    >
-                      No registered user accounts found yet.
-                    </td>
-                  </tr>
-                ) : (
-                  userList
-                    .filter((u) => {
-                      if (userSearchQuery.trim()) {
-                        const q = userSearchQuery.trim().toLowerCase()
-                        const matchName = (u.name || "")
-                          .toLowerCase()
-                          .includes(q)
-                        const matchEmail = (u.email || "")
-                          .toLowerCase()
-                          .includes(q)
-                        const matchId = (u.id || "").toLowerCase().includes(q)
-                        if (!matchName && !matchEmail && !matchId) return false
+                {(() => {
+                  const filtered = userList.filter((u) => {
+                    if (userSearchQuery.trim()) {
+                      const q = userSearchQuery.trim().toLowerCase()
+                      const matchName = (u.name || "")
+                        .toLowerCase()
+                        .includes(q)
+                      const matchEmail = (u.email || "")
+                        .toLowerCase()
+                        .includes(q)
+                      const matchId = (u.id || "").toLowerCase().includes(q)
+                      if (!matchName && !matchEmail && !matchId) return false
+                    }
+                    if (userRoleFilter !== "all") {
+                      if ((u.role || "user") !== userRoleFilter) return false
+                    }
+                    if (userStatusFilter !== "all") {
+                      if (
+                        userStatusFilter === "pro" &&
+                        !(
+                          u.subscriptionTier === "pro" &&
+                          u.proStatus === "active"
+                        )
+                      ) {
+                        return false
                       }
-                      if (userRoleFilter !== "all") {
-                        if ((u.role || "user") !== userRoleFilter) return false
+                      if (
+                        userStatusFilter === "pending" &&
+                        u.proStatus !== "pending"
+                      ) {
+                        return false
                       }
-                      if (userStatusFilter !== "all") {
-                        if (
-                          userStatusFilter === "pro" &&
-                          !(
-                            u.subscriptionTier === "pro" &&
-                            u.proStatus === "active"
-                          )
-                        ) {
-                          return false
-                        }
-                        if (
-                          userStatusFilter === "pending" &&
-                          u.proStatus !== "pending"
-                        ) {
-                          return false
-                        }
-                        if (
-                          userStatusFilter === "standard" &&
-                          (u.subscriptionTier === "pro" ||
-                            u.proStatus === "active" ||
-                            u.proStatus === "pending")
-                        ) {
-                          return false
-                        }
+                      if (
+                        userStatusFilter === "standard" &&
+                        (u.subscriptionTier === "pro" ||
+                          u.proStatus === "active" ||
+                          u.proStatus === "pending")
+                      ) {
+                        return false
                       }
-                      return true
-                    })
-                    .map((u) => {
-                      const isRoot = isRootAdmin(u)
-                      const isProActive =
-                        u.subscriptionTier === "pro" && u.proStatus === "active"
-                      const isPending = u.proStatus === "pending"
-                      const initials = (u.name || "U")
-                        .split(" ")
-                        .map((p) => p[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()
+                    }
+                    return true
+                  })
 
-                      return (
+                  if (userList.length === 0) {
+                    return (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "36px 20px",
+                            textAlign: "center",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          <div style={{ marginBottom: "6px", fontWeight: 600, color: "var(--text)" }}>
+                            No Registered Accounts Found
+                          </div>
+                          <div style={{ fontSize: "12px", marginBottom: "12px" }}>
+                            Accounts created on any browser or device are synchronized with the cloud database.
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{
+                              padding: "6px 14px",
+                              fontSize: "12px",
+                              borderRadius: "6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                            onClick={handleRefreshUsers}
+                            disabled={isRefreshingUsers}
+                          >
+                            <RefreshCw size={13} className={isRefreshingUsers ? "spin" : ""} />
+                            {isRefreshingUsers ? "Syncing..." : "Sync Cloud Now"}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  }
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "32px 16px",
+                            textAlign: "center",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {userStatusFilter === "pending" ? (
+                            <div>
+                              <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: "4px" }}>
+                                No Pending Pro Approvals
+                              </div>
+                              <div style={{ fontSize: "12px" }}>
+                                There are currently no registered users requesting free Pro approval.
+                              </div>
+                              <button
+                                type="button"
+                                className="text-button"
+                                style={{ marginTop: "10px", color: "var(--accent)", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
+                                onClick={() => setUserStatusFilter("all")}
+                              >
+                                View all {userList.length} registered accounts →
+                              </button>
+                            </div>
+                          ) : (
+                            <div>
+                              <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: "4px" }}>
+                                No Matching Accounts
+                              </div>
+                              <div style={{ fontSize: "12px" }}>No users match the currently applied search or filter criteria.</div>
+                              <button
+                                type="button"
+                                className="text-button"
+                                style={{ marginTop: "10px", color: "var(--accent)", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
+                                onClick={() => {
+                                  setUserSearchQuery("")
+                                  setUserRoleFilter("all")
+                                  setUserStatusFilter("all")
+                                }}
+                              >
+                                Reset filters to view all ({userList.length}) →
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  }
+
+                  return filtered.map((u) => {
+                    const isRoot = isRootAdmin(u)
+                    const isProActive =
+                      u.subscriptionTier === "pro" && u.proStatus === "active"
+                    const isPending = u.proStatus === "pending"
+                    const initials = (u.name || "U")
+                      .split(" ")
+                      .map((p) => p[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()
+
+                    return (
                         <tr
                           key={u.id}
                           style={{ borderBottom: "1px solid var(--border)" }}
@@ -3001,7 +3120,7 @@ export default function AdminPanel({
                         </tr>
                       )
                     })
-                )}
+                })()}
               </tbody>
             </table>
           </div>
