@@ -96,6 +96,20 @@ export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
     prices[toolId] = 4.99
     saveAllToolPrices(prices)
   }
+
+  // Push update to serverless database if in live browser environment
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    try {
+      fetch("/api/db/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolTiers: { [toolId]: tier },
+          toolPrices: { [toolId]: tier === "pro" ? prices[toolId] || 4.99 : 0 },
+        }),
+      }).catch(() => {})
+    } catch {}
+  }
 }
 
 export function getAllToolPrices(): Record<string, number> {
@@ -148,6 +162,63 @@ export function setToolPrice(toolId: string, price: number): void {
     tiers[toolId] = targetTier
     saveAllToolTiers(tiers)
   }
+
+  // Push update to serverless database if in live browser environment
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    try {
+      fetch("/api/db/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolTiers: { [toolId]: targetTier },
+          toolPrices: { [toolId]: finalPrice },
+        }),
+      }).catch(() => {})
+    } catch {}
+  }
+}
+
+/**
+ * Synchronize tool tiers and prices with the serverless database.
+ * Fetches configured tiers from /api/db/admin so that all visitors on Vercel
+ * receive active Pro gating without relying solely on local browser storage.
+ */
+export async function syncToolTiersFromDatabase(): Promise<void> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return
+  try {
+    const res = await fetch("/api/db/admin", { method: "GET" })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.toolTiers && typeof data.toolTiers === "object") {
+        const storage = getStorage()
+        const current = getAllToolTiers()
+        const mergedTiers = { ...data.toolTiers, ...current }
+        inMemoryTiers = { ...mergedTiers }
+        if (storage) {
+          try {
+            storage.setItem(TOOL_TIERS_KEY, JSON.stringify(mergedTiers))
+          } catch {}
+        }
+        window.dispatchEvent(
+          new CustomEvent("fluxkit-tiers-changed", { detail: mergedTiers }),
+        )
+      }
+      if (data && data.toolPrices && typeof data.toolPrices === "object") {
+        const storage = getStorage()
+        const currentPrices = getAllToolPrices()
+        const mergedPrices = { ...data.toolPrices, ...currentPrices }
+        inMemoryPrices = { ...mergedPrices }
+        if (storage) {
+          try {
+            storage.setItem(TOOL_PRICES_KEY, JSON.stringify(mergedPrices))
+          } catch {}
+        }
+        window.dispatchEvent(
+          new CustomEvent("fluxkit-prices-changed", { detail: mergedPrices }),
+        )
+      }
+    }
+  } catch {}
 }
 
 export function getFormattedToolPrice(

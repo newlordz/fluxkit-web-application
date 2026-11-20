@@ -340,7 +340,6 @@ export default function AdminPanel({
     getExchangeRate().toString(),
   )
   const [isUpdatingRate, setIsUpdatingRate] = useState(false)
-  const [rateSuccessMsg, setRateSuccessMsg] = useState("")
 
   // Real-time GHS prices cache for instantaneous inputs
   const [ghsPrices, setGhsPrices] = useState<Record<string, number>>(() => {
@@ -532,11 +531,7 @@ export default function AdminPanel({
     setGhsPrices(updatedGhs)
     setCalcGhs((parseFloat(calcUsd || "0") * parsed).toFixed(2))
     setIsUpdatingRate(false)
-    setRateSuccessMsg(
-      `Backend rate synchronized: 1 USD = ${parsed.toFixed(2)} GHS`,
-    )
     showToast(`Exchange rate updated: 1 USD = ${parsed.toFixed(2)} GHS`)
-    setTimeout(() => setRateSuccessMsg(""), 3500)
   }
 
   // Fetch real-time market exchange rate
@@ -555,9 +550,7 @@ export default function AdminPanel({
       }
       setGhsPrices(updatedGhs)
       setCalcGhs((parseFloat(calcUsd || "0") * res.rate).toFixed(2))
-      setRateSuccessMsg(res.message)
       showToast(res.message)
-      setTimeout(() => setRateSuccessMsg(""), 3500)
     } else {
       showToast(res.message)
     }
@@ -1534,17 +1527,6 @@ export default function AdminPanel({
                   <RefreshCw size={11} />
                   <span>Sync Live Rate</span>
                 </button>
-                {rateSuccessMsg && (
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "#10b981",
-                      fontWeight: 600,
-                    }}
-                  >
-                    ✓ {rateSuccessMsg}
-                  </span>
-                )}
               </div>
 
               {/* Real-time Bidirectional Sandbox Calculator */}

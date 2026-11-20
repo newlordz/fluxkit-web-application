@@ -66,6 +66,7 @@ import {
   canUserAccessTool,
   isToolPro,
   getFormattedToolPrice,
+  syncToolTiersFromDatabase,
 } from "./adminService"
 
 import {
@@ -321,6 +322,7 @@ export default function App() {
 
     syncGatewaysWithServer().catch(() => null)
     syncLiveExchangeRate().catch(() => null)
+    syncToolTiersFromDatabase().catch(() => null)
   }, [])
 
   useEffect(() => {

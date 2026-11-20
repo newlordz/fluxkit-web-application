@@ -4,6 +4,7 @@ import path from "node:path"
 
 const DB_PATH_1 = path.join(process.cwd(), "data", "masterfile-db.json")
 const DB_PATH_2 = path.join(process.cwd(), "data", "fluxkit-db.json")
+const TMP_PATH = path.join("/tmp", "masterfile-db.json")
 
 // Default admin state matching database
 const DEFAULT_ADMIN = {
@@ -19,20 +20,65 @@ const DEFAULT_ADMIN = {
   lastPasswordChange: "2026-11-19T14:57:23.342Z",
 }
 
+// Default baseline tool monetization tiers and prices (active globally across all Vercel visitors)
+export const DEFAULT_TOOL_TIERS: Record<string, "standard" | "pro"> = {
+  ocr: "pro",
+  "audio-text": "pro",
+  "convert-compress": "pro",
+  "merge-compress": "pro",
+  "split-compress": "pro",
+  "visitor-pass": "pro",
+}
+
+export const DEFAULT_TOOL_PRICES: Record<string, number> = {
+  ocr: 4.99,
+  "audio-text": 4.99,
+  "convert-compress": 4.99,
+  "merge-compress": 4.99,
+  "split-compress": 4.99,
+  "visitor-pass": 4.99,
+}
+
 function readDb(): any {
+  // 1. Check temporary serverless storage
+  try {
+    if (fs.existsSync(TMP_PATH)) {
+      const content = fs.readFileSync(TMP_PATH, "utf8")
+      const parsed = JSON.parse(content)
+      parsed.toolTiers = { ...DEFAULT_TOOL_TIERS, ...(parsed.toolTiers || {}) }
+      parsed.toolPrices = { ...DEFAULT_TOOL_PRICES, ...(parsed.toolPrices || {}) }
+      return parsed
+    }
+  } catch {}
+
+  // 2. Check bundled database files
   for (const p of [DB_PATH_1, DB_PATH_2]) {
     try {
       if (fs.existsSync(p)) {
         const content = fs.readFileSync(p, "utf8")
-        return JSON.parse(content)
+        const parsed = JSON.parse(content)
+        parsed.toolTiers = { ...DEFAULT_TOOL_TIERS, ...(parsed.toolTiers || {}) }
+        parsed.toolPrices = { ...DEFAULT_TOOL_PRICES, ...(parsed.toolPrices || {}) }
+        return parsed
       }
     } catch {}
   }
-  return { admin: DEFAULT_ADMIN }
+  return {
+    admin: DEFAULT_ADMIN,
+    toolTiers: { ...DEFAULT_TOOL_TIERS },
+    toolPrices: { ...DEFAULT_TOOL_PRICES },
+  }
 }
 
 function writeDb(data: any): boolean {
   let ok = false
+  // 1. Write to /tmp on serverless environments
+  try {
+    fs.writeFileSync(TMP_PATH, JSON.stringify(data, null, 2), "utf8")
+    ok = true
+  } catch {}
+
+  // 2. Write to project disk if writable (local dev)
   for (const p of [DB_PATH_1, DB_PATH_2]) {
     try {
       fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
@@ -76,6 +122,8 @@ export default async function handler(req: any, res: any) {
           proStatus: "active",
           updatedAt: admin.updatedAt || new Date().toISOString(),
         },
+        toolTiers: db.toolTiers || {},
+        toolPrices: db.toolPrices || {},
         database: {
           syncedAt: admin.updatedAt || new Date().toISOString(),
         },
@@ -103,29 +151,56 @@ export default async function handler(req: any, res: any) {
         } catch {}
       }
 
-      if (!body || !body.email) {
-        res.status?.(400)?.json?.({ ok: false, error: "Invalid payload: email is required" }) ||
-          res.end?.(JSON.stringify({ ok: false, error: "Invalid payload: email is required" }))
+      if (!body) {
+        res.status?.(400)?.json?.({ ok: false, error: "Invalid payload: request body required" }) ||
+          res.end?.(JSON.stringify({ ok: false, error: "Invalid payload: request body required" }))
         return
       }
 
       const now = new Date().toISOString()
-      db.admin = {
-        ...(db.admin || DEFAULT_ADMIN),
-        name: body.name || db.admin?.name || "Masterfilepro Administrator",
-        email: body.email.trim().toLowerCase(),
-        salt: body.salt || db.admin?.salt || DEFAULT_ADMIN.salt,
-        hash: body.hash || db.admin?.hash || DEFAULT_ADMIN.hash,
-        updatedAt: now,
-        lastPasswordChange: body.newPassword ? now : db.admin?.lastPasswordChange,
+      let updatedAdmin = false
+      let updatedTiers = false
+
+      // Handle Tool Tiers & Prices synchronization
+      if (body.toolTiers && typeof body.toolTiers === "object") {
+        db.toolTiers = { ...(db.toolTiers || {}), ...body.toolTiers }
+        updatedTiers = true
+      }
+      if (body.toolPrices && typeof body.toolPrices === "object") {
+        db.toolPrices = { ...(db.toolPrices || {}), ...body.toolPrices }
+        updatedTiers = true
+      }
+
+      // Handle Admin credential synchronization
+      if (body.email) {
+        db.admin = {
+          ...(db.admin || DEFAULT_ADMIN),
+          name: body.name || db.admin?.name || "Masterfilepro Administrator",
+          email: body.email.trim().toLowerCase(),
+          salt: body.salt || db.admin?.salt || DEFAULT_ADMIN.salt,
+          hash: body.hash || db.admin?.hash || DEFAULT_ADMIN.hash,
+          updatedAt: now,
+          lastPasswordChange: body.newPassword ? now : db.admin?.lastPasswordChange,
+        }
+        updatedAdmin = true
+      }
+
+      if (!updatedAdmin && !updatedTiers) {
+        res.status?.(400)?.json?.({ ok: false, error: "Invalid payload: email or tool tiers required" }) ||
+          res.end?.(JSON.stringify({ ok: false, error: "Invalid payload: email or tool tiers required" }))
+        return
       }
 
       writeDb(db)
 
       const responsePayload = {
         ok: true,
-        message: "Admin credentials successfully synchronized with server database.",
+        message: updatedTiers
+          ? "Tool tiers and pricing successfully synchronized with server database."
+          : "Admin credentials successfully synchronized with server database.",
         admin: db.admin,
+        toolTiers: db.toolTiers || {},
+        toolPrices: db.toolPrices || {},
       }
       res.status?.(200)?.json?.(responsePayload) ||
         res.end?.(JSON.stringify(responsePayload))
