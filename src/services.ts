@@ -807,8 +807,9 @@ export async function compressPDF(
 
       if (response.ok) {
         const data = await response.json()
-        if (data.success && data.pdfBase64) {
-          const compressedBinary = atob(data.pdfBase64)
+        const returnedBase64 = data.pdfBase64 || data.compressedBase64
+        if ((data.success || data.ok) && returnedBase64) {
+          const compressedBinary = atob(returnedBase64)
           const compressedBytes = new Uint8Array(compressedBinary.length)
           for (let i = 0; i < compressedBinary.length; i++) {
             compressedBytes[i] = compressedBinary.charCodeAt(i)
@@ -890,8 +891,9 @@ export async function compressPDF(
 
       if (response.ok) {
         const data = await response.json()
-        if (data.success && data.pdfBase64) {
-          const compressedBinary = atob(data.pdfBase64)
+        const returnedBase64 = data.pdfBase64 || data.compressedBase64
+        if ((data.success || data.ok) && returnedBase64) {
+          const compressedBinary = atob(returnedBase64)
           const compressedBytes = new Uint8Array(compressedBinary.length)
           for (let i = 0; i < compressedBinary.length; i++) {
             compressedBytes[i] = compressedBinary.charCodeAt(i)
@@ -6297,7 +6299,7 @@ export async function scanOCR(
 
       if (ocrRes.ok) {
         const data = await ocrRes.json()
-        if (data.success && data.text) {
+        if ((data.success || data.ok) && data.text) {
           recordApiOutcome(ocrApi.id, { success: true })
           const text = (data.text || "").trim()
           const rawLines = text

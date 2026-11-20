@@ -657,6 +657,11 @@ export async function syncCloudApisWithServer(): Promise<CloudApiConfig[]> {
         })
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("fluxkit-apis-updated", { detail: { apis: merged } }),
+          )
+        }
         return merged
       }
     }

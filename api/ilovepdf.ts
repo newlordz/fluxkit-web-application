@@ -197,6 +197,8 @@ export default async function handler(req: any, res: any) {
 
     const responsePayload = {
       ok: true,
+      success: true,
+      pdfBase64: compressedBuffer.toString("base64"),
       compressedBase64: compressedBuffer.toString("base64"),
       compressedSize: compressedBuffer.length,
       originalSize,

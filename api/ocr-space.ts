@@ -110,6 +110,7 @@ export default async function handler(req: any, res: any) {
 
     const payload = {
       ok: true,
+      success: true,
       text: parsedText,
       exitCode: ocrData.OCRExitCode,
       processingTimeMs: ocrData.ProcessingTimeInMilliseconds,
