@@ -65,6 +65,8 @@ export interface VisitorRecord {
 
   location: string
 
+  facilityLocation?: string
+
   tier: AccessTier
 
   visitDate: string
@@ -72,6 +74,10 @@ export interface VisitorRecord {
   timeIn: string
 
   timeOut: string
+
+  actualCheckIn?: string
+
+  actualCheckOut?: string
 
   wifiGranted: boolean
 
@@ -256,6 +262,9 @@ export default function VisitorPassStudio({
 
   const [ndaAccepted, setNdaAccepted] = useState(true)
 
+  // Pass initial arrival status: Checked-In vs Expected (pre-registration)
+  const [passStatus, setPassStatus] = useState<"Checked-In" | "Expected">("Checked-In")
+
   // QR Code preview
 
   const [qrDataUrl, setQrDataUrl] = useState<string>("")
@@ -315,6 +324,8 @@ export default function VisitorPassStudio({
     setHostDepartment("")
 
     setMeetingRoom("")
+
+    setPassStatus("Checked-In")
 
     regeneratePassId()
 
@@ -570,60 +581,43 @@ export default function VisitorPassStudio({
     reader.readAsDataURL(file)
   }
 
-  // Check In and Save to Visitor Log
+  // Issue Pass (Checked-In or Expected) and Save to Visitor Log
+  const handleIssuePass = (statusOverride?: "Checked-In" | "Expected") => {
+    const finalStatus = statusOverride || passStatus
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
 
-  const handleIssueAndCheckIn = () => {
     const newRecord: VisitorRecord = {
       id: passId,
-
-      fullName: fullName || "Guest Visitor",
-
-      organization: organization || "Independent",
-
-      email,
-
-      phone,
-
-      vehiclePlate,
-
-      hostName: hostName || "Reception Desk",
-
-      hostDepartment: hostDepartment || "Front Lobby",
-
-      location: meetingRoom || "Main Facility",
-
+      fullName: fullName.trim() || "Guest Visitor",
+      organization: organization.trim() || "Independent",
+      email: email.trim(),
+      phone: phone.trim(),
+      vehiclePlate: vehiclePlate.trim().toUpperCase(),
+      hostName: hostName.trim() || "Reception Desk",
+      hostDepartment: hostDepartment.trim() || "Front Lobby",
+      location: meetingRoom.trim() || "Main Facility",
+      facilityLocation: facilityLocation.trim(),
       tier: accessTier,
-
       visitDate,
-
       timeIn,
-
       timeOut,
-
+      actualCheckIn: finalStatus === "Checked-In" ? currentTime : undefined,
+      actualCheckOut: undefined,
       wifiGranted,
-
       wifiSsid,
-
       wifiPassword,
-
       ndaAccepted,
-
       photoUrl: photoDataUrl,
-
-      status: "Checked-In",
-
+      status: finalStatus,
       createdAt: new Date().toISOString(),
-
       securityToken: `SEC-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
     }
 
     const existingIdx = visitorLog.findIndex((r) => r.id === passId)
-
     let updated: VisitorRecord[] = []
-
     if (existingIdx >= 0) {
       updated = [...visitorLog]
-
       updated[existingIdx] = newRecord
     } else {
       updated = [newRecord, ...visitorLog]
@@ -631,9 +625,99 @@ export default function VisitorPassStudio({
 
     persistLog(updated)
 
-    notify(`Pass ${passId} issued and checked in on premises!`, "success")
+    if (finalStatus === "Checked-In") {
+      notify(`Pass ${passId} issued and checked in on premises!`, "success")
+    } else {
+      notify(`Pass ${passId} pre-registered as Expected for ${visitDate}.`, "success")
+    }
 
     if (onComplete) onComplete()
+  }
+
+  // Alias for backward compatibility
+  const handleIssueAndCheckIn = () => handleIssuePass("Checked-In")
+
+  // Load a record from log into the designer with 100% of its fields
+  const handleViewBadge = (record: VisitorRecord) => {
+    setPassId(record.id)
+    setFullName(record.fullName || "")
+    setOrganization(record.organization || "")
+    setEmail(record.email || "")
+    setPhone(record.phone || "")
+    setVehiclePlate(record.vehiclePlate || "")
+    setPhotoDataUrl(record.photoUrl || "")
+    setHostName(record.hostName || "")
+    setHostDepartment(record.hostDepartment || "")
+    setMeetingRoom(record.location || "")
+    if (record.facilityLocation) setFacilityLocation(record.facilityLocation)
+    setAccessTier(record.tier || "general")
+    setVisitDate(record.visitDate || new Date().toISOString().split("T")[0])
+    setTimeIn(record.timeIn || "08:30")
+    setTimeOut(record.timeOut || "17:30")
+    setWifiGranted(Boolean(record.wifiGranted))
+    setWifiSsid(record.wifiSsid || "Masterfile-Guest")
+    setWifiPassword(record.wifiPassword || "")
+    setNdaAccepted(Boolean(record.ndaAccepted))
+    setPassStatus(record.status === "Expected" ? "Expected" : "Checked-In")
+    setActiveTab("designer")
+    notify(`Loaded pass ${record.id} for ${record.fullName}.`, "info")
+  }
+
+  // Direct check-in from log or verifier
+  const handleCheckInRecord = (id: string) => {
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    const updated = visitorLog.map((r) =>
+      r.id === id ? { ...r, status: "Checked-In" as const, actualCheckIn: currentTime } : r,
+    )
+    persistLog(updated)
+    const target = visitorLog.find((r) => r.id === id)
+    notify(`Visitor ${target?.fullName || id} checked in at ${currentTime}.`, "success")
+    if (verifiedRecord?.id === id) {
+      setVerifiedRecord((prev) => (prev ? { ...prev, status: "Checked-In", actualCheckIn: currentTime } : null))
+    }
+  }
+
+  // Direct check-out from log or verifier
+  const handleCheckOutRecord = (id: string) => {
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    const updated = visitorLog.map((r) =>
+      r.id === id ? { ...r, status: "Checked-Out" as const, actualCheckOut: currentTime } : r,
+    )
+    persistLog(updated)
+    const target = visitorLog.find((r) => r.id === id)
+    notify(`Visitor ${target?.fullName || id} checked out at ${currentTime}.`, "info")
+    if (verifiedRecord?.id === id) {
+      setVerifiedRecord((prev) => (prev ? { ...prev, status: "Checked-Out", actualCheckOut: currentTime } : null))
+    }
+  }
+
+  // Delete a single record from log
+  const handleDeleteRecord = (id: string, name: string) => {
+    if (window.confirm(`Delete visitor record for ${name} (${id})?`)) {
+      const updated = visitorLog.filter((r) => r.id !== id)
+      persistLog(updated)
+      if (verifiedRecord?.id === id) {
+        setVerifiedRecord(null)
+        setVerifyStatus("idle")
+      }
+      notify(`Record ${id} removed.`, "info")
+    }
+  }
+
+  // Clear checked-out records
+  const handleClearCheckedOut = () => {
+    const checkedOutCount = visitorLog.filter((r) => r.status === "Checked-Out").length
+    if (checkedOutCount === 0) {
+      notify("No checked-out records to clear.", "info")
+      return
+    }
+    if (window.confirm(`Remove ${checkedOutCount} completed/checked-out records from the log?`)) {
+      const updated = visitorLog.filter((r) => r.status !== "Checked-Out")
+      persistLog(updated)
+      notify(`Cleared ${checkedOutCount} completed records.`, "success")
+    }
   }
 
   // Print Badge directly
@@ -1032,73 +1116,45 @@ export default function VisitorPassStudio({
 
     const headers = [
       "Pass ID",
-
       "Visitor Name",
-
       "Organization",
-
       "Email",
-
       "Phone",
-
       "License Plate",
-
       "Host Name",
-
       "Department",
-
-      "Location",
-
+      "Campus / Facility",
+      "Destination Room",
       "Access Tier",
-
       "Visit Date",
-
-      "Time In",
-
-      "Time Out",
-
+      "Scheduled Time",
+      "Actual Check-In",
+      "Actual Check-Out",
       "Wi-Fi Granted",
-
       "NDA Accepted",
-
       "Status",
-
       "Security Token",
     ]
 
     const rows = visitorLog.map((r) => [
       `"${r.id}"`,
-
       `"${r.fullName.replace(/"/g, '""')}"`,
-
       `"${r.organization.replace(/"/g, '""')}"`,
-
       `"${r.email}"`,
-
       `"${r.phone}"`,
-
       `"${r.vehiclePlate}"`,
-
       `"${r.hostName.replace(/"/g, '""')}"`,
-
       `"${r.hostDepartment.replace(/"/g, '""')}"`,
-
+      `"${(r.facilityLocation || "").replace(/"/g, '""')}"`,
       `"${r.location.replace(/"/g, '""')}"`,
-
       `"${TIER_CONFIG[r.tier]?.label || r.tier}"`,
-
       `"${r.visitDate}"`,
-
-      `"${r.timeIn}"`,
-
-      `"${r.timeOut}"`,
-
+      `"${r.timeIn} - ${r.timeOut}"`,
+      `"${r.actualCheckIn || ""}"`,
+      `"${r.actualCheckOut || ""}"`,
       r.wifiGranted ? "YES" : "NO",
-
       r.ndaAccepted ? "YES" : "NO",
-
       `"${r.status}"`,
-
       `"${r.securityToken}"`,
     ])
 
@@ -1124,35 +1180,54 @@ export default function VisitorPassStudio({
     notify("Visitor log exported as CSV evacuation roll.", "success")
   }
 
-  // Handle Verify Pass Lookup
-
+  // Handle Verify Pass Lookup (Supports raw Pass ID, Token, or scanned QR JSON payload)
   const handleVerifyPass = (e: React.FormEvent) => {
     e.preventDefault()
+    const raw = verifyInput.trim()
+    if (!raw) return
 
-    const query = verifyInput.trim().toUpperCase()
+    let searchId = raw
+    let searchToken = ""
+    let searchName = ""
 
-    if (!query) return
+    // Case 1: Raw QR Code JSON was scanned
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed.id) searchId = parsed.id
+      if (parsed.sec) searchToken = parsed.sec
+      if (parsed.name) searchName = parsed.name
+    } catch {
+      // Case 2: Regex extraction if partial scan or formatted text
+      const matchId = raw.match(/VP-\d+/i)
+      if (matchId) searchId = matchId[0]
+      const matchToken = raw.match(/SEC-[A-Z0-9]+/i)
+      if (matchToken) searchToken = matchToken[0]
+    }
 
-    // Search by pass ID, visitor name, or security token
+    const cleanRawUpper = raw.toUpperCase()
+    const cleanIdUpper = searchId.toUpperCase()
+    const cleanTokenUpper = searchToken.toUpperCase()
+    const cleanNameUpper = searchName.toUpperCase()
 
     const match = visitorLog.find(
       (r) =>
-        r.id.toUpperCase() === query ||
-        r.securityToken.toUpperCase() === query ||
-        r.fullName.toUpperCase().includes(query),
+        r.id.toUpperCase() === cleanIdUpper ||
+        (cleanTokenUpper && r.securityToken.toUpperCase() === cleanTokenUpper) ||
+        r.securityToken.toUpperCase() === cleanRawUpper ||
+        (cleanNameUpper && r.fullName.toUpperCase().includes(cleanNameUpper)) ||
+        r.fullName.toUpperCase().includes(cleanRawUpper) ||
+        (r.vehiclePlate && r.vehiclePlate.toUpperCase() === cleanRawUpper) ||
+        (r.phone && r.phone.replace(/\D/g, "").length >= 4 && r.phone.replace(/\D/g, "").includes(cleanRawUpper.replace(/\D/g, ""))) ||
+        (r.email && r.email.toUpperCase() === cleanRawUpper),
     )
 
     if (match) {
       setVerifiedRecord(match)
-
       setVerifyStatus("valid")
-
       notify(`Pass ${match.id} verified for ${match.fullName}.`, "success")
     } else {
       setVerifiedRecord(null)
-
       setVerifyStatus("not_found")
-
       notify("Pass not found or invalid security signature.", "error")
     }
   }
@@ -1344,9 +1419,18 @@ export default function VisitorPassStudio({
           </button>
           <button
             type="button"
+            className="secondary"
+            onClick={() => handleIssuePass("Expected")}
+            title="Pre-register visitor for scheduled arrival"
+          >
+            <Clock size={15} />
+            <span>Pre-Register (Expected)</span>
+          </button>
+          <button
+            type="button"
             className="primary"
-            onClick={handleIssueAndCheckIn}
-            title="Issue pass and log check-in"
+            onClick={() => handleIssuePass("Checked-In")}
+            title="Issue pass and log check-in immediately"
           >
             <CheckCircle2 size={15} />
             <span>Issue & Check In</span>
@@ -1671,6 +1755,30 @@ export default function VisitorPassStudio({
                   </div>
                 </div>
               </div>
+
+              <div className="form-group" style={{ marginTop: "6px" }}>
+                <label>Arrival / Log Status</label>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className={`status-select-btn ${
+                      passStatus === "Checked-In" ? "active-in" : ""
+                    }`}
+                    onClick={() => setPassStatus("Checked-In")}
+                  >
+                    <CheckCircle2 size={13} /> Checked-In (Arrived Now)
+                  </button>
+                  <button
+                    type="button"
+                    className={`status-select-btn ${
+                      passStatus === "Expected" ? "active-exp" : ""
+                    }`}
+                    onClick={() => setPassStatus("Expected")}
+                  >
+                    <Clock size={13} /> Expected (Pre-Register)
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Section 3: Wi-Fi & Facility Protocols */}
@@ -1736,6 +1844,17 @@ export default function VisitorPassStudio({
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="vis-facility-loc">Facility Campus / Building Location</label>
+                <input
+                  id="vis-facility-loc"
+                  type="text"
+                  value={facilityLocation}
+                  onChange={(e) => setFacilityLocation(e.target.value)}
+                  placeholder="e.g. Global Headquarters · Floor 14"
                 />
               </div>
 
@@ -2204,6 +2323,23 @@ export default function VisitorPassStudio({
               >
                 <FileSpreadsheet size={15} /> Export Evacuation Roll (CSV)
               </button>
+
+              {visitorLog.some((v) => v.status === "Checked-Out") && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleClearCheckedOut}
+                  title="Remove all completed / checked-out visits"
+                  style={{
+                    fontSize: "12px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <Trash2 size={13} /> Clear Past Check-Outs
+                </button>
+              )}
             </div>
           </div>
 
@@ -2317,51 +2453,64 @@ export default function VisitorPassStudio({
                             {record.status}
                           </span>
                         </td>
-                        <td style={{ textAlign: "right" }}>
-                          {record.status === "Checked-In" ? (
+                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              gap: "6px",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            {record.status === "Expected" && (
+                              <button
+                                type="button"
+                                className="table-action-btn status-green-btn"
+                                onClick={() => handleCheckInRecord(record.id)}
+                                title="Check in this visitor upon arrival"
+                              >
+                                Check In
+                              </button>
+                            )}
+                            {record.status === "Checked-In" && (
+                              <button
+                                type="button"
+                                className="table-action-btn status-amber-btn"
+                                onClick={() => handleCheckOutRecord(record.id)}
+                                title="Process departure and check out"
+                              >
+                                Check Out
+                              </button>
+                            )}
+                            {record.status === "Checked-Out" && (
+                              <button
+                                type="button"
+                                className="table-action-btn secondary-btn"
+                                onClick={() => handleCheckInRecord(record.id)}
+                                title="Re-admit visitor onto premises"
+                              >
+                                Re-Admit
+                              </button>
+                            )}
                             <button
                               type="button"
-                              className="table-action-btn"
-                              onClick={() => {
-                                const updated = visitorLog.map((r) =>
-                                  r.id === record.id
-                                    ? { ...r, status: "Checked-Out" as const }
-                                    : r,
-                                )
-
-                                persistLog(updated)
-
-                                notify(
-                                  `Visitor ${record.fullName} checked out.`,
-                                  "info",
-                                )
-                              }}
+                              className="table-action-btn icon-btn"
+                              onClick={() => handleViewBadge(record)}
+                              title="View and print badge in designer"
                             >
-                              Check Out
+                              <IdCard size={12} /> View
                             </button>
-                          ) : (
                             <button
                               type="button"
-                              className="table-action-btn secondary-btn"
-                              onClick={() => {
-                                setPassId(record.id)
-
-                                setFullName(record.fullName)
-
-                                setOrganization(record.organization)
-
-                                setHostName(record.hostName)
-
-                                setHostDepartment(record.hostDepartment)
-
-                                setAccessTier(record.tier)
-
-                                setActiveTab("designer")
-                              }}
+                              className="table-action-btn danger-icon-btn"
+                              onClick={() =>
+                                handleDeleteRecord(record.id, record.fullName)
+                              }
+                              title="Delete record from log"
                             >
-                              View Badge
+                              <Trash2 size={12} />
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -2443,64 +2592,86 @@ export default function VisitorPassStudio({
                   </div>
                   <div className="result-item">
                     <span>Facility Location</span>
-                    <strong>{verifiedRecord.location}</strong>
+                    <strong>
+                      {verifiedRecord.facilityLocation
+                        ? `${verifiedRecord.facilityLocation} · ${verifiedRecord.location}`
+                        : verifiedRecord.location}
+                    </strong>
                   </div>
                   <div className="result-item">
                     <span>Valid Today</span>
                     <strong>
-                      {verifiedRecord.timeIn} - {verifiedRecord.timeOut}
+                      {verifiedRecord.visitDate} ({verifiedRecord.timeIn} -{" "}
+                      {verifiedRecord.timeOut})
+                    </strong>
+                  </div>
+                  <div className="result-item">
+                    <span>Current Status</span>
+                    <strong>
+                      <span
+                        className={`status-chip ${
+                          verifiedRecord.status === "Checked-In"
+                            ? "status-green"
+                            : verifiedRecord.status === "Expected"
+                              ? "status-blue"
+                              : "status-gray"
+                        }`}
+                      >
+                        {verifiedRecord.status}
+                      </span>
+                    </strong>
+                  </div>
+                  <div className="result-item">
+                    <span>Access Stamps</span>
+                    <strong style={{ fontSize: "12px", color: "var(--muted)" }}>
+                      {verifiedRecord.actualCheckIn
+                        ? `In: ${verifiedRecord.actualCheckIn}`
+                        : "Not checked in"}
+                      {verifiedRecord.actualCheckOut
+                        ? ` · Out: ${verifiedRecord.actualCheckOut}`
+                        : ""}
                     </strong>
                   </div>
                 </div>
 
-                <div className="result-actions">
-                  {verifiedRecord.status === "Checked-In" ? (
+                <div
+                  className="result-actions"
+                  style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}
+                >
+                  {verifiedRecord.status === "Expected" && (
                     <button
                       type="button"
                       className="primary"
-                      onClick={() => {
-                        const updated = visitorLog.map((r) =>
-                          r.id === verifiedRecord.id
-                            ? { ...r, status: "Checked-Out" as const }
-                            : r,
-                        )
-
-                        persistLog(updated)
-
-                        setVerifiedRecord({
-                          ...verifiedRecord,
-                          status: "Checked-Out",
-                        })
-
-                        notify("Visitor checked out from facility.", "info")
-                      }}
+                      onClick={() => handleCheckInRecord(verifiedRecord.id)}
+                    >
+                      <CheckCircle2 size={15} /> Confirm Arrival & Check In
+                    </button>
+                  )}
+                  {verifiedRecord.status === "Checked-In" && (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => handleCheckOutRecord(verifiedRecord.id)}
                     >
                       Process Check-Out
                     </button>
-                  ) : (
+                  )}
+                  {verifiedRecord.status === "Checked-Out" && (
                     <button
                       type="button"
-                      className="primary"
-                      onClick={() => {
-                        const updated = visitorLog.map((r) =>
-                          r.id === verifiedRecord.id
-                            ? { ...r, status: "Checked-In" as const }
-                            : r,
-                        )
-
-                        persistLog(updated)
-
-                        setVerifiedRecord({
-                          ...verifiedRecord,
-                          status: "Checked-In",
-                        })
-
-                        notify("Visitor checked in to facility.", "success")
-                      }}
+                      className="secondary"
+                      onClick={() => handleCheckInRecord(verifiedRecord.id)}
                     >
-                      Check-In Visitor
+                      Re-Admit / Check In
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleViewBadge(verifiedRecord)}
+                  >
+                    <IdCard size={15} /> View & Print Badge
+                  </button>
                 </div>
               </div>
             )}
