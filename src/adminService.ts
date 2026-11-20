@@ -8,6 +8,7 @@ import {
   changeAccountPassword,
   generateSalt,
   hashPassword,
+  getStoredCredentials,
 } from "./authService"
 export { isRootAdmin } from "./authService"
 import { tools } from "./config"
@@ -612,4 +613,102 @@ export function changeUserPassword(
   )
   const targetEmail = found ? found.email : userIdOrEmail
   changeAccountPassword(targetEmail, newPassword)
+}
+
+export function updateUserDetails(
+  userId: string,
+  updates: {
+    name?: string
+    email?: string
+    role?: "admin" | "sub-admin" | "user"
+    subscriptionTier?: "standard" | "pro"
+    proStatus?: "active" | "pending" | "none"
+  },
+): UserAccount {
+  const accounts = getRegisteredAccounts()
+  const idx = accounts.findIndex((a) => a.id === userId)
+  const isRoot = isRootAdmin(userId)
+
+  if (idx < 0) {
+    const current = getCurrentUser()
+    if (!current || current.id !== userId) {
+      throw new Error("User account not found.")
+    }
+  }
+
+  const existing = idx >= 0 ? accounts[idx] : getCurrentUser()!
+
+  // Guard: root admin cannot be demoted or stripped of Pro
+  let role = updates.role !== undefined ? updates.role : existing.role
+  let subscriptionTier =
+    updates.subscriptionTier !== undefined
+      ? updates.subscriptionTier
+      : existing.subscriptionTier
+  let proStatus =
+    updates.proStatus !== undefined ? updates.proStatus : existing.proStatus
+
+  if (isRoot) {
+    role = "admin"
+    subscriptionTier = "pro"
+    proStatus = "active"
+  }
+
+  let email = existing.email
+  if (
+    updates.email &&
+    updates.email.trim().toLowerCase() !== existing.email.toLowerCase()
+  ) {
+    const newEmail = updates.email.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      throw new Error("Please enter a valid email address.")
+    }
+    if (
+      accounts.some(
+        (a) => a.id !== userId && a.email.toLowerCase() === newEmail,
+      )
+    ) {
+      throw new Error("An account with this email address already exists.")
+    }
+
+    // Migrate stored password credentials if present
+    const creds = getStoredCredentials()
+    if (creds[existing.email.toLowerCase()]) {
+      creds[newEmail] = creds[existing.email.toLowerCase()]
+      delete creds[existing.email.toLowerCase()]
+      const storage = getStorage()
+      if (storage) {
+        try {
+          storage.setItem("fluxkit-credentials", JSON.stringify(creds))
+        } catch {}
+      }
+    }
+    email = newEmail
+  }
+
+  const name =
+    updates.name !== undefined ? updates.name.trim() : existing.name
+  if (!name) {
+    throw new Error("User name cannot be empty.")
+  }
+
+  const updated: UserAccount = {
+    ...existing,
+    name,
+    email,
+    role,
+    subscriptionTier,
+    proStatus,
+  }
+
+  if (idx >= 0) {
+    accounts[idx] = updated
+    saveRegisteredAccounts(accounts)
+  }
+
+  const current = getCurrentUser()
+  if (current && current.id === userId) {
+    saveCurrentUser(updated)
+  }
+
+  return updated
 }

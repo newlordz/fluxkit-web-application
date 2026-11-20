@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   Command,
   Cpu,
-  CreditCard,
   Database,
   Eye,
   EyeOff,
@@ -844,15 +843,6 @@ export default function App() {
                   <ShieldCheck size={18} />
                   <span>Admin Portal</span>
                 </button>
-                <button
-                  key="admin-integrations"
-                  className={page === "admin-integrations" ? "active" : ""}
-                  onClick={() => navigate("admin-integrations")}
-                  style={{ color: "#0ea5e9", fontWeight: 600 }}
-                >
-                  <CreditCard size={18} />
-                  <span>Payment & APIs</span>
-                </button>
                 <div className="nav-divider" />
               </>
             )}
@@ -957,7 +947,7 @@ export default function App() {
                 currentUser?.name?.includes("Masterfilepro")
                   ? "M"
                   : currentUser
-                    ? currentUser.name.slice(0, 1).toUpperCase()
+                    ? (currentUser.name || "M").slice(0, 1).toUpperCase()
                     : "M"}
               </span>
               <span>
@@ -1191,7 +1181,7 @@ export default function App() {
                 onClick={() => setMenu(!menu)}
               >
                 {currentUser
-                  ? currentUser.name.slice(0, 1).toUpperCase()
+                  ? (currentUser.name || "U").slice(0, 1).toUpperCase()
                   : `${profile.slice(0, 1).toUpperCase()}D`}
               </button>
               {menu && (
@@ -1199,7 +1189,7 @@ export default function App() {
                   <div className="popover-user-header">
                     <span className="avatar">
                       {currentUser
-                        ? currentUser.name.slice(0, 1).toUpperCase()
+                        ? (currentUser.name || "U").slice(0, 1).toUpperCase()
                         : `${profile.slice(0, 1).toUpperCase()}D`}
                     </span>
                     <div className="popover-user-meta">

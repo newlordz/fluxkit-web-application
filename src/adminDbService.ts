@@ -587,7 +587,7 @@ export async function resetAdminToDefaults(): Promise<{
   }
 
   saveAdminConfigToLocal(record)
-  await saveAdminToIndexedDB(record)
+  await saveToIndexedDB(record)
   await saveToServerDatabase({
     name: record.name,
     email: record.email,

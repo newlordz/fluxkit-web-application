@@ -1050,7 +1050,7 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
   const html = renderToStaticMarkup(React.createElement(App))
 
   assert.ok(html.includes("Admin Portal"), "Admin sees Admin Portal")
-  assert.ok(html.includes("Payment &amp; APIs") || html.includes("Payment & APIs"), "Admin sees Payment & APIs link")
+  assert.ok(html.includes("ADMINISTRATION"), "Admin sees ADMINISTRATION section")
   assert.ok(html.includes("WORKSTATION"), "Admin has workstation tools available at their disposal")
 })
 

@@ -37,6 +37,9 @@ import {
   Zap,
   Sparkles,
   Layers,
+  Download,
+  UserCheck,
+  Filter,
 } from "lucide-react"
 import {
   getCloudApis,
@@ -71,6 +74,7 @@ import {
   deleteUser,
   createUserByAdmin,
   changeUserPassword,
+  updateUserDetails,
 } from "./adminService"
 import {
   getActiveCurrency,
@@ -417,6 +421,31 @@ export default function AdminPanel({
   const [confirmPasswordValue, setConfirmPasswordValue] = useState("")
   const [passwordError, setPasswordError] = useState("")
   const [showPasswordText, setShowPasswordText] = useState(false)
+
+  // User Management: search, filters & edit user state
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [userRoleFilter, setUserRoleFilter] = useState<
+    "all" | "admin" | "sub-admin" | "user"
+  >("all")
+  const [userStatusFilter, setUserStatusFilter] = useState<
+    "all" | "pro" | "pending" | "standard"
+  >("all")
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [editingUser, setEditingUser] = useState<UserAccount | null>(null)
+  const [editUserForm, setEditUserForm] = useState<{
+    name: string
+    email: string
+    role: "admin" | "sub-admin" | "user"
+    subscriptionTier: "standard" | "pro"
+    proStatus: "active" | "pending" | "none"
+  }>({
+    name: "",
+    email: "",
+    role: "user",
+    subscriptionTier: "standard",
+    proStatus: "none",
+  })
+  const [editUserError, setEditUserError] = useState("")
 
   useEffect(() => {
     if (initialTab) {
@@ -805,6 +834,90 @@ export default function AdminPanel({
     }
   }
 
+  const handleOpenEditUser = (u: UserAccount) => {
+    setEditingUser(u)
+    setEditUserForm({
+      name: u.name,
+      email: u.email,
+      role: u.role || "user",
+      subscriptionTier: u.subscriptionTier || "standard",
+      proStatus: u.proStatus || "none",
+    })
+    setEditUserError("")
+    setShowEditUserModal(true)
+  }
+
+  const handleSaveEditUser = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!editingUser) return
+    setEditUserError("")
+    try {
+      const updated = updateUserDetails(editingUser.id, editUserForm)
+      setUserList(getAllUsers())
+      setShowEditUserModal(false)
+      setEditingUser(null)
+      showToast(`User "${updated.name}" updated successfully.`)
+    } catch (err: any) {
+      setEditUserError(err.message || "Failed to update user details.")
+    }
+  }
+
+  const handleExportUsers = (format: "csv" | "json") => {
+    try {
+      const usersToExport = getAllUsers()
+      let content = ""
+      let mimeType = ""
+      let filename = ""
+
+      if (format === "json") {
+        content = JSON.stringify(usersToExport, null, 2)
+        mimeType = "application/json"
+        filename = `masterfilepro-users-${new Date().toISOString().slice(0, 10)}.json`
+      } else {
+        const headers = [
+          "ID",
+          "Name",
+          "Email",
+          "Role",
+          "Subscription Tier",
+          "Pro Status",
+          "Created At",
+          "Last Login At",
+        ]
+        const rows = usersToExport.map((u) => [
+          `"${u.id}"`,
+          `"${(u.name || "").replace(/"/g, '""')}"`,
+          `"${(u.email || "").replace(/"/g, '""')}"`,
+          `"${u.role || "user"}"`,
+          `"${u.subscriptionTier || "standard"}"`,
+          `"${u.proStatus || "none"}"`,
+          `"${u.createdAt || ""}"`,
+          `"${u.lastLoginAt || ""}"`,
+        ])
+        content = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+        mimeType = "text/csv;charset=utf-8;"
+        filename = `masterfilepro-users-${new Date().toISOString().slice(0, 10)}.csv`
+      }
+
+      if (typeof window !== "undefined" && typeof document !== "undefined") {
+        const blob = new Blob([content], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      }
+      showToast(
+        `Exported ${usersToExport.length} registered accounts as ${format.toUpperCase()}.`,
+      )
+    } catch {
+      showToast("Failed to export user accounts.", "error")
+    }
+  }
+
   // Payment Gateway Handlers
   const handleToggleGatewayEnabled = (id: PaymentProvider) => {
     const gw = gateways.find((g) => g.id === id)
@@ -1017,7 +1130,11 @@ export default function AdminPanel({
       )}
 
       {/* Tabs */}
-      <div className="admin-nav-bar" role="navigation" aria-label="Admin Dashboard Navigation">
+      <div
+        className="admin-nav-bar"
+        role="navigation"
+        aria-label="Admin Dashboard Navigation"
+      >
         <div className="admin-nav-wrapper">
           {canScrollLeft && (
             <button
@@ -1296,66 +1413,9 @@ export default function AdminPanel({
                     margin: "2px 0 0 0",
                   }}
                 >
-                  Change display currency between US Dollar ($) and Ghanaian
-                  Cedi (GH₵). Changing values automatically recalculates both
-                  currencies via the backend conversion engine.
+                  Exchange rates and pricing calculations are automatically handled
+                  via the backend conversion engine.
                 </p>
-              </div>
-
-              {/* Active Currency Selector Pill */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "20px",
-                  padding: "3px",
-                  gap: "2px",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => handleCurrencySelect("USD")}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "16px",
-                    border: "none",
-                    background:
-                      activeCurrency === "USD" ? "#00C9B7" : "transparent",
-                    color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
-                    cursor: "pointer",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <span>🇺🇸</span>
-                  <span>USD ($)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCurrencySelect("GHS")}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "16px",
-                    border: "none",
-                    background:
-                      activeCurrency === "GHS" ? "#00C9B7" : "transparent",
-                    color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
-                    cursor: "pointer",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <span>🇬🇭</span>
-                  <span>GHS (GH₵)</span>
-                </button>
               </div>
             </div>
 
@@ -1930,9 +1990,10 @@ export default function AdminPanel({
         </div>
       )}
 
-      {/* TAB 2: USER APPROVALS */}
+      {/* TAB 2: USER APPROVALS / USER MANAGEMENT */}
       {activeTab === "users" && (
         <div>
+          {/* Header & Quick Actions */}
           <div
             style={{
               display: "flex",
@@ -1944,6 +2005,37 @@ export default function AdminPanel({
             }}
           >
             <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "4px",
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 700,
+                    margin: 0,
+                    color: "var(--text)",
+                  }}
+                >
+                  User Management & Approvals
+                </h2>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    background: "rgba(0, 201, 183, 0.15)",
+                    color: "#00C9B7",
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {userList.length} Total
+                </span>
+              </div>
               <p
                 style={{
                   fontSize: "12px",
@@ -1951,8 +2043,8 @@ export default function AdminPanel({
                   margin: 0,
                 }}
               >
-                Review registered accounts, promote users to Sub-Admin or Admin,
-                manage Pro activations, and change account passwords.
+                Review registered accounts, edit profiles, promote roles, manage
+                Pro activations, change passwords, and export directories.
               </p>
               <div
                 style={{
@@ -1968,24 +2060,490 @@ export default function AdminPanel({
                 locked from deletion and demotion.
               </div>
             </div>
-            <button
-              className="primary"
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                }}
+                onClick={() => handleExportUsers("csv")}
+                title="Export user directory as CSV"
+              >
+                <Download size={14} /> Export CSV
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                }}
+                onClick={() => handleExportUsers("json")}
+                title="Export user directory as JSON"
+              >
+                <Download size={14} /> JSON
+              </button>
+              <button
+                type="button"
+                className="primary"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 14px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                }}
+                onClick={() => {
+                  setNewUserError("")
+                  setShowAddUserModal(true)
+                }}
+              >
+                <Plus size={15} /> Add User
+              </button>
+            </div>
+          </div>
+
+          {/* Directory Metrics Summary Cards */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "12px",
+              marginBottom: "16px",
+            }}
+          >
+            <div
+              className="panel"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 14px",
-                fontSize: "12px",
-                fontWeight: 600,
-                borderRadius: "8px",
-              }}
-              onClick={() => {
-                setNewUserError("")
-                setShowAddUserModal(true)
+                padding: "12px 16px",
+                border: "1px solid var(--border)",
+                borderRadius: "10px",
+                background: "var(--surface)",
               }}
             >
-              <Plus size={15} /> Add User
-            </button>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  fontWeight: 600,
+                }}
+              >
+                Total Registered
+              </div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 700,
+                  marginTop: "4px",
+                  color: "var(--text)",
+                }}
+              >
+                {userList.length}
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  marginTop: "2px",
+                }}
+              >
+                Active in directory
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                borderRadius: "10px",
+                background: "rgba(16, 185, 129, 0.05)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#10b981",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  fontWeight: 600,
+                }}
+              >
+                Active Pro
+              </div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 700,
+                  marginTop: "4px",
+                  color: "#10b981",
+                }}
+              >
+                {
+                  userList.filter(
+                    (u) =>
+                      u.subscriptionTier === "pro" && u.proStatus === "active",
+                  ).length
+                }
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  marginTop: "2px",
+                }}
+              >
+                Unrestricted tools access
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                border: "1px solid rgba(234, 179, 8, 0.3)",
+                borderRadius: "10px",
+                background: "rgba(234, 179, 8, 0.05)",
+                cursor:
+                  userList.filter((u) => u.proStatus === "pending").length > 0
+                    ? "pointer"
+                    : "default",
+              }}
+              onClick={() => {
+                const count = userList.filter(
+                  (u) => u.proStatus === "pending",
+                ).length
+                if (count > 0) {
+                  setUserStatusFilter(
+                    userStatusFilter === "pending" ? "all" : "pending",
+                  )
+                }
+              }}
+              title={
+                userList.filter((u) => u.proStatus === "pending").length > 0
+                  ? "Click to filter pending approvals"
+                  : undefined
+              }
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#eab308",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  fontWeight: 600,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Pending Approvals</span>
+                {userList.filter((u) => u.proStatus === "pending").length >
+                  0 && (
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      background: "rgba(234, 179, 8, 0.2)",
+                      padding: "1px 6px",
+                      borderRadius: "8px",
+                    }}
+                  >
+                    Needs action
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 700,
+                  marginTop: "4px",
+                  color: "#eab308",
+                }}
+              >
+                {userList.filter((u) => u.proStatus === "pending").length}
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  marginTop: "2px",
+                }}
+              >
+                Awaiting admin review
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: "12px 16px",
+                border: "1px solid rgba(0, 201, 183, 0.3)",
+                borderRadius: "10px",
+                background: "rgba(0, 201, 183, 0.05)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#00C9B7",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  fontWeight: 600,
+                }}
+              >
+                Administrators
+              </div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 700,
+                  marginTop: "4px",
+                  color: "#00C9B7",
+                }}
+              >
+                {
+                  userList.filter(
+                    (u) => u.role === "admin" || u.role === "sub-admin",
+                  ).length
+                }
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  marginTop: "2px",
+                }}
+              >
+                Admin & sub-admin roles
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Filter Controls */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "10px",
+              marginBottom: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                flex: "1 1 240px",
+                maxWidth: "380px",
+                position: "relative",
+              }}
+            >
+              <Search
+                size={14}
+                style={{
+                  position: "absolute",
+                  left: "10px",
+                  color: "var(--muted)",
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search users by name, email, or ID…"
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "7px 12px 7px 30px",
+                  fontSize: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--text)",
+                }}
+              />
+              {userSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setUserSearchQuery("")}
+                  style={{
+                    position: "absolute",
+                    right: "8px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--muted)",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Role:
+                </span>
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value as any)}
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: "11px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border)",
+                    background: "var(--surface)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="all">All Roles</option>
+                  <option value="admin">Admin</option>
+                  <option value="sub-admin">Sub-Admin</option>
+                  <option value="user">User</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Status:
+                </span>
+                <select
+                  value={userStatusFilter}
+                  onChange={(e) => setUserStatusFilter(e.target.value as any)}
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: "11px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border)",
+                    background: "var(--surface)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pro">Active Pro</option>
+                  <option value="pending">Pending Approval</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+
+              {(userSearchQuery ||
+                userRoleFilter !== "all" ||
+                userStatusFilter !== "all") && (
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    background: "none",
+                    border: "none",
+                    padding: "4px 6px",
+                  }}
+                  onClick={() => {
+                    setUserSearchQuery("")
+                    setUserRoleFilter("all")
+                    setUserStatusFilter("all")
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  marginLeft: "4px",
+                }}
+              >
+                Showing{" "}
+                {
+                  userList.filter((u) => {
+                    if (userSearchQuery.trim()) {
+                      const q = userSearchQuery.trim().toLowerCase()
+                      const matchName = (u.name || "").toLowerCase().includes(q)
+                      const matchEmail = (u.email || "")
+                        .toLowerCase()
+                        .includes(q)
+                      const matchId = (u.id || "").toLowerCase().includes(q)
+                      if (!matchName && !matchEmail && !matchId) return false
+                    }
+                    if (userRoleFilter !== "all") {
+                      if ((u.role || "user") !== userRoleFilter) return false
+                    }
+                    if (userStatusFilter !== "all") {
+                      if (
+                        userStatusFilter === "pro" &&
+                        !(
+                          u.subscriptionTier === "pro" &&
+                          u.proStatus === "active"
+                        )
+                      ) {
+                        return false
+                      }
+                      if (
+                        userStatusFilter === "pending" &&
+                        u.proStatus !== "pending"
+                      ) {
+                        return false
+                      }
+                      if (
+                        userStatusFilter === "standard" &&
+                        (u.subscriptionTier === "pro" ||
+                          u.proStatus === "active" ||
+                          u.proStatus === "pending")
+                      ) {
+                        return false
+                      }
+                    }
+                    return true
+                  }).length
+                }{" "}
+                of {userList.length}
+              </span>
+            </div>
           </div>
           <div className="panel" style={{ padding: "0", overflow: "hidden" }}>
             <table
@@ -2057,182 +2615,318 @@ export default function AdminPanel({
                     </td>
                   </tr>
                 ) : (
-                  userList.map((u) => {
-                    const isRoot = isRootAdmin(u)
-                    const isProActive =
-                      u.subscriptionTier === "pro" && u.proStatus === "active"
-                    const isPending = u.proStatus === "pending"
-                    return (
-                      <tr
-                        key={u.id}
-                        style={{ borderBottom: "1px solid var(--border)" }}
-                      >
-                        <td style={{ padding: "12px 16px" }}>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            {u.name}
-                            {isRoot && (
-                              <span
+                  userList
+                    .filter((u) => {
+                      if (userSearchQuery.trim()) {
+                        const q = userSearchQuery.trim().toLowerCase()
+                        const matchName = (u.name || "")
+                          .toLowerCase()
+                          .includes(q)
+                        const matchEmail = (u.email || "")
+                          .toLowerCase()
+                          .includes(q)
+                        const matchId = (u.id || "").toLowerCase().includes(q)
+                        if (!matchName && !matchEmail && !matchId) return false
+                      }
+                      if (userRoleFilter !== "all") {
+                        if ((u.role || "user") !== userRoleFilter) return false
+                      }
+                      if (userStatusFilter !== "all") {
+                        if (
+                          userStatusFilter === "pro" &&
+                          !(
+                            u.subscriptionTier === "pro" &&
+                            u.proStatus === "active"
+                          )
+                        ) {
+                          return false
+                        }
+                        if (
+                          userStatusFilter === "pending" &&
+                          u.proStatus !== "pending"
+                        ) {
+                          return false
+                        }
+                        if (
+                          userStatusFilter === "standard" &&
+                          (u.subscriptionTier === "pro" ||
+                            u.proStatus === "active" ||
+                            u.proStatus === "pending")
+                        ) {
+                          return false
+                        }
+                      }
+                      return true
+                    })
+                    .map((u) => {
+                      const isRoot = isRootAdmin(u)
+                      const isProActive =
+                        u.subscriptionTier === "pro" && u.proStatus === "active"
+                      const isPending = u.proStatus === "pending"
+                      const initials = (u.name || "U")
+                        .split(" ")
+                        .map((p) => p[0])
+                        .slice(0, 2)
+                        .join("")
+                        .toUpperCase()
+
+                      return (
+                        <tr
+                          key={u.id}
+                          style={{ borderBottom: "1px solid var(--border)" }}
+                        >
+                          <td style={{ padding: "12px 16px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                              }}
+                            >
+                              <div
                                 style={{
-                                  fontSize: "10px",
-                                  padding: "1px 6px",
-                                  borderRadius: "10px",
-                                  background: "rgba(234, 179, 8, 0.2)",
-                                  color: "#eab308",
+                                  width: "30px",
+                                  height: "30px",
+                                  borderRadius: "50%",
+                                  background: isRoot
+                                    ? "rgba(234, 179, 8, 0.2)"
+                                    : "rgba(0, 201, 183, 0.15)",
+                                  color: isRoot ? "#eab308" : "#00C9B7",
+                                  display: "grid",
+                                  placeItems: "center",
                                   fontWeight: 700,
-                                  border: "1px solid rgba(234, 179, 8, 0.4)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "3px",
+                                  fontSize: "11px",
+                                  flexShrink: 0,
                                 }}
                               >
-                                <Lock size={10} /> Root
-                              </span>
-                            )}
-                          </div>
-                          <small style={{ color: "var(--muted)" }}>
-                            {u.email}
-                          </small>
-                        </td>
-                        <td style={{ padding: "12px 16px" }}>
-                          {isRoot ? (
-                            <span
-                              style={{
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                                fontSize: "11px",
-                                fontWeight: 700,
-                                background: "rgba(234,179,8,0.2)",
-                                color: "#eab308",
-                                border: "1px solid rgba(234,179,8,0.4)",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                              }}
-                            >
-                              <Lock size={11} /> ROOT ADMIN
-                            </span>
-                          ) : (
-                            <select
-                              value={u.role || "user"}
-                              aria-label={`Change role for ${u.name}`}
-                              onChange={(e) =>
-                                handleRoleChange(
-                                  u.id,
-                                  e.target
-                                    .value as "admin" | "sub-admin" | "user",
-                                )
-                              }
-                              style={{
-                                padding: "4px 8px",
-                                fontSize: "11px",
-                                borderRadius: "4px",
-                                border: "1px solid var(--border)",
-                                background:
-                                  u.role === "admin"
-                                    ? "rgba(234,179,8,0.15)"
-                                    : u.role === "sub-admin"
-                                      ? "rgba(0,201,183,0.15)"
-                                      : "var(--surface)",
-                                color:
-                                  u.role === "admin"
-                                    ? "#eab308"
-                                    : u.role === "sub-admin"
-                                      ? "#00C9B7"
-                                      : "var(--text)",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <option value="user">User</option>
-                              <option value="sub-admin">Sub-Admin</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                          )}
-                        </td>
-                        <td style={{ padding: "12px 16px" }}>
-                          {isRoot ? (
-                            <span
-                              style={{
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                                fontSize: "11px",
-                                fontWeight: 700,
-                                background: "rgba(16,185,129,0.2)",
-                                color: "#10b981",
-                                border: "1px solid rgba(16,185,129,0.4)",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                              }}
-                            >
-                              <Lock size={11} /> PERMANENT PRO
-                            </span>
-                          ) : (
-                            <span
-                              style={{
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                background: isProActive
-                                  ? "rgba(16,185,129,0.15)"
-                                  : isPending
-                                    ? "rgba(234,179,8,0.15)"
-                                    : "var(--surface)",
-                                color: isProActive
-                                  ? "#10b981"
-                                  : isPending
-                                    ? "#eab308"
-                                    : "var(--muted)",
-                              }}
-                            >
-                              {isProActive
-                                ? "ACTIVE PRO"
-                                : isPending
-                                  ? "PENDING APPROVAL"
-                                  : "STANDARD"}
-                            </span>
-                          )}
-                        </td>
-                        <td
-                          style={{ padding: "12px 16px", textAlign: "right" }}
-                        >
-                          <div
-                            style={{
-                              display: "inline-flex",
-                              gap: "6px",
-                              alignItems: "center",
-                            }}
-                          >
-                            {/* Root Admin: ONLY Change Password */}
+                                {initials}
+                              </div>
+                              <div>
+                                <div
+                                  style={{
+                                    fontWeight: 600,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                  }}
+                                >
+                                  {u.name}
+                                  {isRoot && (
+                                    <span
+                                      style={{
+                                        fontSize: "10px",
+                                        padding: "1px 6px",
+                                        borderRadius: "10px",
+                                        background: "rgba(234, 179, 8, 0.2)",
+                                        color: "#eab308",
+                                        fontWeight: 700,
+                                        border:
+                                          "1px solid rgba(234, 179, 8, 0.4)",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "3px",
+                                      }}
+                                    >
+                                      <Lock size={10} /> Root
+                                    </span>
+                                  )}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "var(--muted)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    marginTop: "2px",
+                                  }}
+                                >
+                                  <span>{u.email}</span>
+                                  <span>•</span>
+                                  <span style={{ opacity: 0.7 }}>{u.id}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
                             {isRoot ? (
-                              <button
-                                className="secondary"
+                              <span
                                 style={{
-                                  padding: "4px 10px",
-                                  fontSize: "11px",
+                                  padding: "3px 8px",
                                   borderRadius: "4px",
-                                  border: "1px solid rgba(234,179,8,0.4)",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "rgba(234,179,8,0.2)",
                                   color: "#eab308",
+                                  border: "1px solid rgba(234,179,8,0.4)",
                                   display: "inline-flex",
                                   alignItems: "center",
                                   gap: "4px",
                                 }}
-                                onClick={() => handleOpenChangePassword(u)}
-                                title="Change root administrator password"
                               >
-                                <Key size={12} /> Change Password
-                              </button>
+                                <Lock size={11} /> ROOT ADMIN
+                              </span>
                             ) : (
-                              <>
-                                {isProActive ? (
+                              <select
+                                value={u.role || "user"}
+                                aria-label={`Change role for ${u.name}`}
+                                onChange={(e) =>
+                                  handleRoleChange(
+                                    u.id,
+                                    e.target
+                                      .value as "admin" | "sub-admin" | "user",
+                                  )
+                                }
+                                style={{
+                                  padding: "4px 8px",
+                                  fontSize: "11px",
+                                  borderRadius: "4px",
+                                  border: "1px solid var(--border)",
+                                  background:
+                                    u.role === "admin"
+                                      ? "rgba(234,179,8,0.15)"
+                                      : u.role === "sub-admin"
+                                        ? "rgba(0,201,183,0.15)"
+                                        : "var(--surface)",
+                                  color:
+                                    u.role === "admin"
+                                      ? "#eab308"
+                                      : u.role === "sub-admin"
+                                        ? "#00C9B7"
+                                        : "var(--text)",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <option value="user">User</option>
+                                <option value="sub-admin">Sub-Admin</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            {isRoot ? (
+                              <span
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "rgba(16,185,129,0.2)",
+                                  color: "#10b981",
+                                  border: "1px solid rgba(16,185,129,0.4)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                }}
+                              >
+                                <Lock size={11} /> PERMANENT PRO
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  background: isProActive
+                                    ? "rgba(16,185,129,0.15)"
+                                    : isPending
+                                      ? "rgba(234,179,8,0.15)"
+                                      : "var(--surface)",
+                                  color: isProActive
+                                    ? "#10b981"
+                                    : isPending
+                                      ? "#eab308"
+                                      : "var(--muted)",
+                                }}
+                              >
+                                {isProActive
+                                  ? "ACTIVE PRO"
+                                  : isPending
+                                    ? "PENDING APPROVAL"
+                                    : "STANDARD"}
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "right",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                gap: "6px",
+                                alignItems: "center",
+                              }}
+                            >
+                              {/* Edit User Button */}
+                              <button
+                                className="secondary"
+                                style={{
+                                  padding: "4px 8px",
+                                  fontSize: "11px",
+                                  borderRadius: "4px",
+                                  border: "1px solid var(--border)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                }}
+                                onClick={() => handleOpenEditUser(u)}
+                                title={`Edit profile details for ${u.name}`}
+                              >
+                                <Edit2 size={12} /> Edit
+                              </button>
+
+                              {/* Root Admin: ONLY Change Password */}
+                              {isRoot ? (
+                                <button
+                                  className="secondary"
+                                  style={{
+                                    padding: "4px 10px",
+                                    fontSize: "11px",
+                                    borderRadius: "4px",
+                                    border: "1px solid rgba(234,179,8,0.4)",
+                                    color: "#eab308",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                  }}
+                                  onClick={() => handleOpenChangePassword(u)}
+                                  title="Change root administrator password"
+                                >
+                                  <Key size={12} /> Change Password
+                                </button>
+                              ) : (
+                                <>
+                                  {isProActive ? (
+                                    <button
+                                      className="secondary"
+                                      style={{
+                                        padding: "4px 8px",
+                                        fontSize: "11px",
+                                        borderRadius: "4px",
+                                        border: "1px solid var(--border)",
+                                      }}
+                                      onClick={() => handleRevokePro(u.id)}
+                                    >
+                                      Revoke Pro
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className="primary"
+                                      style={{
+                                        padding: "4px 8px",
+                                        fontSize: "11px",
+                                        borderRadius: "4px",
+                                      }}
+                                      onClick={() => handleApprovePro(u.id)}
+                                    >
+                                      Approve Pro
+                                    </button>
+                                  )}
                                   <button
                                     className="secondary"
                                     style={{
@@ -2240,64 +2934,41 @@ export default function AdminPanel({
                                       fontSize: "11px",
                                       borderRadius: "4px",
                                       border: "1px solid var(--border)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "3px",
                                     }}
-                                    onClick={() => handleRevokePro(u.id)}
+                                    onClick={() => handleOpenChangePassword(u)}
+                                    title={`Change password for ${u.name}`}
                                   >
-                                    Revoke Pro
+                                    <Key size={12} /> Password
                                   </button>
-                                ) : (
                                   <button
-                                    className="primary"
+                                    className="secondary"
                                     style={{
                                       padding: "4px 8px",
                                       fontSize: "11px",
                                       borderRadius: "4px",
+                                      border: "1px solid rgba(239,68,68,0.3)",
+                                      color: "#ef4444",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "3px",
                                     }}
-                                    onClick={() => handleApprovePro(u.id)}
+                                    onClick={() =>
+                                      handleDeleteUser(u.id, u.name)
+                                    }
+                                    title={`Delete ${u.name}`}
                                   >
-                                    Approve Pro
+                                    <Trash2 size={12} /> Delete
                                   </button>
-                                )}
-                                <button
-                                  className="secondary"
-                                  style={{
-                                    padding: "4px 8px",
-                                    fontSize: "11px",
-                                    borderRadius: "4px",
-                                    border: "1px solid var(--border)",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "3px",
-                                  }}
-                                  onClick={() => handleOpenChangePassword(u)}
-                                  title={`Change password for ${u.name}`}
-                                >
-                                  <Key size={12} /> Password
-                                </button>
-                                <button
-                                  className="secondary"
-                                  style={{
-                                    padding: "4px 8px",
-                                    fontSize: "11px",
-                                    borderRadius: "4px",
-                                    border: "1px solid rgba(239,68,68,0.3)",
-                                    color: "#ef4444",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "3px",
-                                  }}
-                                  onClick={() => handleDeleteUser(u.id, u.name)}
-                                  title={`Delete ${u.name}`}
-                                >
-                                  <Trash2 size={12} /> Delete
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
                 )}
               </tbody>
             </table>
@@ -2580,6 +3251,325 @@ export default function AdminPanel({
                     </button>
                     <button type="submit" className="primary">
                       Create User Account
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Edit User Modal */}
+          {showEditUserModal && editingUser && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.7)",
+                backdropFilter: "blur(4px)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 999999,
+                padding: "20px",
+              }}
+              onClick={() => setShowEditUserModal(false)}
+            >
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  maxWidth: "480px",
+                  width: "100%",
+                  boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      margin: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <Edit2 size={18} color="#00C9B7" /> Edit User Account
+                  </h3>
+                  <button
+                    onClick={() => setShowEditUserModal(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {editUserError && (
+                  <div
+                    style={{
+                      padding: "8px 12px",
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      borderRadius: "6px",
+                      color: "#ef4444",
+                      fontSize: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    {editUserError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveEditUser}>
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editUserForm.name}
+                      onChange={(e) =>
+                        setEditUserForm({
+                          ...editUserForm,
+                          name: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={editUserForm.email}
+                      disabled={isRootAdmin(editingUser)}
+                      onChange={(e) =>
+                        setEditUserForm({
+                          ...editUserForm,
+                          email: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: isRootAdmin(editingUser)
+                          ? "rgba(255,255,255,0.03)"
+                          : "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                        cursor: isRootAdmin(editingUser)
+                          ? "not-allowed"
+                          : "text",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    className="admin-form-two-col"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Role
+                      </label>
+                      <select
+                        value={editUserForm.role}
+                        disabled={isRootAdmin(editingUser)}
+                        onChange={(e) =>
+                          setEditUserForm({
+                            ...editUserForm,
+                            role: e.target.value as any,
+                          })
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                          cursor: isRootAdmin(editingUser)
+                            ? "not-allowed"
+                            : "pointer",
+                        }}
+                      >
+                        <option value="user">Standard User</option>
+                        <option value="sub-admin">Sub-Admin</option>
+                        <option value="admin">Full Admin</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Subscription Tier
+                      </label>
+                      <select
+                        value={editUserForm.subscriptionTier}
+                        disabled={isRootAdmin(editingUser)}
+                        onChange={(e) =>
+                          setEditUserForm({
+                            ...editUserForm,
+                            subscriptionTier: e.target.value as any,
+                            proStatus:
+                              e.target.value === "pro" ? "active" : "none",
+                          })
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                          cursor: isRootAdmin(editingUser)
+                            ? "not-allowed"
+                            : "pointer",
+                        }}
+                      >
+                        <option value="standard">Standard Tier</option>
+                        <option value="pro">Pro Tier</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: "18px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "var(--muted)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Pro Activation Status
+                    </label>
+                    <select
+                      value={editUserForm.proStatus}
+                      disabled={isRootAdmin(editingUser)}
+                      onChange={(e) =>
+                        setEditUserForm({
+                          ...editUserForm,
+                          proStatus: e.target.value as any,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        color: "var(--text)",
+                        fontSize: "13px",
+                        cursor: isRootAdmin(editingUser)
+                          ? "not-allowed"
+                          : "pointer",
+                      }}
+                    >
+                      <option value="none">None / Inactive</option>
+                      <option value="pending">Pending Approval</option>
+                      <option value="active">Active Pro</option>
+                    </select>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "10px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setShowEditUserModal(false)}
+                      style={{
+                        padding: "8px 16px",
+                        fontSize: "13px",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="primary"
+                      style={{
+                        padding: "8px 16px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        borderRadius: "8px",
+                      }}
+                    >
+                      Save Changes
                     </button>
                   </div>
                 </form>

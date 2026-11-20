@@ -88,7 +88,9 @@ export interface AuthAdapter {
 
   signUp(values: SignUpValues): Promise<UserAccount>
 
-  requestPasswordReset(email: string): Promise<{ message: string }>
+  requestPasswordReset(
+    email: string,
+  ): Promise<{ message: string; code?: string }>
 }
 
 export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
@@ -138,6 +140,13 @@ const CREDENTIALS_KEY = "fluxkit-credentials"
 
 const GOOGLE_CLIENT_ID_KEY = "fluxkit-google-client-id"
 
+const RESET_TOKENS_KEY = "fluxkit-reset-tokens"
+
+interface ResetTokenRecord {
+  code: string
+  expiresAt: number
+}
+
 interface StoredCredential {
   salt: string
 
@@ -164,7 +173,7 @@ function getStorage(): Storage | null {
   return null
 }
 
-function getStoredCredentials(): Record<string, StoredCredential> {
+export function getStoredCredentials(): Record<string, StoredCredential> {
   const storage = getStorage()
 
   if (!storage) return {}
@@ -180,7 +189,7 @@ function getStoredCredentials(): Record<string, StoredCredential> {
   }
 }
 
-function saveStoredCredential(email: string, salt: string, hash: string): void {
+export function saveStoredCredential(email: string, salt: string, hash: string): void {
   const storage = getStorage()
 
   if (!storage || typeof storage.setItem !== "function") return
@@ -191,6 +200,57 @@ function saveStoredCredential(email: string, salt: string, hash: string): void {
     creds[email.toLowerCase()] = { salt, hash }
 
     storage.setItem(CREDENTIALS_KEY, JSON.stringify(creds))
+  } catch {
+    /* storage might fail */
+  }
+}
+
+export function getStoredResetTokens(): Record<string, ResetTokenRecord> {
+  const storage = getStorage()
+
+  if (!storage) return {}
+
+  try {
+    const raw = storage.getItem(RESET_TOKENS_KEY)
+
+    if (!raw) return {}
+
+    return JSON.parse(raw) as Record<string, ResetTokenRecord>
+  } catch {
+    return {}
+  }
+}
+
+export function saveStoredResetToken(email: string, code: string): void {
+  const storage = getStorage()
+
+  if (!storage || typeof storage.setItem !== "function") return
+
+  try {
+    const tokens = getStoredResetTokens()
+
+    tokens[email.toLowerCase()] = {
+      code,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    }
+
+    storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
+  } catch {
+    /* storage might fail */
+  }
+}
+
+export function clearStoredResetToken(email: string): void {
+  const storage = getStorage()
+
+  if (!storage || typeof storage.setItem !== "function") return
+
+  try {
+    const tokens = getStoredResetTokens()
+
+    delete tokens[email.toLowerCase()]
+
+    storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
   } catch {
     /* storage might fail */
   }
@@ -930,14 +990,21 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
 async function localRequestPasswordReset(
   email: string,
-): Promise<{ message: string }> {
+): Promise<{ message: string; code?: string }> {
   const cleanEmail = (email || "").trim().toLowerCase()
 
   if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     throw new Error("Please enter a valid email address.")
   }
 
-  return { message: "Password reset instructions sent." }
+  // Generate 6-digit verification code
+  const code = Math.floor(100000 + Math.random() * 900000).toString()
+  saveStoredResetToken(cleanEmail, code)
+
+  return {
+    message: "Password reset verification code generated.",
+    code,
+  }
 }
 
 // Synchronous connection check prior to returning promises
@@ -960,12 +1027,92 @@ export function signUp(values: SignUpValues): Promise<UserAccount> {
 
 export function requestPasswordReset(
   email: string,
-): Promise<{ message: string }> {
+): Promise<{ message: string; code?: string }> {
   assertConnected(email)
 
   if (customAdapter) return customAdapter.requestPasswordReset(email)
 
   return localRequestPasswordReset(email)
+}
+
+export function verifyResetCode(email: string, code: string): boolean {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  const cleanCode = (code || "").trim()
+  if (!cleanEmail || !cleanCode) return false
+
+  const tokens = getStoredResetTokens()
+  const record = tokens[cleanEmail]
+  if (!record) return false
+
+  if (Date.now() > record.expiresAt) {
+    clearStoredResetToken(cleanEmail)
+    return false
+  }
+
+  return record.code === cleanCode
+}
+
+export async function completePasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<{ success: boolean; message: string; user?: UserAccount }> {
+  const cleanEmail = (email || "").trim().toLowerCase()
+  assertConnected(cleanEmail)
+
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    throw new Error("Please enter a valid email address.")
+  }
+
+  if (!newPassword || newPassword.length < 12) {
+    throw new Error("Password must be at least 12 characters long.")
+  }
+
+  const valid = verifyResetCode(cleanEmail, code)
+  if (!valid) {
+    throw new Error("Invalid or expired 6-digit verification code.")
+  }
+
+  changeAccountPassword(cleanEmail, newPassword)
+
+  const accounts = getRegisteredAccounts()
+  let user = accounts.find((a) => a.email.toLowerCase() === cleanEmail)
+
+  if (!user) {
+    if (
+      cleanEmail === "admin@masterfilepro.com" ||
+      cleanEmail === "admin@fluxkit.com"
+    ) {
+      user = {
+        ...SEEDED_ADMIN_ACCOUNT,
+        email: cleanEmail,
+        lastLoginAt: new Date().toISOString(),
+      }
+    } else {
+      user = {
+        id: generateUserId(),
+        name: formatNameFromEmail(cleanEmail),
+        email: cleanEmail,
+        provider: "email",
+        role: "user",
+        subscriptionTier: "standard",
+        proStatus: "none",
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      }
+      accounts.push(user)
+      saveRegisteredAccounts(accounts)
+    }
+  }
+
+  clearStoredResetToken(cleanEmail)
+
+  return {
+    success: true,
+    message:
+      "Your password has been successfully reset. You can now sign in with your new password.",
+    user,
+  }
 }
 
 // --- Client Google / Gmail Authentication & Account Management ---

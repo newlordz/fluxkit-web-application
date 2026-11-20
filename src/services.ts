@@ -11299,9 +11299,9 @@ export async function dbGetAllDocuments(): Promise<SessionDocument[]> {
       const req = store.getAll()
 
       req.onsuccess = () => {
-        const results = (req.result || []) as SessionDocument & {
+        const results = (req.result || []) as (SessionDocument & {
           persistedAt?: number
-        }[]
+        })[]
         results.sort((a, b) => (b.persistedAt || 0) - (a.persistedAt || 0))
         resolve(results)
       }

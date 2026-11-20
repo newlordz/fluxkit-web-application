@@ -25,6 +25,7 @@ import {
   authConnected,
   isConnected,
   requestPasswordReset,
+  completePasswordReset,
   signIn,
   signUp,
   signOut,
@@ -37,9 +38,9 @@ import GoogleAuth from "./GoogleAuth"
 
 export type AuthPageMode = "sign-in" | "sign-up" | "reset-password"
 
-type Field = "name" | "email" | "password" | "confirm"
+type Field = "name" | "email" | "password" | "confirm" | "code"
 
-type Values = Record<Field, string>
+type Values = Record<Exclude<Field, "code">, string>
 
 function AuthFormField({
   name,
@@ -165,6 +166,14 @@ export default function AuthPage({
   const [status, setStatus] =
     useState<"idle" | "loading" | "success" | "failed">("idle")
 
+  // Password reset step & state
+  const [resetStep, setResetStep] = useState<1 | 2>(1)
+  const [resetCode, setResetCode] = useState("")
+  const [newResetPassword, setNewResetPassword] = useState("")
+  const [confirmResetPassword, setConfirmResetPassword] = useState("")
+  const [resetCodeHint, setResetCodeHint] = useState<string | null>(null)
+  const [resetCompleted, setResetCompleted] = useState(false)
+
   const notify = useNotify()
 
   const registration = mode === "sign-up"
@@ -172,12 +181,16 @@ export default function AuthPage({
   const reset = mode === "reset-password"
 
   const title = reset
-    ? "A fresh start."
+    ? resetCompleted
+      ? "Password updated."
+      : resetStep === 2
+        ? "Set a new password."
+        : "A fresh start."
     : registration
       ? "Make room for more."
       : "Back to your flow."
 
-  const update = (field: Field, value: string) => {
+  const update = (field: Exclude<Field, "code">, value: string) => {
     setValues((v) => ({ ...v, [field]: value }))
 
     setErrors((e) => ({ ...e, [field]: undefined }))
@@ -191,6 +204,94 @@ export default function AuthPage({
     event.preventDefault()
 
     const next: Partial<Record<Field, string>> = {}
+
+    // Special handling for Step 2 of password reset
+    if (reset && resetStep === 2) {
+      if (!resetCode.trim() || resetCode.trim().length !== 6) {
+        next.code = "Please enter the 6-digit verification code."
+      }
+
+      if (!newResetPassword) {
+        next.password = "Enter your new password."
+      } else if (newResetPassword.length < 12) {
+        next.password = "Use at least 12 characters for your password."
+      }
+
+      if (confirmResetPassword !== newResetPassword) {
+        next.confirm = "Your passwords don’t match."
+      }
+
+      setErrors(next)
+
+      if (Object.keys(next).length) {
+        return
+      }
+
+      setStatus("loading")
+      setFeedback("")
+
+      try {
+        const res = await completePasswordReset(
+          values.email.trim(),
+          resetCode.trim(),
+          newResetPassword,
+        )
+        setStatus("success")
+        setResetCompleted(true)
+        const msg =
+          res.message ||
+          "Your password has been successfully reset. You can now sign in."
+        setFeedback(msg)
+        notify(msg, "success")
+      } catch (error) {
+        setStatus("failed")
+        setFeedback(
+          error instanceof Error
+            ? error.message
+            : "Failed to reset password. Please try again.",
+        )
+      }
+      return
+    }
+
+    // Reset Step 1: Request code
+    if (reset && resetStep === 1) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
+        next.email = "Enter a valid email address."
+      }
+
+      setErrors(next)
+
+      if (Object.keys(next).length) {
+        document.getElementById("email")?.focus()
+        return
+      }
+
+      setStatus("loading")
+      setFeedback("")
+
+      try {
+        const result = await requestPasswordReset(values.email.trim())
+        setStatus("idle")
+        if (result?.code) {
+          setResetCodeHint(result.code)
+          setResetCode(result.code)
+        }
+        setResetStep(2)
+        const msg = result?.code
+          ? `Reset code generated: ${result.code}`
+          : result?.message || "Password reset code sent."
+        notify(msg, "info")
+      } catch (error) {
+        setStatus("failed")
+        setFeedback(
+          error instanceof Error
+            ? error.message
+            : "Unable to process password reset. Please try again.",
+        )
+      }
+      return
+    }
 
     if (registration && !values.name.trim()) next.name = "Enter your name."
 
@@ -218,27 +319,23 @@ export default function AuthPage({
     setFeedback("")
 
     try {
-      const result = await (reset
-        ? requestPasswordReset(values.email.trim())
-        : registration
-          ? signUp({
-              name: values.name.trim(),
+      const result = await (registration
+        ? signUp({
+            name: values.name.trim(),
 
-              email: values.email.trim(),
+            email: values.email.trim(),
 
-              password: values.password,
-            })
-          : signIn({ email: values.email.trim(), password: values.password }))
+            password: values.password,
+          })
+        : signIn({ email: values.email.trim(), password: values.password }))
 
       setStatus("success")
 
       const msg =
         result?.message ||
-        (reset
-          ? "Password reset instructions sent."
-          : registration
-            ? "Account created successfully."
-            : "Successfully signed in.")
+        (registration
+          ? "Account created successfully."
+          : "Successfully signed in.")
 
       setFeedback(msg)
 
@@ -414,126 +511,306 @@ export default function AuthPage({
             </div>
           )}
 
-          <form noValidate onSubmit={submit}>
-            <fieldset disabled={status === "loading"} className="auth-fieldset">
-              {registration && (
-                <AuthFormField
-                  name="name"
-                  label="Your name"
-                  error={errors.name}
-                >
-                  <input
-                    id="name"
-                    autoComplete="name"
-                    value={values.name}
-                    maxLength={100}
-                    onChange={(e) => update("name", e.target.value)}
-                    aria-invalid={!!errors.name}
-                    aria-describedby={errors.name ? "name-error" : undefined}
-                    placeholder="Jamie Davis"
-                    required
-                  />
-                </AuthFormField>
-              )}
-              <AuthFormField
-                name="email"
-                label="Email address"
-                error={errors.email}
+          {reset && resetCompleted ? (
+            <div style={{ textAlign: "center", padding: "16px 0" }}>
+              <div
+                className="auth-success"
+                role="status"
+                style={{ marginBottom: "18px" }}
               >
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={values.email}
-                  maxLength={254}
-                  onChange={(e) => update("email", e.target.value)}
-                  aria-invalid={!!errors.email}
-                  aria-describedby={errors.email ? "email-error" : undefined}
-                  placeholder="you@example.com"
-                  required
-                />
-              </AuthFormField>
-              {!reset && values.email.toLowerCase().includes("@gmail") && (
-                <div className="auth-field-hint">
-                  <span>💡 Tip:</span> Use <strong>Continue with Google</strong>{" "}
-                  below to sign in with your Gmail account without entering a
-                  password.
-                </div>
-              )}
-              {!reset && (
-                <AuthFormField
-                  name="password"
-                  label="Password"
-                  error={errors.password}
-                >
-                  <PasswordInput
-                    id="password"
-                    value={values.password}
-                    onChange={(v) => update("password", v)}
-                    error={errors.password}
-                    newPassword={registration}
-                  />
-                </AuthFormField>
-              )}
-              {registration && (
-                <>
-                  <p id="password-guide" className="auth-password-guide">
-                    Use 12 or more characters. A unique passphrase works well.
-                  </p>
-                  <AuthFormField
-                    name="confirm"
-                    label="Confirm password"
-                    error={errors.confirm}
-                  >
-                    <PasswordInput
-                      id="confirm"
-                      value={values.confirm}
-                      onChange={(v) => update("confirm", v)}
-                      error={errors.confirm}
-                      newPassword
-                    />
-                  </AuthFormField>
-                </>
-              )}
-              {!reset && !registration && (
-                <div className="auth-forgot">
-                  <a href="#reset-password">Forgot password?</a>
-                </div>
-              )}
-              {feedback && (
-                <div
-                  className={status === "failed" ? "error" : "auth-success"}
-                  role={status === "failed" ? "alert" : "status"}
-                >
-                  {feedback}
-                </div>
-              )}
-              <button
+                <strong>Password successfully reset!</strong>
+                <p style={{ margin: "6px 0 0", fontSize: "13px" }}>
+                  You can now sign in with your newly updated password.
+                </p>
+              </div>
+              <a
+                href="#sign-in"
                 className="primary auth-submit"
-                disabled={
-                  status === "loading" ||
-                  !values.email.trim() ||
-                  (!reset && !values.password) ||
-                  (registration && (!values.name.trim() || !values.confirm))
-                }
+                style={{
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: "8px",
+                  width: "100%",
+                }}
               >
-                {status === "loading" ? (
+                Sign in to your account <ArrowRight size={18} />
+              </a>
+            </div>
+          ) : (
+            <form noValidate onSubmit={submit}>
+              <fieldset
+                disabled={status === "loading"}
+                className="auth-fieldset"
+              >
+                {reset && resetStep === 2 ? (
                   <>
-                    <LoaderCircle className="spin" size={17} /> Connecting…
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "14px",
+                        fontSize: "12px",
+                        background: "var(--surface)",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <span>
+                        Resetting for: <strong>{values.email}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--accent)",
+                          cursor: "pointer",
+                          border: "none",
+                          background: "none",
+                          padding: 0,
+                        }}
+                        onClick={() => {
+                          setResetStep(1)
+                          setFeedback("")
+                        }}
+                      >
+                        Change email
+                      </button>
+                    </div>
+
+                    {resetCodeHint && (
+                      <div
+                        className="auth-field-hint"
+                        style={{
+                          background: "rgba(0, 201, 183, 0.12)",
+                          border: "1px solid rgba(0, 201, 183, 0.35)",
+                          padding: "10px 14px",
+                          borderRadius: "8px",
+                          marginBottom: "14px",
+                        }}
+                      >
+                        <span>🔑 Reset Code:</span>{" "}
+                        <strong
+                          style={{ fontSize: "14px", letterSpacing: "1px" }}
+                        >
+                          {resetCodeHint}
+                        </strong>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "var(--muted)",
+                            marginTop: "2px",
+                          }}
+                        >
+                          Enter this 6-digit verification code below to set your
+                          new password.
+                        </div>
+                      </div>
+                    )}
+
+                    <AuthFormField
+                      name="code"
+                      label="6-digit reset code"
+                      error={errors.code}
+                    >
+                      <input
+                        id="reset-code"
+                        value={resetCode}
+                        maxLength={6}
+                        onChange={(e) => {
+                          setResetCode(
+                            e.target.value.replace(/\D/g, "").slice(0, 6),
+                          )
+                          setErrors((err) => ({ ...err, code: undefined }))
+                        }}
+                        placeholder="123456"
+                        style={{
+                          letterSpacing: "3px",
+                          fontSize: "15px",
+                          fontWeight: 600,
+                        }}
+                        required
+                      />
+                    </AuthFormField>
+
+                    <AuthFormField
+                      name="password"
+                      label="New password"
+                      error={errors.password}
+                    >
+                      <PasswordInput
+                        id="new-password"
+                        value={newResetPassword}
+                        onChange={(v) => {
+                          setNewResetPassword(v)
+                          setErrors((err) => ({ ...err, password: undefined }))
+                        }}
+                        error={errors.password}
+                        newPassword
+                      />
+                    </AuthFormField>
+                    <p id="password-guide" className="auth-password-guide">
+                      Use 12 or more characters. A unique passphrase works well.
+                    </p>
+
+                    <AuthFormField
+                      name="confirm"
+                      label="Confirm new password"
+                      error={errors.confirm}
+                    >
+                      <PasswordInput
+                        id="confirm-password"
+                        value={confirmResetPassword}
+                        onChange={(v) => {
+                          setConfirmResetPassword(v)
+                          setErrors((err) => ({ ...err, confirm: undefined }))
+                        }}
+                        error={errors.confirm}
+                        newPassword
+                      />
+                    </AuthFormField>
                   </>
                 ) : (
                   <>
-                    {reset
-                      ? "Request reset link"
-                      : registration
-                        ? "Create account"
-                        : "Sign in"}
-                    <ArrowRight size={18} />
+                    {registration && (
+                      <AuthFormField
+                        name="name"
+                        label="Your name"
+                        error={errors.name}
+                      >
+                        <input
+                          id="name"
+                          autoComplete="name"
+                          value={values.name}
+                          maxLength={100}
+                          onChange={(e) => update("name", e.target.value)}
+                          aria-invalid={!!errors.name}
+                          aria-describedby={
+                            errors.name ? "name-error" : undefined
+                          }
+                          placeholder="Jamie Davis"
+                          required
+                        />
+                      </AuthFormField>
+                    )}
+                    <AuthFormField
+                      name="email"
+                      label="Email address"
+                      error={errors.email}
+                    >
+                      <input
+                        id="email"
+                        type="email"
+                        autoComplete="email"
+                        value={values.email}
+                        maxLength={254}
+                        onChange={(e) => update("email", e.target.value)}
+                        aria-invalid={!!errors.email}
+                        aria-describedby={
+                          errors.email ? "email-error" : undefined
+                        }
+                        placeholder="you@example.com"
+                        required
+                      />
+                    </AuthFormField>
+                    {!reset && values.email.toLowerCase().includes("@gmail") && (
+                      <div className="auth-field-hint">
+                        <span>💡 Tip:</span> Use{" "}
+                        <strong>Continue with Google</strong> below to sign in
+                        with your Gmail account without entering a password.
+                      </div>
+                    )}
+                    {!reset && (
+                      <AuthFormField
+                        name="password"
+                        label="Password"
+                        error={errors.password}
+                      >
+                        <PasswordInput
+                          id="password"
+                          value={values.password}
+                          onChange={(v) => update("password", v)}
+                          error={errors.password}
+                          newPassword={registration}
+                        />
+                      </AuthFormField>
+                    )}
+                    {registration && (
+                      <>
+                        <p id="password-guide" className="auth-password-guide">
+                          Use 12 or more characters. A unique passphrase works
+                          well.
+                        </p>
+                        <AuthFormField
+                          name="confirm"
+                          label="Confirm password"
+                          error={errors.confirm}
+                        >
+                          <PasswordInput
+                            id="confirm"
+                            value={values.confirm}
+                            onChange={(v) => update("confirm", v)}
+                            error={errors.confirm}
+                            newPassword
+                          />
+                        </AuthFormField>
+                      </>
+                    )}
+                    {!reset && !registration && (
+                      <div className="auth-forgot">
+                        <a href="#reset-password">Forgot password?</a>
+                      </div>
+                    )}
                   </>
                 )}
-              </button>
-            </fieldset>
-          </form>
+
+                {feedback && (
+                  <div
+                    className={status === "failed" ? "error" : "auth-success"}
+                    role={status === "failed" ? "alert" : "status"}
+                  >
+                    {feedback}
+                  </div>
+                )}
+                <button
+                  className="primary auth-submit"
+                  disabled={
+                    status === "loading" ||
+                    (reset && resetStep === 1 && !values.email.trim()) ||
+                    (reset &&
+                      resetStep === 2 &&
+                      (!resetCode.trim() ||
+                        !newResetPassword ||
+                        !confirmResetPassword)) ||
+                    (!reset && !values.email.trim()) ||
+                    (!reset && !values.password) ||
+                    (registration && (!values.name.trim() || !values.confirm))
+                  }
+                >
+                  {status === "loading" ? (
+                    <>
+                      <LoaderCircle className="spin" size={17} /> Connecting…
+                    </>
+                  ) : (
+                    <>
+                      {reset
+                        ? resetStep === 1
+                          ? "Send reset code"
+                          : "Reset password"
+                        : registration
+                          ? "Create account"
+                          : "Sign in"}
+                      <ArrowRight size={18} />
+                    </>
+                  )}
+                </button>
+              </fieldset>
+            </form>
+          )}
 
           {/* Google Sign-In below the submit button */}
           {!reset && (
