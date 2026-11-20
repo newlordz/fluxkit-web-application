@@ -6322,7 +6322,7 @@ export default function ToolPage({
                   <div style={{ marginTop: "14px" }}>
                     <ImageShowcaseDesigner
                       onPreviewChange={setShowcasePreviewData}
-                      onGenerated={async ({ url }) => {
+                      onGenerated={async ({ url, openCustomizer }) => {
                         setValue(url)
 
                         setRawQrPayload(url)
@@ -6339,11 +6339,19 @@ export default function ToolPage({
 
                             setStatus("completed")
 
-                            notify(
-                              "Image Showcase QR Code generated! Anyone who scans it will see your custom landing page.",
+                            if (openCustomizer) {
+                              setShowQRStudio(true)
 
-                              "success",
-                            )
+                              notify(
+                                "Showcase created! Customize your QR colors and design in QR Studio.",
+                                "success",
+                              )
+                            } else {
+                              notify(
+                                "Image Showcase QR Code generated! Anyone who scans it will see your custom landing page.",
+                                "success",
+                              )
+                            }
                           }
                         } catch (err: any) {
                           setError(
@@ -9982,22 +9990,43 @@ export default function ToolPage({
                 showcaseResultTab === "preview" ? (
                   <div className="w-full flex flex-col items-center">
                     <ShowcaseMobileMockup {...showcasePreviewData} />
-                    <div style={{ marginTop: "14px" }}>
+                    <div
+                      style={{
+                        marginTop: "14px",
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        justifyContent: "center",
+                      }}
+                    >
                       <button
                         type="button"
                         className="secondary"
                         style={{
                           display: "inline-flex",
-
                           alignItems: "center",
-
                           gap: "8px",
-
                           fontSize: "12px",
                         }}
                         onClick={() => setShowcaseResultTab("qr")}
                       >
                         <QrCode size={14} /> Back to QR Code
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "12px",
+                        }}
+                        onClick={() => {
+                          setShowcaseResultTab("qr")
+                          setShowQRStudio(true)
+                        }}
+                      >
+                        <Sparkles size={14} /> Customize QR Design
                       </button>
                     </div>
                   </div>

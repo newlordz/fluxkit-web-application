@@ -184,6 +184,8 @@ export interface ImageShowcaseDesignerProps {
     url: string
 
     showcase: ImageShowcaseData
+
+    openCustomizer?: boolean
   }) => void
 
   onCancel?: () => void
@@ -378,7 +380,7 @@ export default function ImageShowcaseDesigner({
     }
   }
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (openCustomizer: boolean = false) => {
     if (!imageDataUrl) {
       setError("Please upload an image for the showcase.")
 
@@ -426,7 +428,7 @@ export default function ImageShowcaseDesigner({
 
       const res = await saveShowcase(showcaseData)
 
-      onGenerated({ url: res.url, showcase: showcaseData })
+      onGenerated({ url: res.url, showcase: showcaseData, openCustomizer })
     } catch (err: any) {
       setError(err?.message || "Failed to generate image showcase.")
     } finally {
@@ -650,18 +652,31 @@ export default function ImageShowcaseDesigner({
           </div>
         )}
 
-        {/* Action Trigger Button */}
-        <button
-          type="button"
-          disabled={!imageDataUrl || isSaving}
-          onClick={handleGenerate}
-          className="w-full py-3.5 px-5 rounded-xl bg-[var(--accent)] hover:opacity-95 text-white font-semibold text-sm shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          <Sparkles size={16} />
-          <span>
-            {isSaving ? "Packaging Showcase..." : "Generate Showcase QR Code"}
-          </span>
-        </button>
+        {/* Action Trigger Buttons */}
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            disabled={!imageDataUrl || isSaving}
+            onClick={() => handleGenerate(false)}
+            className="w-full py-3.5 px-5 rounded-xl bg-[var(--accent)] hover:opacity-95 text-white font-semibold text-sm shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+          >
+            <Sparkles size={16} />
+            <span>
+              {isSaving ? "Packaging Showcase..." : "Generate Showcase QR Code"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={!imageDataUrl || isSaving}
+            onClick={() => handleGenerate(true)}
+            className="w-full py-2.5 px-4 rounded-xl border border-[var(--border)] bg-[var(--surface-hover)] hover:border-[var(--accent)] text-[var(--accent)] font-semibold text-xs transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            title="Design custom QR colors, embedded logo, and frames in QR Studio"
+          >
+            <Palette size={14} />
+            <span>Customize QR Code Design (Colors, Logo, Frame)</span>
+          </button>
+        </div>
       </div>
 
       {showInlinePreview && (
