@@ -1,4 +1,52 @@
-import { getAdobeCredentials, parseRequestBody, setCorsHeaders } from "../src/server/cloudUtils"
+function getAdobeCredentials(req: any = {}, body: any = {}) {
+  const q = req.query || {}
+  const clientId =
+    q.clientId ||
+    body.clientId ||
+    req.headers?.["x-adobe-client-id"] ||
+    process.env.VITE_ADOBE_CLIENT_ID ||
+    process.env.ADOBE_CLIENT_ID ||
+    ""
+  const clientSecret =
+    q.clientSecret ||
+    body.clientSecret ||
+    req.headers?.["x-adobe-client-secret"] ||
+    process.env.VITE_ADOBE_CLIENT_SECRET ||
+    process.env.ADOBE_CLIENT_SECRET ||
+    ""
+  return { clientId, clientSecret }
+}
+
+async function parseRequestBody(req: any): Promise<any> {
+  if (req.body && typeof req.body === "object") return req.body
+  if (typeof req.body === "string" && req.body.length > 0) {
+    try {
+      return JSON.parse(req.body)
+    } catch {
+      return {}
+    }
+  }
+  return new Promise((resolve) => {
+    let raw = ""
+    req.on("data", (chunk: any) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        resolve({})
+      }
+    })
+    req.on("error", () => resolve({}))
+  })
+}
+
+function setCorsHeaders(res: any) {
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res)
@@ -15,7 +63,7 @@ export default async function handler(req: any, res: any) {
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
     try {
-      const { clientId, clientSecret } = getAdobeCredentials()
+      const { clientId, clientSecret } = getAdobeCredentials(req)
 
       if (!clientId || !clientSecret) {
         const payload = {
@@ -76,7 +124,7 @@ export default async function handler(req: any, res: any) {
     const body = await parseRequestBody(req)
     const pdfBase64 = body.pdfBase64
     const compressionLevel = (body.compressionLevel || "MEDIUM").toUpperCase()
-    const { clientId, clientSecret } = getAdobeCredentials(body)
+    const { clientId, clientSecret } = getAdobeCredentials(req, body)
 
     if (!pdfBase64) {
       res.status?.(400)?.json?.({ error: "pdfBase64 is required" }) ||

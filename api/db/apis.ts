@@ -17,9 +17,14 @@ const DEFAULT_API_POOL = [
     description:
       "Industry-standard high-fidelity PDF compression, linearizing, and optimization with lossless font embedding.",
     dashboardUrl: "https://developer.adobe.com/document-services/apis/pdf-services/",
-    apiKey: process.env.VITE_ADOBE_CLIENT_ID || process.env.ADOBE_CLIENT_ID || "",
+    apiKey:
+      process.env.VITE_ADOBE_CLIENT_ID ||
+      process.env.ADOBE_CLIENT_ID ||
+      "9854c8e903d645f598132bb7957ae611",
     clientSecret:
-      process.env.VITE_ADOBE_CLIENT_SECRET || process.env.ADOBE_CLIENT_SECRET || "",
+      process.env.VITE_ADOBE_CLIENT_SECRET ||
+      process.env.ADOBE_CLIENT_SECRET ||
+      "",
     endpoint: "https://pdf-services.adobe.io",
     monthlyQuota: 500,
     usedThisMonth: 0,
@@ -38,9 +43,13 @@ const DEFAULT_API_POOL = [
       "Cloud-based PDF compression with balanced ratios and fast failover processing.",
     dashboardUrl: "https://developer.ilovepdf.com/",
     apiKey:
-      process.env.VITE_ILOVEPDF_PUBLIC_KEY || process.env.ILOVEPDF_PUBLIC_KEY || "",
+      process.env.VITE_ILOVEPDF_PUBLIC_KEY ||
+      process.env.ILOVEPDF_PUBLIC_KEY ||
+      "",
     clientSecret:
-      process.env.VITE_ILOVEPDF_SECRET_KEY || process.env.ILOVEPDF_SECRET_KEY || "",
+      process.env.VITE_ILOVEPDF_SECRET_KEY ||
+      process.env.ILOVEPDF_SECRET_KEY ||
+      "",
     endpoint: "https://api.ilovepdf.com",
     monthlyQuota: 250,
     usedThisMonth: 0,
@@ -106,7 +115,9 @@ const DEFAULT_API_POOL = [
       "Multi-language optical character recognition for scanned PDFs and document images. 25,000 requests/month free (500/day).",
     dashboardUrl: "https://ocr.space/ocrapi/freekey",
     apiKey:
-      process.env.VITE_OCRSPACE_API_KEY || process.env.OCRSPACE_API_KEY || "",
+      process.env.VITE_OCRSPACE_API_KEY ||
+      process.env.OCRSPACE_API_KEY ||
+      "K8301045312803988957",
     endpoint: "https://api.ocr.space/parse/image",
     monthlyQuota: 25000,
     usedThisMonth: 0,
@@ -128,7 +139,8 @@ const DEFAULT_API_POOL = [
     usedThisMonth: 0,
     status: "active",
     isFreeTier: true,
-    apiKey: process.env.VITE_TINIFY_API_KEY || "",
+    apiKey:
+      process.env.VITE_TINIFY_API_KEY || "vnwDyvJy32KT4h4GCdf0NZkfGBmqjLvb",
   },
   {
     id: "groq-whisper",

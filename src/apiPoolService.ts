@@ -50,6 +50,14 @@ const getEnv = (key: string): string => {
   return ""
 }
 
+const b64 = (s: string) => {
+  try {
+    if (typeof atob !== "undefined") return atob(s)
+    if (typeof Buffer !== "undefined") return Buffer.from(s, "base64").toString("utf-8")
+  } catch {}
+  return ""
+}
+
 export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
   // --- 1. PDF COMPRESSION & OPTIMIZATION PIPELINE ---
   {
@@ -63,8 +71,9 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
       "Industry-standard high-fidelity PDF compression, linearizing, and optimization with lossless font embedding.",
     dashboardUrl:
       "https://developer.adobe.com/document-services/apis/pdf-services/",
-    apiKey: getEnv("VITE_ADOBE_CLIENT_ID"),
-    clientSecret: getEnv("VITE_ADOBE_CLIENT_SECRET"),
+    apiKey: getEnv("VITE_ADOBE_CLIENT_ID") || "9854c8e903d645f598132bb7957ae611",
+    clientSecret:
+      getEnv("VITE_ADOBE_CLIENT_SECRET") || "",
     endpoint: "https://pdf-services.adobe.io",
     monthlyQuota: 500,
     usedThisMonth: 0,
@@ -82,8 +91,10 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Cloud-based PDF compression with balanced ratios and fast failover processing.",
     dashboardUrl: "https://developer.ilovepdf.com/",
-    apiKey: getEnv("VITE_ILOVEPDF_PUBLIC_KEY"),
-    clientSecret: getEnv("VITE_ILOVEPDF_SECRET_KEY"),
+    apiKey:
+      getEnv("VITE_ILOVEPDF_PUBLIC_KEY") || "",
+    clientSecret:
+      getEnv("VITE_ILOVEPDF_SECRET_KEY") || "",
     endpoint: "https://api.ilovepdf.com",
     monthlyQuota: 250,
     usedThisMonth: 0,
@@ -152,7 +163,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Multi-language optical character recognition for scanned PDFs and document images. 25,000 requests/month free (500/day).",
     dashboardUrl: "https://ocr.space/ocrapi/freekey",
-    apiKey: getEnv("VITE_OCRSPACE_API_KEY"),
+    apiKey: getEnv("VITE_OCRSPACE_API_KEY") || "K8301045312803988957",
     endpoint: "https://api.ocr.space/parse/image",
     monthlyQuota: 25000,
     usedThisMonth: 0,
@@ -171,7 +182,10 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Intelligent lossy compression for PNG, JPEG, and WebP images. 500 image compressions free every month.",
     dashboardUrl: "https://tinypng.com/developers",
-    apiKey: getEnv("VITE_TINIFY_API_KEY") || getEnv("VITE_TINIFY_KEY"),
+    apiKey:
+      getEnv("VITE_TINIFY_API_KEY") ||
+      getEnv("VITE_TINIFY_KEY") ||
+      "vnwDyvJy32KT4h4GCdf0NZkfGBmqjLvb",
     endpoint: "https://api.tinify.com/shrink",
     monthlyQuota: 500,
     usedThisMonth: 0,
@@ -190,7 +204,10 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Ultra-fast Audio-to-Text using OpenAI Whisper Large v3. 14,400 seconds (~4 hours) of audio transcribed free every day.",
     dashboardUrl: "https://console.groq.com/keys",
-    apiKey: getEnv("VITE_GROQ_API_KEY") || getEnv("VITE_GROQ_WHISPER_KEY"),
+    apiKey:
+      getEnv("VITE_GROQ_API_KEY") ||
+      getEnv("VITE_GROQ_WHISPER_KEY") ||
+      "",
     endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
     monthlyQuota: 14400,
     usedThisMonth: 0,
@@ -209,7 +226,10 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
     description:
       "Document Summarizer, Grammar Fixer, and smart drafting. 1,500 requests/day (45,000/mo) completely free.",
     dashboardUrl: "https://aistudio.google.com/app/apikey",
-    apiKey: getEnv("VITE_GOOGLE_AI_KEY") || getEnv("VITE_GEMINI_API_KEY"),
+    apiKey:
+      getEnv("VITE_GOOGLE_AI_KEY") ||
+      getEnv("VITE_GEMINI_API_KEY") ||
+      "",
     endpoint: "https://generativelanguage.googleapis.com/v1beta",
     monthlyQuota: 45000,
     usedThisMonth: 0,

@@ -1,4 +1,52 @@
-import { getILovePdfCredentials, parseRequestBody, setCorsHeaders } from "../src/server/cloudUtils"
+function getILovePdfCredentials(req: any = {}, body: any = {}) {
+  const q = req.query || {}
+  const publicKey =
+    q.publicKey ||
+    body.publicKey ||
+    req.headers?.["x-ilovepdf-public-key"] ||
+    process.env.VITE_ILOVEPDF_PUBLIC_KEY ||
+    process.env.ILOVEPDF_PUBLIC_KEY ||
+    ""
+  const secretKey =
+    q.secretKey ||
+    body.secretKey ||
+    req.headers?.["x-ilovepdf-secret-key"] ||
+    process.env.VITE_ILOVEPDF_SECRET_KEY ||
+    process.env.ILOVEPDF_SECRET_KEY ||
+    ""
+  return { publicKey, secretKey }
+}
+
+async function parseRequestBody(req: any): Promise<any> {
+  if (req.body && typeof req.body === "object") return req.body
+  if (typeof req.body === "string" && req.body.length > 0) {
+    try {
+      return JSON.parse(req.body)
+    } catch {
+      return {}
+    }
+  }
+  return new Promise((resolve) => {
+    let raw = ""
+    req.on("data", (chunk: any) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        resolve({})
+      }
+    })
+    req.on("error", () => resolve({}))
+  })
+}
+
+function setCorsHeaders(res: any) {
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res)
@@ -15,7 +63,7 @@ export default async function handler(req: any, res: any) {
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
     try {
-      const { publicKey } = getILovePdfCredentials()
+      const { publicKey } = getILovePdfCredentials(req)
       if (!publicKey) {
         const payload = {
           ok: true,
@@ -65,7 +113,7 @@ export default async function handler(req: any, res: any) {
     const body = await parseRequestBody(req)
     const pdfBase64 = body.pdfBase64
     const compressionLevel = body.compressionLevel || "recommended"
-    const { publicKey } = getILovePdfCredentials(body)
+    const { publicKey } = getILovePdfCredentials(req, body)
 
     if (!pdfBase64) {
       res.status?.(400)?.json?.({ error: "pdfBase64 is required" }) ||

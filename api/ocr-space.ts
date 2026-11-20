@@ -1,4 +1,45 @@
-import { getOcrSpaceKey, parseRequestBody, setCorsHeaders } from "../src/server/cloudUtils"
+function getOcrSpaceKey(req: any = {}, body: any = {}) {
+  const q = req.query || {}
+  return (
+    q.apiKey ||
+    body.apiKey ||
+    req.headers?.["x-api-key"] ||
+    process.env.VITE_OCRSPACE_API_KEY ||
+    process.env.OCRSPACE_API_KEY ||
+    ""
+  )
+}
+
+async function parseRequestBody(req: any): Promise<any> {
+  if (req.body && typeof req.body === "object") return req.body
+  if (typeof req.body === "string" && req.body.length > 0) {
+    try {
+      return JSON.parse(req.body)
+    } catch {
+      return {}
+    }
+  }
+  return new Promise((resolve) => {
+    let raw = ""
+    req.on("data", (chunk: any) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        resolve({})
+      }
+    })
+    req.on("error", () => resolve({}))
+  })
+}
+
+function setCorsHeaders(res: any) {
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res)
@@ -36,7 +77,7 @@ export default async function handler(req: any, res: any) {
     const body = await parseRequestBody(req)
     const base64Image = body.base64Image
     const language = body.language || "eng"
-    const apiKey = getOcrSpaceKey(body)
+    const apiKey = getOcrSpaceKey(req, body)
 
     if (!base64Image) {
       res.status?.(400)?.json?.({ error: "base64Image is required" }) ||
