@@ -58,7 +58,15 @@ export default async function handler(req: any, res: any) {
   const url = req.url || ""
   const action =
     req.query?.action ||
-    (url.includes("/status") ? "status" : url.includes("/compress") ? "compress" : "")
+    (url.includes("/status")
+      ? "status"
+      : url.includes("/pdfword")
+        ? "pdfword"
+        : url.includes("/pdfppt")
+          ? "pdfppt"
+          : url.includes("/compress")
+            ? "compress"
+            : "")
 
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
@@ -137,7 +145,14 @@ export default async function handler(req: any, res: any) {
       return
     }
 
-    const startRes = await fetch("https://api.ilovepdf.com/v1/start/compress", {
+    const tool =
+      action === "pdfword"
+        ? "pdfword"
+        : action === "pdfppt"
+          ? "pdfppt"
+          : "compress"
+
+    const startRes = await fetch(`https://api.ilovepdf.com/v1/start/${tool}`, {
       headers: { Authorization: "Bearer " + token },
     })
     const startData = (await startRes.json()) as any
@@ -170,18 +185,22 @@ export default async function handler(req: any, res: any) {
       return
     }
 
+    const processPayload: any = {
+      task,
+      tool,
+      files: [{ server_filename: serverFilename, filename: "document.pdf" }],
+    }
+    if (tool === "compress") {
+      processPayload.compression_level = compressionLevel
+    }
+
     const processRes = await fetch(`https://${server}/v1/process`, {
       method: "POST",
       headers: {
         Authorization: "Bearer " + token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        task,
-        tool: "compress",
-        files: [{ server_filename: serverFilename, filename: "document.pdf" }],
-        compression_level: compressionLevel,
-      }),
+      body: JSON.stringify(processPayload),
     })
     const processData = (await processRes.json()) as any
     if (processData.status !== "TaskSuccess") {
@@ -193,13 +212,20 @@ export default async function handler(req: any, res: any) {
     const downloadRes = await fetch(`https://${server}/v1/download/${task}`, {
       headers: { Authorization: "Bearer " + token },
     })
-    const compressedBuffer = Buffer.from(await downloadRes.arrayBuffer())
+    const resultBuffer = Buffer.from(await downloadRes.arrayBuffer())
 
     const responsePayload = {
       ok: true,
       success: true,
-      pdfBase64: compressedBuffer.toString("base64"),
-      compressedBase64: compressedBuffer.toString("base64"),
+      base64: resultBuffer.toString("base64"),
+      docxBase64: resultBuffer.toString("base64"),
+      pdfBase64: resultBuffer.toString("base64"),
+      compressedBase64: resultBuffer.toString("base64"),
+      compressedSize: resultBuffer.length,
+      originalSize,
+      ratio: Math.round(((originalSize - resultBuffer.length) / originalSize) * 100),
+      provider: "ilovepdf",
+    }
       compressedSize: compressedBuffer.length,
       originalSize,
       ratio: Math.round(((originalSize - compressedBuffer.length) / originalSize) * 100),

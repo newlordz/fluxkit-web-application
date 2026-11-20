@@ -58,7 +58,13 @@ export default async function handler(req: any, res: any) {
   const url = req.url || ""
   const action =
     req.query?.action ||
-    (url.includes("/status") ? "status" : url.includes("/compress") ? "compress" : "")
+    (url.includes("/status")
+      ? "status"
+      : url.includes("/export")
+        ? "export"
+        : url.includes("/compress")
+          ? "compress"
+          : "")
 
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
@@ -182,20 +188,32 @@ export default async function handler(req: any, res: any) {
       return
     }
 
-    const jobRes = await fetch("https://pdf-services.adobe.io/operation/compresspdf", {
+    const isExport = action === "export"
+    const targetFormat = (body.targetFormat || "docx").toLowerCase()
+
+    const jobUrl = isExport
+      ? "https://pdf-services.adobe.io/operation/exportpdf"
+      : "https://pdf-services.adobe.io/operation/compresspdf"
+
+    const jobBody = isExport
+      ? { assetID, targetFormat }
+      : { assetID, compressionLevel }
+
+    const jobRes = await fetch(jobUrl, {
       method: "POST",
       headers: {
         "x-api-key": clientId,
         Authorization: "Bearer " + token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ assetID, compressionLevel }),
+      body: JSON.stringify(jobBody),
     })
 
     if (jobRes.status !== 201) {
       const errText = await jobRes.text()
-      res.status?.(jobRes.status)?.json?.({ error: "Adobe CompressPDF Job failed: " + errText }) ||
-        res.end?.(JSON.stringify({ error: "Adobe CompressPDF Job failed: " + errText }))
+      const jobName = isExport ? "ExportPDF" : "CompressPDF"
+      res.status?.(jobRes.status)?.json?.({ error: `Adobe ${jobName} Job failed: ` + errText }) ||
+        res.end?.(JSON.stringify({ error: `Adobe ${jobName} Job failed: ` + errText }))
       return
     }
 
@@ -219,30 +237,40 @@ export default async function handler(req: any, res: any) {
         break
       }
       if (pollData.status === "failed") {
-        res.status?.(502)?.json?.({ error: "Adobe compress job failed", details: pollData }) ||
-          res.end?.(JSON.stringify({ error: "Adobe compress job failed", details: pollData }))
+        res.status?.(502)?.json?.({ error: `Adobe ${isExport ? "export" : "compress"} job failed`, details: pollData }) ||
+          res.end?.(JSON.stringify({ error: `Adobe ${isExport ? "export" : "compress"} job failed`, details: pollData }))
         return
       }
       attempts++
     }
 
     if (!downloadUri) {
-      res.status?.(504)?.json?.({ error: "Adobe compress job timed out" }) ||
-        res.end?.(JSON.stringify({ error: "Adobe compress job timed out" }))
+      res.status?.(504)?.json?.({ error: `Adobe ${isExport ? "export" : "compress"} job timed out` }) ||
+        res.end?.(JSON.stringify({ error: `Adobe ${isExport ? "export" : "compress"} job timed out` }))
       return
     }
 
     const dlRes = await fetch(downloadUri)
-    const compressedBuffer = Buffer.from(await dlRes.arrayBuffer())
+    const resultBuffer = Buffer.from(await dlRes.arrayBuffer())
 
-    const responsePayload = {
-      ok: true,
-      compressedBase64: compressedBuffer.toString("base64"),
-      compressedSize: compressedBuffer.length,
-      originalSize,
-      ratio: Math.round(((originalSize - compressedBuffer.length) / originalSize) * 100),
-      provider: "adobe",
-    }
+    const responsePayload = isExport
+      ? {
+          ok: true,
+          success: true,
+          base64: resultBuffer.toString("base64"),
+          docxBase64: resultBuffer.toString("base64"),
+          format: targetFormat,
+          size: resultBuffer.length,
+          provider: "adobe",
+        }
+      : {
+          ok: true,
+          compressedBase64: resultBuffer.toString("base64"),
+          compressedSize: resultBuffer.length,
+          originalSize,
+          ratio: Math.round(((originalSize - resultBuffer.length) / originalSize) * 100),
+          provider: "adobe",
+        }
 
     res.status?.(200)?.json?.(responsePayload) ||
       res.end?.(JSON.stringify(responsePayload))

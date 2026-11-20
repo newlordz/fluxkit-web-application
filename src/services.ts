@@ -2176,6 +2176,143 @@ export async function pdfToWord(
   }
 
   const baseName = name.replace(/\.[^/.]+$/, "")
+  const format = options.format || "docx"
+  const layout = options.layout || "standard"
+
+  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
+  if (typeof window !== "undefined" && (format === "docx" || format === "doc")) {
+    const activeApi = getNextAvailableApi("pdf-compression")
+    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
+        }
+        const pdfBase64 = btoa(binary)
+        const response = await fetch("/api/adobe-pdf/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfBase64,
+            targetFormat: "docx",
+            clientId: activeApi.apiKey,
+            clientSecret: activeApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if ((data.ok || data.success) && (data.base64 || data.docxBase64)) {
+            const rawBase64 = data.base64 || data.docxBase64
+            const docxBinary = atob(rawBase64)
+            const docxBytes = new Uint8Array(docxBinary.length)
+            for (let i = 0; i < docxBinary.length; i++) {
+              docxBytes[i] = docxBinary.charCodeAt(i)
+            }
+            recordApiOutcome(activeApi.id, { success: true })
+            const blob = new Blob([docxBytes], {
+              type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            })
+            return {
+              blob,
+              name: `${baseName}-converted.docx`,
+              format: "docx",
+              size: docxBytes.byteLength,
+              provider: "adobe",
+            }
+          }
+        } else {
+          recordApiOutcome(activeApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `Adobe export returned ${response.status}`,
+          })
+        }
+      } catch (cloudErr) {
+        console.warn(
+          "Adobe PDF Services DOCX export failed, falling back to next engine:",
+          cloudErr,
+        )
+        recordApiOutcome(activeApi.id, {
+          success: false,
+          errorMessage: String(cloudErr),
+        })
+      }
+    }
+
+    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    const iloveApi =
+      activeApi?.provider === "ilovepdf"
+        ? activeApi
+        : getNextAvailableApi("pdf-compression")
+    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+      try {
+        let binary = ""
+        const len = bytes.byteLength
+        const chunkSize = 0x8000
+        for (let i = 0; i < len; i += chunkSize) {
+          binary += String.fromCharCode.apply(
+            null,
+            Array.from(bytes.subarray(i, i + chunkSize)),
+          )
+        }
+        const pdfBase64 = btoa(binary)
+        const response = await fetch("/api/ilovepdf/pdfword", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfBase64,
+            fileName: `${baseName}.pdf`,
+            publicKey: iloveApi.apiKey,
+            secretKey: iloveApi.clientSecret,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if ((data.ok || data.success) && (data.base64 || data.docxBase64)) {
+            const rawBase64 = data.base64 || data.docxBase64
+            const docxBinary = atob(rawBase64)
+            const docxBytes = new Uint8Array(docxBinary.length)
+            for (let i = 0; i < docxBinary.length; i++) {
+              docxBytes[i] = docxBinary.charCodeAt(i)
+            }
+            recordApiOutcome(iloveApi.id, { success: true })
+            const blob = new Blob([docxBytes], {
+              type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            })
+            return {
+              blob,
+              name: `${baseName}-converted.docx`,
+              format: "docx",
+              size: docxBytes.byteLength,
+              provider: "ilovepdf",
+            }
+          }
+        } else {
+          recordApiOutcome(iloveApi.id, {
+            success: false,
+            statusCode: response.status,
+            errorMessage: `iLovePDF pdfword returned ${response.status}`,
+          })
+        }
+      } catch (cloudErr) {
+        console.warn(
+          "iLovePDF PDF to Word failed, falling back to local engine:",
+          cloudErr,
+        )
+        recordApiOutcome(iloveApi.id, {
+          success: false,
+          errorMessage: String(cloudErr),
+        })
+      }
+    }
+  }
 
   // 1. Try extracting high-fidelity text with PDF.js (decodes ToUnicode CMaps, subsetted fonts, layout)
   let pages: Array<{
@@ -2213,8 +2350,16 @@ export async function pdfToWord(
     // ignore
   }
 
-  const format = options.format || "docx"
-  const layout = options.layout || "standard"
+  if (pages.length === 0) {
+    const numPages = pdfDoc ? pdfDoc.getPageCount() : 1
+    for (let i = 0; i < numPages; i++) {
+      pages.push({
+        pageNumber: i + 1,
+        lines: [`Page ${i + 1}`],
+        fullText: "",
+      })
+    }
+  }
 
   let fullExtractedText = pages
     .map((p, idx) =>

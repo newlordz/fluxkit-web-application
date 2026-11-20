@@ -49,6 +49,8 @@ export interface OutputResult {
 
   size?: number
 
+  provider?: string
+
   pages?: number
 }
 
