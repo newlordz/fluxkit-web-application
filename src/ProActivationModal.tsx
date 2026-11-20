@@ -10,6 +10,9 @@ import {
   ArrowLeft,
   ShieldCheck,
   Coins,
+  UserPlus,
+  LogIn,
+  UserCheck,
 } from "lucide-react"
 
 import TactilePadlock from "./TactilePadlock"
@@ -122,22 +125,41 @@ export default function ProActivationModal({
         }`
       : `$${allAccessUsd}.00 USD / ${isYearly ? "year" : "month"}`
 
+  const handleRequireAuth = (actionName: string) => {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem("fluxkit-post-auth-redirect", tool.id)
+    }
+    setErrorMessage(
+      `Please create an account or sign in first so your ${actionName} is permanently bound to your account.`,
+    )
+    if (onNavigate) {
+      onNavigate("sign-up")
+    }
+  }
+
   const handleBuySingleTool = () => {
+    if (!currentUser) {
+      handleRequireAuth(`subscription to ${tool.name}`)
+      return
+    }
+
     setLoading("payment")
 
     setErrorMessage("")
 
     setTimeout(() => {
-      const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
-
-      const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
+      const updated = unlockSingleToolForUser(
+        currentUser.id,
+        tool.id,
+        billingCycle,
+      )
 
       setLoading(null)
 
       const renewsPeriod = isYearly ? "1 year" : "1 month"
 
       setSuccessMessage(
-        `Success! You subscribed to ${tool.name} (${billingCycle.toUpperCase()} plan). Auto-renews in ${renewsPeriod}. Access is now active!`,
+        `Success! You subscribed to ${tool.name} (${billingCycle.toUpperCase()} plan). Auto-renews in ${renewsPeriod}. Access is now active on your account!`,
       )
 
       if (onActivated) {
@@ -147,12 +169,17 @@ export default function ProActivationModal({
   }
 
   const handleBuySingleToolLive = () => {
+    if (!currentUser) {
+      handleRequireAuth(`subscription to ${tool.name}`)
+      return
+    }
+
     setErrorMessage("")
 
     if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
       setLoading("payment")
 
-      const userEmail = currentUser?.email || "customer@masterfilepro.com"
+      const userEmail = currentUser.email || "customer@masterfilepro.com"
 
       const subunits =
         activeGateway.currency === "GHS"
@@ -171,16 +198,16 @@ export default function ProActivationModal({
         currency: activeGateway.currency,
 
         onSuccess: (ref) => {
-          const userId = currentUser
-            ? currentUser.id
-            : "usr_guest_" + Date.now()
-
-          const updated = unlockSingleToolForUser(userId, tool.id, billingCycle)
+          const updated = unlockSingleToolForUser(
+            currentUser.id,
+            tool.id,
+            billingCycle,
+          )
 
           setLoading(null)
 
           setSuccessMessage(
-            `Live Paystack Payment Verified! (Ref: ${ref}). ${tool.name} ${billingCycle.toUpperCase()} subscription active!`,
+            `Live Paystack Payment Verified! (Ref: ${ref}). ${tool.name} ${billingCycle.toUpperCase()} subscription active on your account!`,
           )
 
           if (onActivated) {
@@ -209,19 +236,22 @@ export default function ProActivationModal({
   }
 
   const handleSimulatedPayment = () => {
+    if (!currentUser) {
+      handleRequireAuth("All-Access Pro subscription")
+      return
+    }
+
     setLoading("payment")
 
     setErrorMessage("")
 
     setTimeout(() => {
-      const userId = currentUser ? currentUser.id : "usr_guest_" + Date.now()
-
-      const updated = activateProSimulatedPayment(userId)
+      const updated = activateProSimulatedPayment(currentUser.id)
 
       setLoading(null)
 
       setSuccessMessage(
-        `Payment verified via ${activeGateway?.name || "Paystack"} (${activeGateway?.mode?.toUpperCase() || "TEST"}). Pro subscription unlocked.`,
+        `Payment verified via ${activeGateway?.name || "Paystack"} (${activeGateway?.mode?.toUpperCase() || "TEST"}). Pro subscription unlocked for your account.`,
       )
 
       if (onActivated) {
@@ -231,12 +261,17 @@ export default function ProActivationModal({
   }
 
   const handleLivePayment = () => {
+    if (!currentUser) {
+      handleRequireAuth("All-Access Pro subscription")
+      return
+    }
+
     setErrorMessage("")
 
     if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
       setLoading("payment")
 
-      const userEmail = currentUser?.email || "customer@masterfilepro.com"
+      const userEmail = currentUser.email || "customer@masterfilepro.com"
 
       const subunits =
         activeGateway.currency === "GHS"
@@ -255,16 +290,12 @@ export default function ProActivationModal({
         currency: activeGateway.currency,
 
         onSuccess: (ref) => {
-          const userId = currentUser
-            ? currentUser.id
-            : "usr_guest_" + Date.now()
-
-          const updated = activateProSimulatedPayment(userId)
+          const updated = activateProSimulatedPayment(currentUser.id)
 
           setLoading(null)
 
           setSuccessMessage(
-            `Live Paystack Payment Verified! (Ref: ${ref}). Pro subscription unlocked.`,
+            `Live Paystack Payment Verified! (Ref: ${ref}). Pro subscription unlocked for your account.`,
           )
 
           if (onActivated) {
@@ -294,6 +325,9 @@ export default function ProActivationModal({
 
   const handleRequestApproval = () => {
     if (!currentUser) {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem("fluxkit-post-auth-redirect", tool.id)
+      }
       if (onNavigate) onNavigate("sign-in")
 
       return
@@ -448,6 +482,165 @@ export default function ProActivationModal({
               {errorMessage}
             </div>
           )}
+
+          {!currentUser ? (
+            <div
+              className="auth-required-callout"
+              style={{
+                margin: "0 0 20px 0",
+                padding: "16px 18px",
+                borderRadius: "12px",
+                background:
+                  "linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)",
+                border: "1px solid rgba(99, 102, 241, 0.3)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#fff",
+                    flexShrink: 0,
+                  }}
+                >
+                  <UserPlus size={20} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "14px",
+                      color: "var(--text, #1e293b)",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    Account Required to Subscribe
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--muted, #64748b)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Please create an account or sign in first. This guarantees your
+                    paid Pro subscription and tool unlocks stay permanently bound
+                    to your account across all your devices and browsers.
+                  </div>
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  marginLeft: "48px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="primary"
+                  style={{
+                    padding: "7px 16px",
+                    fontSize: "12px",
+                    background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                    borderColor: "transparent",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                  onClick={() => {
+                    if (typeof sessionStorage !== "undefined") {
+                      sessionStorage.setItem(
+                        "fluxkit-post-auth-redirect",
+                        tool.id,
+                      )
+                    }
+                    if (onNavigate) onNavigate("sign-up")
+                  }}
+                >
+                  <UserPlus size={14} /> Create Free Account
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    padding: "7px 16px",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                  onClick={() => {
+                    if (typeof sessionStorage !== "undefined") {
+                      sessionStorage.setItem(
+                        "fluxkit-post-auth-redirect",
+                        tool.id,
+                      )
+                    }
+                    if (onNavigate) onNavigate("sign-in")
+                  }}
+                >
+                  <LogIn size={14} /> Sign In
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                margin: "0 0 16px 0",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                background: "rgba(16, 185, 129, 0.08)",
+                border: "1px solid rgba(16, 185, 129, 0.25)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  color: "var(--text)",
+                }}
+              >
+                <UserCheck size={16} color="#10b981" />
+                <span>
+                  Subscribing as{" "}
+                  <strong>{currentUser.email || currentUser.name}</strong>
+                </span>
+              </div>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "#10b981",
+                  fontWeight: 600,
+                }}
+              >
+                Saved permanently to your account
+              </span>
+            </div>
+          )}
           <div
             style={{
               display: "grid",
@@ -550,7 +743,9 @@ export default function ProActivationModal({
                 >
                   {loading === "payment"
                     ? "Processing checkout…"
-                    : `Subscribe to ${tool.name} (${singleToolLabel})`}
+                    : !currentUser
+                      ? `Create Account to Subscribe (${singleToolLabel})`
+                      : `Subscribe to ${tool.name} (${singleToolLabel})`}
                 </button>
               </div>
             </div>
@@ -640,7 +835,9 @@ export default function ProActivationModal({
                 >
                   {loading === "payment"
                     ? "Processing checkout…"
-                    : `Unlock All-Access (${formattedFee})`}
+                    : !currentUser
+                      ? `Create Account & Unlock All-Access`
+                      : `Unlock All-Access (${formattedFee})`}
                 </button>
               </div>
             </div>
