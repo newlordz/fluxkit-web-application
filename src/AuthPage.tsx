@@ -178,6 +178,11 @@ export default function AuthPage({
 
   const registration = mode === "sign-up"
 
+  const postAuthRedirect =
+    typeof sessionStorage !== "undefined"
+      ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+      : null
+
   const reset = mode === "reset-password"
 
   const title = reset
@@ -351,7 +356,16 @@ export default function AuthPage({
         if ((result as UserAccount).role === "admin") {
           navigate("admin")
         } else {
-          navigate("overview")
+          const redirect =
+            typeof sessionStorage !== "undefined"
+              ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+              : null
+          if (redirect) {
+            sessionStorage.removeItem("fluxkit-post-auth-redirect")
+            navigate(redirect)
+          } else {
+            navigate("overview")
+          }
         }
       }
     } catch (error) {
@@ -379,7 +393,16 @@ export default function AuthPage({
     if (user.role === "admin") {
       navigate("admin")
     } else {
-      navigate("overview")
+      const redirect =
+        typeof sessionStorage !== "undefined"
+          ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+          : null
+      if (redirect) {
+        sessionStorage.removeItem("fluxkit-post-auth-redirect")
+        navigate(redirect)
+      } else {
+        navigate("overview")
+      }
     }
   }
 
@@ -462,6 +485,30 @@ export default function AuthPage({
                 ? "A simpler everyday starts with a little space."
                 : `Sign in to your ${brand.name} account to pick up where you left off.`}
           </p>
+
+          {postAuthRedirect && !currentUser && (
+            <div
+              style={{
+                margin: "0 0 20px 0",
+                padding: "12px 14px",
+                borderRadius: "10px",
+                background: "rgba(59, 130, 246, 0.08)",
+                border: "1px solid rgba(59, 130, 246, 0.25)",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                fontSize: "12px",
+                color: "var(--text, #1e293b)",
+              }}
+            >
+              <Sparkles size={16} color="#3b82f6" style={{ flexShrink: 0 }} />
+              <span>
+                <strong>Account required for Pro:</strong> Once you{" "}
+                {registration ? "create your account" : "sign in"}, you will be
+                returned straight back to your chosen tool so your access is saved.
+              </span>
+            </div>
+          )}
 
           {/* If already signed in, show status */}
           {currentUser && (

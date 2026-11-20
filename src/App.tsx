@@ -702,7 +702,16 @@ export default function App() {
           if (user.role === "admin" || user.role === "sub-admin") {
             navigate("admin")
           } else {
-            navigate("overview")
+            const redirect =
+              typeof sessionStorage !== "undefined"
+                ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+                : null
+            if (redirect) {
+              sessionStorage.removeItem("fluxkit-post-auth-redirect")
+              navigate(redirect)
+            } else {
+              navigate("overview")
+            }
           }
         }}
       />
