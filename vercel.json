@@ -10,6 +10,26 @@
   },
   "rewrites": [
     {
+      "source": "/api/adobe-pdf/(.*)",
+      "destination": "/api/adobe-pdf?action=$1"
+    },
+    {
+      "source": "/api/ilovepdf/(.*)",
+      "destination": "/api/ilovepdf?action=$1"
+    },
+    {
+      "source": "/api/ocr-space/(.*)",
+      "destination": "/api/ocr-space?action=$1"
+    },
+    {
+      "source": "/api/paystack/verify-keys",
+      "destination": "/api/paystack/verify-keys"
+    },
+    {
+      "source": "/api/paystack/(.*)",
+      "destination": "/api/paystack?action=$1"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     }

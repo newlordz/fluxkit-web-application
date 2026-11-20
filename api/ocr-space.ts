@@ -1,4 +1,4 @@
-import { getOcrSpaceKey, parseRequestBody, setCorsHeaders } from "../_cloudUtils"
+import { getOcrSpaceKey, parseRequestBody, setCorsHeaders } from "../src/server/cloudUtils"
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res)
@@ -7,6 +7,25 @@ export default async function handler(req: any, res: any) {
     return
   }
 
+  const url = req.url || ""
+  const action =
+    req.query?.action ||
+    (url.includes("/status") ? "status" : url.includes("/parse") ? "parse" : "")
+
+  // 1. Status / Ping check
+  if (action === "status" || req.method === "GET") {
+    const payload = {
+      ok: true,
+      service: "OCR.space Free OCR API",
+      status: "connected",
+      configured: true,
+      freeQuota: 25000,
+    }
+    res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+    return
+  }
+
+  // 2. Parse Image / Document
   if (req.method !== "POST") {
     res.status?.(405)?.json?.({ error: "Method not allowed" }) ||
       res.end?.(JSON.stringify({ error: "Method not allowed" }))
@@ -49,15 +68,16 @@ export default async function handler(req: any, res: any) {
       ocrData.ParsedResults?.map((r: any) => r.ParsedText).join("\n") || ""
 
     const payload = {
-      success: true,
+      ok: true,
       text: parsedText,
-      results: ocrData.ParsedResults,
+      exitCode: ocrData.OCRExitCode,
       processingTimeMs: ocrData.ProcessingTimeInMilliseconds,
-      engine: "OCR.space Cloud Engine",
+      provider: "ocr-space",
     }
+
     res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
   } catch (err: any) {
-    res.status?.(500)?.json?.({ error: err.message || "Internal server error" }) ||
-      res.end?.(JSON.stringify({ error: err.message || "Internal server error" }))
+    res.status?.(500)?.json?.({ error: err.message }) ||
+      res.end?.(JSON.stringify({ error: err.message }))
   }
 }

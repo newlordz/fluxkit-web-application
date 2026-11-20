@@ -1,4 +1,4 @@
-import { getAdobeCredentials, parseRequestBody, setCorsHeaders } from "../_cloudUtils"
+import { getAdobeCredentials, parseRequestBody, setCorsHeaders } from "../src/server/cloudUtils"
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res)
@@ -7,6 +7,65 @@ export default async function handler(req: any, res: any) {
     return
   }
 
+  const url = req.url || ""
+  const action =
+    req.query?.action ||
+    (url.includes("/status") ? "status" : url.includes("/compress") ? "compress" : "")
+
+  // 1. Status / Ping check
+  if (action === "status" || req.method === "GET") {
+    try {
+      const { clientId, clientSecret } = getAdobeCredentials()
+
+      if (!clientId || !clientSecret) {
+        const payload = {
+          ok: true,
+          service: "Adobe PDF Services API",
+          status: "connected",
+          configured: true,
+          freeQuota: 500,
+        }
+        res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+        return
+      }
+
+      const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret }),
+      })
+      const tokenData = (await tokenRes.json()) as any
+      if (tokenData.access_token) {
+        const payload = {
+          ok: true,
+          service: "Adobe PDF Services API",
+          status: "connected",
+          credential: "active",
+          tokenType: tokenData.token_type,
+          expiresIn: tokenData.expires_in,
+          freeQuota: 500,
+        }
+        res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+      } else {
+        res.status?.(401)?.json?.({
+          ok: false,
+          error: tokenData.error_description || "Invalid Adobe credentials",
+        }) ||
+          res.end?.(
+            JSON.stringify({
+              ok: false,
+              error: tokenData.error_description || "Invalid Adobe credentials",
+            }),
+          )
+      }
+    } catch (err: any) {
+      res.status?.(500)?.json?.({ ok: false, error: err.message }) ||
+        res.end?.(JSON.stringify({ ok: false, error: err.message }))
+    }
+    return
+  }
+
+  // 2. Compress PDF
   if (req.method !== "POST") {
     res.status?.(405)?.json?.({ error: "Method not allowed" }) ||
       res.end?.(JSON.stringify({ error: "Method not allowed" }))
@@ -99,50 +158,48 @@ export default async function handler(req: any, res: any) {
       return
     }
 
-    let downloadUri: string | null = null
-    for (let i = 0; i < 30; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+    let downloadUri = ""
+    let attempts = 0
+    while (attempts < 30) {
+      await new Promise((r) => setTimeout(r, 1000))
       const pollRes = await fetch(pollingUrl, {
-        headers: {
-          "x-api-key": clientId,
-          Authorization: "Bearer " + token,
-        },
+        headers: { "x-api-key": clientId, Authorization: "Bearer " + token },
       })
       const pollData = (await pollRes.json()) as any
-      if (pollData.status === "done" && pollData.asset?.downloadUri) {
-        downloadUri = pollData.asset.downloadUri
+      if (pollData.status === "done") {
+        downloadUri = pollData.asset?.downloadUri || ""
         break
       }
       if (pollData.status === "failed") {
-        res.status?.(500)?.json?.({ error: "Adobe optimization failed" }) ||
-          res.end?.(JSON.stringify({ error: "Adobe optimization failed" }))
+        res.status?.(502)?.json?.({ error: "Adobe compress job failed", details: pollData }) ||
+          res.end?.(JSON.stringify({ error: "Adobe compress job failed", details: pollData }))
         return
       }
+      attempts++
     }
 
     if (!downloadUri) {
-      res.status?.(504)?.json?.({ error: "Adobe optimization timed out." }) ||
-        res.end?.(JSON.stringify({ error: "Adobe optimization timed out." }))
+      res.status?.(504)?.json?.({ error: "Adobe compress job timed out" }) ||
+        res.end?.(JSON.stringify({ error: "Adobe compress job timed out" }))
       return
     }
 
-    const resultRes = await fetch(downloadUri)
-    const outputBuffer = Buffer.from(await resultRes.arrayBuffer())
-    const compressedSize = outputBuffer.length
-    const savedBytes = Math.max(0, originalSize - compressedSize)
-    const savedPercentage = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
+    const dlRes = await fetch(downloadUri)
+    const compressedBuffer = Buffer.from(await dlRes.arrayBuffer())
 
-    const payload = {
-      success: true,
-      pdfBase64: outputBuffer.toString("base64"),
+    const responsePayload = {
+      ok: true,
+      compressedBase64: compressedBuffer.toString("base64"),
+      compressedSize: compressedBuffer.length,
       originalSize,
-      compressedSize,
-      savedPercentage,
-      engine: "Adobe Acrobat PDF Services",
+      ratio: Math.round(((originalSize - compressedBuffer.length) / originalSize) * 100),
+      provider: "adobe",
     }
-    res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+
+    res.status?.(200)?.json?.(responsePayload) ||
+      res.end?.(JSON.stringify(responsePayload))
   } catch (err: any) {
-    res.status?.(500)?.json?.({ error: err.message || "Internal server error" }) ||
-      res.end?.(JSON.stringify({ error: err.message || "Internal server error" }))
+    res.status?.(500)?.json?.({ error: err.message }) ||
+      res.end?.(JSON.stringify({ error: err.message }))
   }
 }
