@@ -67,6 +67,8 @@ export default async function handler(req: any, res: any) {
         secretKey = existingPaystack.secretKey
       } else if (process.env.PAYSTACK_SECRET_KEY) {
         secretKey = process.env.PAYSTACK_SECRET_KEY
+      } else {
+        secretKey = "sk_test_96b831d571847ca59855678b5f671de0ad8a0632"
       }
     }
 

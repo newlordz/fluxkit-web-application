@@ -53,9 +53,9 @@ const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
 
     mode: "test",
 
-    publicKey: "pk_test_sample_fluxkit_paystack_key_2026",
+    publicKey: "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e",
 
-    secretKey: "sk_test_sample_fluxkit_paystack_secret",
+    secretKey: "sk_test_96b831d571847ca59855678b5f671de0ad8a0632",
 
     webhookSecret: "whsec_paystack_test_hook",
 

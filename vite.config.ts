@@ -2064,9 +2064,9 @@ function paystackPlugin(): Plugin {
                 return
               }
 
-              // Live call to Paystack API (GET /bank or /balance)
+              // Live call to Paystack API (authenticated integration endpoint)
               const start = Date.now()
-              const paystackRes = await fetch("https://api.paystack.co/bank?perPage=1", {
+              const paystackRes = await fetch("https://api.paystack.co/integration/payment_session_timeout", {
                 method: "GET",
                 headers: {
                   Authorization: `Bearer ${secretKey}`,

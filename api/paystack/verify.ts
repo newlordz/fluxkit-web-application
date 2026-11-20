@@ -58,6 +58,8 @@ export default async function handler(req: any, res: any) {
       const existingPaystack = (db.paymentGateways || []).find((g: any) => g.id === "paystack")
       if (existingPaystack?.secretKey && !existingPaystack.secretKey.includes("••••")) {
         secretKey = existingPaystack.secretKey
+      } else {
+        secretKey = "sk_test_96b831d571847ca59855678b5f671de0ad8a0632"
       }
     }
 

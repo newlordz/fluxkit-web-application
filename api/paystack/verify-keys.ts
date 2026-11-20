@@ -86,6 +86,8 @@ export default async function handler(req: any, res: any) {
         secretKey = existingPaystack.secretKey
       } else if (process.env.PAYSTACK_SECRET_KEY) {
         secretKey = process.env.PAYSTACK_SECRET_KEY
+      } else {
+        secretKey = "sk_test_96b831d571847ca59855678b5f671de0ad8a0632"
       }
     }
 
@@ -94,6 +96,8 @@ export default async function handler(req: any, res: any) {
         publicKey = existingPaystack.publicKey
       } else if (process.env.PAYSTACK_PUBLIC_KEY) {
         publicKey = process.env.PAYSTACK_PUBLIC_KEY
+      } else {
+        publicKey = "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e"
       }
     }
 
@@ -118,7 +122,7 @@ export default async function handler(req: any, res: any) {
     const timeout = setTimeout(() => controller.abort(), 8000)
 
     try {
-      const paystackRes = await fetch("https://api.paystack.co/transaction?perPage=1", {
+      const paystackRes = await fetch("https://api.paystack.co/integration/payment_session_timeout", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${secretKey}`,
