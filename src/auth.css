@@ -105,9 +105,8 @@
   align-self: center;
   flex-shrink: 1;
   perspective: 1000px;
-}
-.auth-illustration:hover .auth-float {
-  animation-play-state: paused;
+  pointer-events: none;
+  user-select: none;
 }
 .auth-orbit {
   position: absolute;
@@ -152,6 +151,8 @@
   box-shadow: 0 15px 40px rgba(6, 3, 12, 0.4);
   z-index: 5;
   animation: core-axis-spin 8s ease-in-out infinite;
+  pointer-events: none;
+  user-select: none;
 }
 @keyframes core-axis-spin {
   0%, 100% {
@@ -177,13 +178,11 @@
   background: linear-gradient(140deg, #3e3249, #27212f);
   color: #c8aee8;
   box-shadow: 0 14px 34px rgba(6, 3, 12, 0.3);
-  cursor: pointer;
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
   transition: box-shadow 0.25s ease, filter 0.25s ease;
   will-change: transform, z-index, opacity;
-}
-.auth-float:hover {
-  filter: brightness(1.12);
-  box-shadow: 0 18px 45px rgba(0, 201, 183, 0.35);
 }
 .auth-float span {
   font-size: 10px;
