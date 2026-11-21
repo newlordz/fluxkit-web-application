@@ -22,25 +22,46 @@ function getStoredSecret(provider: string, field: "clientSecret" | "apiKey"): st
 
 function recordServerApiCall(apiId: string) {
   try {
-    const dbPaths = [
-      path.join("/tmp", "masterfile-db.json"),
+    const tmpPath = path.join("/tmp", "masterfile-db.json")
+    const bundledPaths = [
       path.join(process.cwd(), "data", "masterfile-db.json"),
       path.join(process.cwd(), "data", "fluxkit-db.json"),
     ]
-    for (const p of dbPaths) {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8")
-        const data = JSON.parse(content)
-        if (Array.isArray(data.apiPool)) {
-          const match = data.apiPool.find(
-            (a: any) => a.id === apiId || a.provider === apiId,
-          )
-          if (match) {
-            match.usedThisMonth = (match.usedThisMonth || 0) + 1
-            fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
-          }
+    let data: any = null
+
+    if (fs.existsSync(tmpPath)) {
+      try {
+        data = JSON.parse(fs.readFileSync(tmpPath, "utf8"))
+      } catch {}
+    }
+    if (!data) {
+      for (const p of bundledPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            data = JSON.parse(fs.readFileSync(p, "utf8"))
+            break
+          } catch {}
         }
       }
+    }
+    if (!data) data = { apiPool: [] }
+    if (!Array.isArray(data.apiPool)) data.apiPool = []
+
+    const match = data.apiPool.find(
+      (a: any) => a.id === apiId || a.provider === apiId,
+    )
+    if (match) {
+      match.usedThisMonth = (match.usedThisMonth || 0) + 1
+    }
+
+    try {
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8")
+    } catch {}
+
+    for (const p of bundledPaths) {
+      try {
+        fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
+      } catch {}
     }
   } catch {}
 }
