@@ -448,6 +448,13 @@ export function recordApiOutcome(
       api.usedThisMonth = (api.usedThisMonth || 0) + 1
       api.status = "active"
       api.lastError = undefined
+      if (typeof window !== "undefined" && typeof fetch === "function") {
+        fetch("/api/db/apis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "incrementUsage", apiId: api.id }),
+        }).catch(() => {})
+      }
     } else {
       api.lastError = result.errorMessage
       if (

@@ -290,6 +290,25 @@ export default async function handler(req: any, res: any) {
         body = JSON.parse(body || "{}")
       }
 
+      if (body.action === "incrementUsage" && body.apiId) {
+        const pool = Array.isArray(db.apiPool) ? db.apiPool : []
+        const match = pool.find(
+          (a: any) => a.id === body.apiId || a.provider === body.apiId,
+        )
+        if (match) {
+          match.usedThisMonth = (match.usedThisMonth || 0) + 1
+          db.updatedAt = new Date().toISOString()
+          writeDb(db)
+        }
+        const payload = {
+          ok: true,
+          apiId: body.apiId,
+          usedThisMonth: match?.usedThisMonth || 0,
+        }
+        res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+        return
+      }
+
       const incomingApis = Array.isArray(body.apis) ? body.apis : []
       const existingApis = Array.isArray(db.apiPool) ? db.apiPool : []
 

@@ -20,6 +20,31 @@ function getStoredSecret(provider: string, field: "clientSecret" | "apiKey"): st
   return ""
 }
 
+function recordServerApiCall(apiId: string) {
+  try {
+    const dbPaths = [
+      path.join("/tmp", "masterfile-db.json"),
+      path.join(process.cwd(), "data", "masterfile-db.json"),
+      path.join(process.cwd(), "data", "fluxkit-db.json"),
+    ]
+    for (const p of dbPaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, "utf8")
+        const data = JSON.parse(content)
+        if (Array.isArray(data.apiPool)) {
+          const match = data.apiPool.find(
+            (a: any) => a.id === apiId || a.provider === apiId,
+          )
+          if (match) {
+            match.usedThisMonth = (match.usedThisMonth || 0) + 1
+            fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 function getILovePdfCredentials(req: any = {}, body: any = {}) {
   const q = req.query || {}
   const publicKey =
@@ -237,6 +262,9 @@ export default async function handler(req: any, res: any) {
       headers: { Authorization: "Bearer " + token },
     })
     const resultBuffer = Buffer.from(await downloadRes.arrayBuffer())
+
+    // Record usage in serverless database
+    recordServerApiCall("ilovepdf-cloud")
 
     const responsePayload = {
       ok: true,
