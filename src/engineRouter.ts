@@ -27,6 +27,14 @@ export function compressNeedsCloud(options: {
   return savedRatio < MIN_LOCAL_SAVING_RATIO
 }
 
+// Roughly what a page of ordinary printed text yields. Below it the reader found noise
+// rather than a document, whichever reader it was.
+const MIN_CHARS_PER_PAGE = 120
+
+// A legible scan scores in the low nineties here; anything under half the characters
+// recognized on average is the engine describing texture rather than reading it.
+const MIN_OCR_CONFIDENCE = 50
+
 // A page with almost no extractable characters is scanned or image-only: no
 // in-page converter can rebuild it, but the document APIs can.
 export function textNeedsCloud(options: {
@@ -35,7 +43,29 @@ export function textNeedsCloud(options: {
 }): boolean {
   if (options.pageCount <= 0) return true
 
-  return options.chars / options.pageCount < 120
+  return options.chars / options.pageCount < MIN_CHARS_PER_PAGE
+}
+
+// Recognizing a scan is no longer automatically a cloud job: the bundled WebAssembly
+// engine reads a clean page for free. It is asked for help only on the pages that
+// engine genuinely could not read, which are the ones the provider is for.
+//
+// A count of characters alone is not enough. Measured against a page of random pixels,
+// the engine returned sixteen thousand characters of invented words in sixty-six seconds
+// while scoring them at fifteen percent, so the engine's own certainty is what separates
+// a hard page from a confident guess.
+export function ocrNeedsCloud(options: {
+  chars: number
+  pageCount: number
+  confidence?: number | null
+}): boolean {
+  if (options.pageCount <= 0) return true
+
+  if (options.chars / options.pageCount < MIN_CHARS_PER_PAGE) return true
+
+  return (
+    typeof options.confidence === "number" && options.confidence < MIN_OCR_CONFIDENCE
+  )
 }
 
 // A real table survives local layout analysis as several columns across rows; a

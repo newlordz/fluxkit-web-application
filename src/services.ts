@@ -73,6 +73,121 @@ async function localTextLooksMissing(args: {
   return router?.textNeedsCloud?.(args) === true
 }
 
+// Same lazy rule as the policy module: a tool that cannot reach the in-browser OCR
+// engine treats the job as one it cannot do locally, and the cloud path is left to it.
+async function getBrowserOcr(): Promise<any> {
+  try {
+    return await import("./browserOcr")
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Reads a page that has no text layer with the WebAssembly engine bundled in /ocr.
+ * A null result means the browser could not do the job, which is the only thing that
+ * lets a billed OCR engine be contacted for it.
+ */
+async function localOcrScan(
+  rawBytes: Uint8Array,
+
+  isPdf: boolean,
+
+  options: OCROptions,
+): Promise<OCRResult | null> {
+  const ocr = await getBrowserOcr()
+
+  // Any other language stays with the engine that can spell it.
+  if (!ocr?.recognizePage || !ocr.isLocallySupported(options.language)) return null
+
+  const images: Blob[] = []
+
+  if (isPdf) {
+    const pdfDoc = await openRasterDocument(rawBytes)
+
+    if (!pdfDoc) return null
+
+    for (let i = 0; i < pdfDoc.numPages; i++) {
+      ensureNotCancelled(options.signal)
+
+      const image = await rasterizePageForOcr(pdfDoc, i)
+
+      if (!image) return null
+
+      images.push(image)
+    }
+  } else {
+    images.push(new Blob([rawBytes as any]))
+  }
+
+  if (images.length === 0) return null
+
+  const ocrLines: OCRLine[] = []
+
+  let totalWords = 0
+
+  let totalChars = 0
+
+  let confidenceSum = 0
+
+  for (const image of images) {
+    ensureNotCancelled(options.signal)
+
+    const page = await ocr.recognizePage(image)
+
+    // One unreadable page makes the whole transcript a lie, so the job is handed over
+    // rather than delivered with a hole in it.
+    if (!page) return null
+
+    confidenceSum += page.confidence
+
+    for (const line of page.lines) {
+      ocrLines.push({ text: line.text, confidence: line.confidence })
+
+      totalWords += line.text.split(/\s+/).filter(Boolean).length
+
+      totalChars += line.text.length
+    }
+  }
+
+  const router = await getEngineRouter()
+
+  // The engine came back with almost nothing, or with a lot of text it was not sure
+  // about: a skewed photo, handwriting, or texture it read as words. That is what the
+  // provider is for.
+  if (
+    router?.ocrNeedsCloud?.({
+      chars: totalChars,
+
+      pageCount: images.length,
+
+      confidence: Math.round(confidenceSum / images.length),
+    }) === true
+  ) {
+    return null
+  }
+
+  return {
+    text: ocrLines.map((l) => l.text).join("\n"),
+
+    // Tesseract reports a measured mean per page, so unlike an embedded text layer
+    // this scan carries a real quality figure.
+    confidence: Math.round(confidenceSum / images.length),
+
+    lines: ocrLines,
+
+    pageCount: images.length,
+
+    language: options.language || "en",
+
+    wordCount: totalWords,
+
+    characterCount: totalChars,
+
+    sourceType: isPdf ? "pdf-scanned" : "image-raster",
+  }
+}
+
 async function localTableNeedsRescue(rows: string[][]): Promise<boolean> {
   const router = await getEngineRouter()
 
@@ -7500,6 +7615,60 @@ async function openRasterDocument(bytes: Uint8Array): Promise<any> {
   }
 }
 
+/**
+ * Paints one page large enough for a character recognizer to see. This is deliberately
+ * not the PDF-to-JPG path: that one optimizes for a small file, and the resampling a
+ * JPEG applies to letter edges is exactly what an OCR engine trips over.
+ */
+async function rasterizePageForOcr(pdfDoc: any, pageIdx: number): Promise<Blob | null> {
+  if (
+    typeof document === "undefined" ||
+    typeof document.createElement !== "function"
+  ) {
+    return null
+  }
+
+  try {
+    const page = await pdfDoc.getPage(pageIdx + 1)
+
+    const unit = page.getViewport({ scale: 1 })
+
+    // Around 300 dpi is where a printed page becomes reliably legible to the engine;
+    // the dimension cap stops an oversized sheet from exhausting the browser first.
+    const scale = Math.max(
+      0.1,
+
+      Math.min(300 / 72, 4096 / Math.max(unit.width, unit.height, 1)),
+    )
+
+    const viewport = page.getViewport({ scale })
+
+    const canvas = document.createElement("canvas")
+
+    canvas.width = Math.max(1, Math.floor(viewport.width))
+
+    canvas.height = Math.max(1, Math.floor(viewport.height))
+
+    const ctx = canvas.getContext("2d", { alpha: false })
+
+    if (!ctx) return null
+
+    ctx.fillStyle = "#ffffff"
+
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    await page.render({ canvasContext: ctx, viewport }).promise
+
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/png")
+    })
+  } catch (err) {
+    console.warn("page rasterization for OCR failed:", err)
+
+    return null
+  }
+}
+
 export async function pdfToJPG(
   fileOrBytes: File | Uint8Array | ArrayBuffer,
 
@@ -9579,7 +9748,13 @@ export async function scanOCR(
     }
   }
 
-  // 1b. Cloud OCR Engine (OCR.space - 25,000 free operations/mo)
+  // 1b. In-browser OCR of a page that has no text layer
+
+  const scanned = await localOcrScan(rawBytes, isPdf, options)
+
+  if (scanned) return scanned
+
+  // 1c. Cloud OCR Engine (OCR.space - 25,000 free operations/mo)
 
   const ocrApi = await nextCloudApi("ocr-text")
 

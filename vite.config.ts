@@ -63,6 +63,19 @@ export default defineConfig(({ mode }) => {
             if (id.includes("dataConversionService")) {
               return "data-conversions"
             }
+            if (
+              id.includes("tesseract.js") ||
+              id.includes("wasm-feature-detect") ||
+              id.includes("idb-keyval") ||
+              id.includes("zlibjs") ||
+              id.includes("bmp-js") ||
+              id.includes("is-url")
+            ) {
+              // Reached only through a dynamic import, so it keeps its own chunk: the
+              // node_modules rule below would fold it into the eagerly preloaded vendor
+              // bundle and every visitor would download an OCR engine they may never use.
+              return "browser-ocr"
+            }
             if (id.includes("node_modules")) {
               return "vendor"
             }

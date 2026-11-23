@@ -11,7 +11,7 @@ const { PDFDocument, StandardFonts, rgb } = require("pdf-lib")
 // intercepting fetch, so a pass means no credit was spent rather than merely that an
 // endpoint happened to be unreachable.
 
-function loadServices(routerExports) {
+function loadServices(routerExports, ocrExports) {
   const filePath = path.resolve("src", "services.ts")
   const raw = fs.readFileSync(filePath, "utf8")
   const code = ts.transpileModule(raw, {
@@ -32,6 +32,9 @@ function loadServices(routerExports) {
       // switched between "good enough" and "needs a rescue" without a multi-megabyte
       // fixture in the repository.
       if (id === "./engineRouter" && routerExports) return routerExports
+      // The in-browser OCR engine is stood up the same way: a real one drags a 3.9 MB
+      // WASM binary and a Worker into a unit test that is only about the decision.
+      if (id === "./browserOcr" && ocrExports) return ocrExports
       if (id === "./sessionService") return { getSessionToken: () => "test-session-token" }
       if (id === "./jobTypes") return {}
       return require(id)
@@ -74,7 +77,7 @@ async function pdfBase64(pages) {
 
 // Routes every /api/ call through a counter and answers with the payload, leaving any
 // other request (a real provider probe) to fail loudly rather than silently.
-function stubCloud(responder) {
+function stubCloud(responder, offeredApi) {
   const calls = []
   const previousPool = global.window && global.window.__masterfileproApiPool
   const previousFetch = globalThis.fetch
@@ -83,7 +86,7 @@ function stubCloud(responder) {
   // The pool is made to look fully armed: Adobe available and in quota, so the only
   // thing that can stop a request is the routing policy itself.
   global.window.__masterfileproApiPool = {
-    getNextAvailableApi: () => ({ id: "adobe-1", provider: "adobe" }),
+    getNextAvailableApi: () => offeredApi || { id: "adobe-1", provider: "adobe" },
     recordApiOutcome: () => {},
   }
   globalThis.fetch = async (url, init) => {
@@ -114,6 +117,7 @@ const ALWAYS_LOCAL = {
   textNeedsCloud: () => false,
   tableNeedsCloud: () => false,
   deckNeedsCloud: () => false,
+  ocrNeedsCloud: () => false,
 }
 
 const ALWAYS_ESCALATE = {
@@ -121,9 +125,12 @@ const ALWAYS_ESCALATE = {
   textNeedsCloud: () => true,
   tableNeedsCloud: () => true,
   deckNeedsCloud: () => true,
+  ocrNeedsCloud: () => true,
 }
 
-test("engine policy: the thresholds that decide when a credit is spent", () => {
+// The shipped policy, compiled the same way the app loads it. A test that uses this
+// proves the real thresholds decide, not a stub chosen to make the test pass.
+function loadPolicy() {
   const src = fs.readFileSync(path.resolve("src", "engineRouter.ts"), "utf8")
   const compiled = ts.transpileModule(src, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -132,7 +139,11 @@ test("engine policy: the thresholds that decide when a credit is spent", () => {
   vm.runInThisContext(`(function (exports, module) {\n${compiled}\n})`, {
     filename: "engineRouter.ts",
   })(mod.exports, mod)
-  const policy = mod.exports
+  return mod.exports
+}
+
+test("engine policy: the thresholds that decide when a credit is spent", () => {
+  const policy = loadPolicy()
 
   assert.equal(
     policy.compressNeedsCloud({ level: "balanced", originalSize: 4_000_000, outSize: 3_900_000 }),
@@ -158,6 +169,30 @@ test("engine policy: the thresholds that decide when a credit is spent", () => {
   assert.equal(policy.textNeedsCloud({ chars: 12, pageCount: 4 }), true)
   assert.equal(policy.textNeedsCloud({ chars: 9_000, pageCount: 4 }), false)
   assert.equal(policy.textNeedsCloud({ chars: 5_000, pageCount: 0 }), true)
+
+  assert.equal(policy.ocrNeedsCloud({ chars: 5_000, pageCount: 0 }), true)
+  assert.equal(
+    policy.ocrNeedsCloud({ chars: 40, pageCount: 1 }),
+    true,
+    "a scan the engine could barely see is worth asking the provider about",
+  )
+  assert.equal(
+    policy.ocrNeedsCloud({ chars: 900, pageCount: 1 }),
+    false,
+    "a page the engine read for free is not",
+  )
+  // Observed, not imagined: a page of random pixels returned 16,227 characters at a
+  // mean confidence of 15. A gate that only counts characters ships that as a result.
+  assert.equal(
+    policy.ocrNeedsCloud({ chars: 16_227, pageCount: 1, confidence: 15 }),
+    true,
+    "confident-looking nonsense is not a finished job",
+  )
+  assert.equal(
+    policy.ocrNeedsCloud({ chars: 1_800, pageCount: 2, confidence: 91 }),
+    false,
+    "a real scan scores in the low nineties and stays local",
+  )
 
   assert.equal(policy.tableNeedsCloud([]), true)
   assert.equal(policy.tableNeedsCloud([["everything collapsed into one cell"]]), true)
@@ -370,4 +405,163 @@ test("pool: an engine that just failed is rested so the job moves to the next on
     globalThis.fetch = savedFetch
     global.window = savedWindow
   }
+})
+
+// A page image that is not a PDF, so the scan reaches the recognizer without a DOM to
+// rasterize into. The PDF branch is proven in the browser instead.
+function scanImage() {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])], "scan.png", {
+    type: "image/png",
+  })
+}
+
+function readableEngine() {
+  const sentence =
+    "Amount due for the period described above is payable within thirty days of receipt."
+
+  return {
+    isLocallySupported: () => true,
+    recognizePage: async () => ({
+      text: [sentence, sentence, sentence].join("\n"),
+      confidence: 93,
+      lines: [sentence, sentence, sentence].map((text) => ({ text, confidence: 93 })),
+    }),
+  }
+}
+
+test("scan: a page the browser can read never reaches a paid engine", async () => {
+  const services = loadServices(loadPolicy(), readableEngine())
+  const cloud = stubCloud(
+    () => jsonResponse({ ok: false, error: "should not be asked" }),
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let result
+  try {
+    result = await services.scanOCR(scanImage(), {})
+  } finally {
+    cloud.restore()
+  }
+
+  assert.deepEqual(cloud.calls, [], "the whole job stayed on the visitor's own machine")
+  assert.ok(result.characterCount > 200, "and the transcript is the engine's own work")
+  assert.equal(result.confidence, 93, "a real recognition score is reported, not a placeholder")
+  assert.equal(result.sourceType, "image-raster")
+})
+
+test("scan: a page the browser read badly asks the pool exactly once", async () => {
+  const services = loadServices(loadPolicy(), {
+    isLocallySupported: () => true,
+    recognizePage: async () => ({
+      text: "rn 1",
+      confidence: 11,
+      lines: [{ text: "rn 1", confidence: 11 }],
+    }),
+  })
+  const cloud = stubCloud(
+    () => jsonResponse({ success: true, text: "Recovered invoice total 4,200.00 owing." }),
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let result
+  try {
+    result = await services.scanOCR(scanImage(), {})
+  } finally {
+    cloud.restore()
+  }
+
+  assert.deepEqual(cloud.calls, ["/api/ocr-space/parse"], "one rescue, not one per attempt")
+  assert.match(result.text, /Recovered invoice/, "the provider's better reading is what ships")
+})
+
+test("scan: a hallucinated page is not treated as a result", async () => {
+  // The shape a page of visual noise actually produced: plenty of characters, none of
+  // them trusted. A gate that only counts characters would have shipped this.
+  const services = loadServices(loadPolicy(), {
+    isLocallySupported: () => true,
+    recognizePage: async () => ({
+      text: "BE Dela ctigeah cesta ead eee tee cage wana ates Sr ee ure ge A eras sapere ".repeat(6),
+      confidence: 15,
+      lines: Array.from({ length: 18 }, (unused, i) => ({
+        text: `noise line ${i} with plausible looking garbage`,
+        confidence: 15,
+      })),
+    }),
+  })
+  const cloud = stubCloud(
+    () => jsonResponse({ success: true, text: "The page holds no readable text." }),
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let result
+  try {
+    result = await services.scanOCR(scanImage(), {})
+  } finally {
+    cloud.restore()
+  }
+
+  assert.deepEqual(cloud.calls, ["/api/ocr-space/parse"], "the guess was not good enough to keep")
+  assert.match(result.text, /no readable text/, "the provider's reading is what ships")
+})
+
+test("scan: a language the bundled model cannot spell goes straight to the provider", async () => {
+  const services = loadServices(loadPolicy(), {
+    isLocallySupported: () => false,
+    recognizePage: async () => {
+      throw new Error("must not be reached")
+    },
+  })
+  const asked = []
+  const cloud = stubCloud(
+    () => {
+      asked.push(true)
+      return jsonResponse({ success: true, text: "Total a payer dans les trente jours." })
+    },
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let result
+  try {
+    result = await services.scanOCR(scanImage(), { language: "fra" })
+  } finally {
+    cloud.restore()
+  }
+
+  assert.deepEqual(cloud.calls, ["/api/ocr-space/parse"], "no local guess is attempted")
+  assert.match(result.text, /dans les trente jours/)
+})
+
+test("scan: an engine that cannot start is not treated as a failure of the document", async () => {
+  const services = loadServices(loadPolicy(), {
+    isLocallySupported: () => true,
+    recognizePage: async () => null,
+  })
+  const cloud = stubCloud(
+    () => jsonResponse({ success: true, text: "The provider finished what the browser could not." }),
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let result
+  try {
+    result = await services.scanOCR(scanImage(), {})
+  } finally {
+    cloud.restore()
+  }
+
+  assert.equal(cloud.calls.length, 1, "the job moved to the engine that can do it")
+  assert.match(result.text, /provider finished/)
+})
+
+// A missing file does not fail loudly: the engine cannot start, every scan quietly
+// costs a credit, and the site looks like it never changed. So the assets are checked in.
+test("ocr: the engine a scan needs is shipped from this origin", () => {
+  for (const rel of [
+    "public/ocr/worker.min.js",
+    "public/ocr/tesseract-core-simd-lstm.wasm.js",
+    "public/ocr/langs/eng.traineddata",
+  ]) {
+    assert.ok(fs.existsSync(path.resolve(rel)), `${rel} is missing and the CSP would block a CDN copy`)
+  }
+
+  const src = fs.readFileSync(path.resolve("src", "browserOcr.ts"), "utf8")
+
+  assert.match(src, /corePath/, "the WASM build is pinned to a local file")
+  assert.match(src, /langPath/, "the language model is pinned to a local file")
+  assert.match(src, /gzip:\s*false/, "the model is not served through a second layer of gzip")
+  assert.doesNotMatch(src, /cdn\.jsdelivr\.net|unpkg\.com/, "no third-party host is trusted with it")
 })
