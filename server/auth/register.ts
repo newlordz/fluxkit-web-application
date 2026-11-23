@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import crypto from "node:crypto"
-import { cors, json, query, readBody } from "../_lib/db"
-import { createSession, generateSalt, hashPassword } from "../_lib/auth"
+import { cors, json, query, readBody } from "../_lib/db.ts"
+import { createSession, generateSalt, hashPassword } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)

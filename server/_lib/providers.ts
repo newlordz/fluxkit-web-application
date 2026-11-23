@@ -1,4 +1,4 @@
-import { query } from "./db"
+import { query } from "./db.ts"
 
 // Provider credentials resolve server-side only. A browser-supplied key is never
 // trusted: it would let anyone route usage (and cost) through this project's quota.

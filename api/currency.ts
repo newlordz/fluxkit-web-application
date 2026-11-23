@@ -1,5 +1,5 @@
-import { query } from "../server/_lib/db"
-import { requireAdmin } from "../server/_lib/auth"
+import { query } from "../server/_lib/db.ts"
+import { requireAdmin } from "../server/_lib/auth.ts"
 
 const DEFAULT_USD_TO_GHS_RATE = 11.78
 let baseCurrency = "USD"

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query } from "../_lib/db"
+import { cors, json, query } from "../_lib/db.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)

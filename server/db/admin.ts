@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody, transact } from "../_lib/db"
-import { requireAdmin } from "../_lib/auth"
+import { cors, json, query, readBody, transact } from "../_lib/db.ts"
+import { requireAdmin } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)

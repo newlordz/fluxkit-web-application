@@ -1,10 +1,10 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, type ApiRequest } from "../server/_lib/db"
-import admin from "../server/db/admin"
-import apis from "../server/db/apis"
-import gateways from "../server/db/gateways"
-import status from "../server/db/status"
-import users from "../server/db/users"
+import { cors, json, type ApiRequest } from "../server/_lib/db.ts"
+import admin from "../server/db/admin.ts"
+import apis from "../server/db/apis.ts"
+import gateways from "../server/db/gateways.ts"
+import status from "../server/db/status.ts"
+import users from "../server/db/users.ts"
 
 type DbHandler = (req: ApiRequest, res: ServerResponse) => Promise<unknown>
 

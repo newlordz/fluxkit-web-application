@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db"
-import { currentUser } from "../server/_lib/auth"
+import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db.ts"
+import { currentUser } from "../server/_lib/auth.ts"
 
 const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
 const TTL_DAYS = 30

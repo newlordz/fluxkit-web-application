@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody } from "../_lib/db"
-import { currentUser, requireRole } from "../_lib/auth"
+import { cors, json, query, readBody } from "../_lib/db.ts"
+import { currentUser, requireRole } from "../_lib/auth.ts"
 
 interface UserRow {
   id: string

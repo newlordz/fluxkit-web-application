@@ -26,12 +26,12 @@ function loadHandler(relPath, stubs = {}, extraGlobals = {}) {
     if (id.startsWith(".")) {
       const resolved = path.resolve(dir, id)
       if (stubPaths.has(resolved)) return stubPaths.get(resolved)
-      for (const ext of [".ts", ".js", ".tsx"]) {
+      for (const ext of ["", ".ts", ".js", ".tsx"]) {
         if (fs.existsSync(resolved + ext)) {
           return loadHandler(path.relative(process.cwd(), resolved + ext), stubs, extraGlobals)
         }
       }
-      // Bare-specifier fallback for extensionless relative imports of npm packages.
+      // Fallback for relative specifiers that name an npm package.
       return require(resolved)
     }
     return require(id)
@@ -201,8 +201,8 @@ const ADMIN = { id: "usr_admin", role: "admin" }
 test("API Gateways: GET /api/db/gateways requires an administrator session", async () => {
   const s = createStubs({ admin: null, rows: GATEWAY_ROWS })
   const handler = loadHandler("server/db/gateways.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
   })
   const { req, res } = createMockReqRes({ method: "GET" })
 
@@ -216,8 +216,8 @@ test("API Gateways: GET /api/db/gateways requires an administrator session", asy
 test("API Gateways: GET /api/db/gateways returns masked secrets to an admin", async () => {
   const s = createStubs({ admin: ADMIN, rows: GATEWAY_ROWS })
   const handler = loadHandler("server/db/gateways.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
   })
   const { req, res } = createMockReqRes({ method: "GET", headers: { authorization: "Bearer t" } })
 
@@ -246,8 +246,8 @@ test("API Gateways: GET /api/db/gateways returns masked secrets to an admin", as
 test("API Gateways: POST /api/db/gateways preserves stored secrets when the UI sends masked values", async () => {
   const s = createStubs({ admin: ADMIN, rows: GATEWAY_ROWS })
   const handler = loadHandler("server/db/gateways.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -292,8 +292,8 @@ test("API Gateways: POST /api/db/gateways preserves stored secrets when the UI s
 test("API Gateways: POST /api/db/gateways rejects a non-admin writer", async () => {
   const s = createStubs({ admin: null, rows: GATEWAY_ROWS })
   const handler = loadHandler("server/db/gateways.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -313,9 +313,9 @@ test("API Gateways: POST /api/db/gateways rejects a non-admin writer", async () 
 test("API Paystack: POST /api/paystack/verify-keys requires an administrator session", async () => {
   const s = createStubs({ admin: null })
   const handler = loadHandler("api/paystack/verify-keys.ts", {
-    "../../server/_lib/db": s.db,
-    "../../server/_lib/auth": s.auth,
-    "../../server/_lib/providers": s.providers,
+    "../../server/_lib/db.ts": s.db,
+    "../../server/_lib/auth.ts": s.auth,
+    "../../server/_lib/providers.ts": s.providers,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -331,9 +331,9 @@ test("API Paystack: POST /api/paystack/verify-keys requires an administrator ses
 test("API Paystack: POST /api/paystack/verify-keys rejects missing key", async () => {
   const s = createStubs({ admin: ADMIN })
   const handler = loadHandler("api/paystack/verify-keys.ts", {
-    "../../server/_lib/db": s.db,
-    "../../server/_lib/auth": s.auth,
-    "../../server/_lib/providers": s.providers,
+    "../../server/_lib/db.ts": s.db,
+    "../../server/_lib/auth.ts": s.auth,
+    "../../server/_lib/providers.ts": s.providers,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -359,7 +359,7 @@ test("API Paystack: POST /api/paystack/verify-keys safely unmasks bullet charact
   })
   const handler = loadHandler(
     "api/paystack/verify-keys.ts",
-    { "../../server/_lib/db": s.db, "../../server/_lib/auth": s.auth, "../../server/_lib/providers": s.providers },
+    { "../../server/_lib/db.ts": s.db, "../../server/_lib/auth.ts": s.auth, "../../server/_lib/providers.ts": s.providers },
     {
       fetch: async (url, init) => {
         sent.push({ url, init })

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http"
 import crypto from "node:crypto"
-import { query } from "./db"
+import { query } from "./db.ts"
 
 const SESSION_DAYS = 30
 const MAX_FAILED_ATTEMPTS = 5

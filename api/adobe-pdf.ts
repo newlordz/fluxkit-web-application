@@ -1,5 +1,5 @@
-import { currentUser } from "../server/_lib/auth"
-import { getAdobeCredentials, recordApiCall } from "../server/_lib/providers"
+import { currentUser } from "../server/_lib/auth.ts"
+import { getAdobeCredentials, recordApiCall } from "../server/_lib/providers.ts"
 
 async function parseRequestBody(req: any): Promise<any> {
   if (req.body && typeof req.body === "object") return req.body

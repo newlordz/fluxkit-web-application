@@ -1,11 +1,11 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, type ApiRequest } from "../server/_lib/db"
-import login from "../server/auth/login"
-import password from "../server/auth/password"
-import register from "../server/auth/register"
-import resetConfirm from "../server/auth/reset-confirm"
-import resetRequest from "../server/auth/reset-request"
-import session from "../server/auth/session"
+import { cors, json, type ApiRequest } from "../server/_lib/db.ts"
+import login from "../server/auth/login.ts"
+import password from "../server/auth/password.ts"
+import register from "../server/auth/register.ts"
+import resetConfirm from "../server/auth/reset-confirm.ts"
+import resetRequest from "../server/auth/reset-request.ts"
+import session from "../server/auth/session.ts"
 
 type AuthHandler = (req: ApiRequest, res: ServerResponse) => Promise<unknown>
 

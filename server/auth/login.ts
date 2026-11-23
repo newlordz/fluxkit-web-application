@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, readBody } from "../_lib/db"
+import { cors, json, readBody } from "../_lib/db.ts"
 import {
   clearFailedAttempts,
   createSession,
@@ -7,7 +7,7 @@ import {
   isLocked,
   registerFailedAttempt,
   verifyPassword,
-} from "../_lib/auth"
+} from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)

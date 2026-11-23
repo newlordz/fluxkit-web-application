@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody } from "../_lib/db"
-import { activeResetCodeCount, createResetCode } from "../_lib/auth"
+import { cors, json, query, readBody } from "../_lib/db.ts"
+import { activeResetCodeCount, createResetCode } from "../_lib/auth.ts"
 
 const MAX_ACTIVE_PER_EMAIL = 3
 

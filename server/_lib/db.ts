@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { Pool } from "pg"
 
+// package.json sets "type": "module", so Vercel emits these handlers as ES modules and
+// every relative import here and in api/ must carry its `.ts` extension to resolve.
+
 // Vercel's Node.js runtime leaves query parsing to the handler, so the dev
 // middleware injects `query` and production falls back to the raw URL.
 export type ApiRequest = IncomingMessage & { query?: Record<string, string>; body?: any }
