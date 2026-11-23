@@ -110,10 +110,62 @@ import {
 import { tools } from "./config"
 import { useNotify } from "./Notifications"
 
+export type AdminTab =
+  | "tiers"
+  | "users"
+  | "pages"
+  | "integrations"
+  | "apis"
+  | "settings"
+
+export const VALID_ADMIN_TABS: AdminTab[] = [
+  "tiers",
+  "users",
+  "pages",
+  "integrations",
+  "apis",
+  "settings",
+]
+
+export const ADMIN_TAB_STORAGE_KEY = "fluxkit-admin-tab"
+
+export function resolveInitialAdminTab(initialTab?: AdminTab): AdminTab {
+  if (initialTab && VALID_ADMIN_TABS.includes(initialTab)) {
+    return initialTab
+  }
+
+  if (typeof window !== "undefined") {
+    // 1. Check window.location.hash (e.g. #admin-users, #admin/users, #admin?tab=users)
+    const hash = (window.location?.hash || "").toLowerCase().replace(/^#/, "")
+    for (const tab of VALID_ADMIN_TABS) {
+      if (
+        hash === `admin-${tab}` ||
+        hash === `admin/${tab}` ||
+        hash.includes(`tab=${tab}`) ||
+        hash === tab
+      ) {
+        return tab
+      }
+    }
+
+    // 2. Check sessionStorage (persists tab state across page reloads & refreshes)
+    try {
+      const saved = window.sessionStorage?.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab | null
+      if (saved && VALID_ADMIN_TABS.includes(saved)) {
+        return saved
+      }
+    } catch {
+      // ignore storage errors in restricted contexts
+    }
+  }
+
+  return "tiers"
+}
+
 export interface AdminPanelProps {
   currentUser: UserAccount | null
   navigate: (id: string) => void
-  initialTab?: "tiers" | "users" | "pages" | "integrations" | "apis" | "settings"
+  initialTab?: AdminTab
 }
 
 export default function AdminPanel({
@@ -169,10 +221,29 @@ export default function AdminPanel({
     )
   }
 
-  const [activeTab, setActiveTab] =
-    useState<"tiers" | "users" | "pages" | "integrations" | "apis" | "settings">(
-      initialTab || "tiers",
-    )
+  const [activeTab, setActiveTab] = useState<AdminTab>(() =>
+    resolveInitialAdminTab(initialTab),
+  )
+
+  // Persist active tab to sessionStorage and mirror to URL hash so page reload preserves the tab
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.sessionStorage?.setItem(ADMIN_TAB_STORAGE_KEY, activeTab)
+      const currentHash = (window.location.hash || "").toLowerCase()
+      if (
+        !currentHash ||
+        currentHash.startsWith("#admin") ||
+        currentHash === "#"
+      ) {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, "", `#admin-${activeTab}`)
+        }
+      }
+    } catch {
+      // ignore in restricted envs
+    }
+  }, [activeTab])
 
   // Horizontal Scroll Management for Navigation Tabs
   const adminNavTrackRef = useRef<HTMLDivElement>(null)
@@ -509,7 +580,7 @@ export default function AdminPanel({
   const [editUserError, setEditUserError] = useState("")
 
   useEffect(() => {
-    if (initialTab) {
+    if (initialTab && VALID_ADMIN_TABS.includes(initialTab)) {
       setActiveTab(initialTab)
     }
   }, [initialTab])
@@ -621,15 +692,13 @@ export default function AdminPanel({
   const handleUsdPriceChange = async (toolId: string, rawVal: string) => {
     const val = parseFloat(rawVal)
     const newUsd = isNaN(val) || val < 0 ? 0 : Math.round(val * 100) / 100
-    setToolPrice(toolId, newUsd)
+    // setToolPrice syncs the tier and sends both in one request.
+    await setToolPrice(toolId, newUsd)
     setToolPrices((prev) => ({ ...prev, [toolId]: newUsd }))
-
-    // Automatically sync tier with price
-    const nextTier = newUsd > 0 ? "pro" : "standard"
-    if (toolTiers[toolId] !== nextTier) {
-      setToolTier(toolId, nextTier)
-      setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
-    }
+    setToolTiers((prev) => ({
+      ...prev,
+      [toolId]: newUsd > 0 ? "pro" : "standard",
+    }))
 
     // Trigger backend conversion from USD -> GHS
     try {
@@ -655,6 +724,7 @@ export default function AdminPanel({
     setGhsPrices((prev) => ({ ...prev, [toolId]: newGhs }))
 
     // Trigger backend conversion from GHS -> USD
+    let convertedUsd: number
     try {
       const conv = await convertCurrencyOnBackend(
         newGhs,
@@ -662,27 +732,18 @@ export default function AdminPanel({
         "USD",
         exchangeRate,
       )
-      setToolPrice(toolId, conv.convertedAmount)
-      setToolPrices((prev) => ({ ...prev, [toolId]: conv.convertedAmount }))
-
-      // Automatically sync tier with price
-      const nextTier = conv.convertedAmount > 0 ? "pro" : "standard"
-      if (toolTiers[toolId] !== nextTier) {
-        setToolTier(toolId, nextTier)
-        setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
-      }
+      convertedUsd = conv.convertedAmount
     } catch {
-      const convertedUsd = Math.round((newGhs / exchangeRate) * 100) / 100
-      setToolPrice(toolId, convertedUsd)
-      setToolPrices((prev) => ({ ...prev, [toolId]: convertedUsd }))
-
-      // Automatically sync tier with price
-      const nextTier = convertedUsd > 0 ? "pro" : "standard"
-      if (toolTiers[toolId] !== nextTier) {
-        setToolTier(toolId, nextTier)
-        setToolTiers((prev) => ({ ...prev, [toolId]: nextTier }))
-      }
+      convertedUsd = Math.round((newGhs / exchangeRate) * 100) / 100
     }
+
+    // setToolPrice syncs the tier and sends both in one request.
+    await setToolPrice(toolId, convertedUsd)
+    setToolPrices((prev) => ({ ...prev, [toolId]: convertedUsd }))
+    setToolTiers((prev) => ({
+      ...prev,
+      [toolId]: convertedUsd > 0 ? "pro" : "standard",
+    }))
   }
 
   // Interactive quick calculator converters
@@ -724,26 +785,25 @@ export default function AdminPanel({
     }
   }
 
-  const handleTierToggle = (toolId: string) => {
+  const handleTierToggle = async (toolId: string) => {
     const current = toolTiers[toolId] || "standard"
     const next = current === "pro" ? "standard" : "pro"
-    setToolTier(toolId, next)
-    setToolTiers((prev) => ({ ...prev, [toolId]: next }))
-    if (next === "pro") {
-      const p =
-        toolPrices[toolId] && toolPrices[toolId] > 0 ? toolPrices[toolId] : 4.99
-      setToolPrice(toolId, p)
-      setToolPrices((prev) => ({ ...prev, [toolId]: p }))
-      setGhsPrices((prev) => ({
-        ...prev,
-        [toolId]: Math.round(p * exchangeRate * 100) / 100,
-      }))
-    } else {
-      setToolPrice(toolId, 0)
-      setToolPrices((prev) => ({ ...prev, [toolId]: 0 }))
-      setGhsPrices((prev) => ({ ...prev, [toolId]: 0 }))
-    }
-    showToast(`Tool '${toolId}' updated to ${next.toUpperCase()} tier.`)
+    // setToolTier keeps the price in step and sends both in one request.
+    const saved = await setToolTier(toolId, next)
+    const tiers = getAllToolTiers()
+    const prices = getAllToolPrices()
+    setToolTiers(tiers)
+    setToolPrices(prices)
+    const p = prices[toolId] ?? 0
+    setGhsPrices((prev) => ({
+      ...prev,
+      [toolId]: Math.round(p * exchangeRate * 100) / 100,
+    }))
+    showToast(
+      saved
+        ? `Tool '${toolId}' updated to ${next.toUpperCase()} tier.`
+        : `Tool '${toolId}' changed to ${next.toUpperCase()} in this browser only — the server did not accept the write, so other visitors still see the old tier. Check the administrator session and retry.`,
+    )
   }
 
   const handleLoadPricingPageTemplate = () => {
@@ -1234,26 +1294,32 @@ export default function AdminPanel({
 
   const [selectedCategory, setSelectedCategory] = useState("all")
 
-  const handleBulkSetProPrice = (amount: number) => {
+  const handleBulkSetProPrice = async (amount: number) => {
     const proIds = tools
       .filter((t) => (toolTiers[t.id] || "standard") === "pro")
       .map((t) => t.id)
-    setBulkToolPrices(proIds, amount)
+    const saved = await setBulkToolPrices(proIds, amount)
     setToolPrices(getAllToolPrices())
     setToolTiers(getAllToolTiers())
     showToast(
-      `Updated all ${proIds.length} Pro tools to $${amount.toFixed(2)} USD.`,
+      saved
+        ? `Updated all ${proIds.length} Pro tools to $${amount.toFixed(2)} USD.`
+        : `Pricing for ${proIds.length} tools did not reach the server, so other visitors still see the old tiers.`,
     )
   }
 
-  const handleBulkSetStandardFree = () => {
+  const handleBulkSetStandardFree = async () => {
     const stdIds = tools
       .filter((t) => (toolTiers[t.id] || "standard") === "standard")
       .map((t) => t.id)
-    setBulkToolPrices(stdIds, 0)
+    const saved = await setBulkToolPrices(stdIds, 0)
     setToolPrices(getAllToolPrices())
     setToolTiers(getAllToolTiers())
-    showToast(`Reset all ${stdIds.length} Standard tools to FREE ($0.00).`)
+    showToast(
+      saved
+        ? `Reset all ${stdIds.length} Standard tools to FREE ($0.00).`
+        : `Reset for ${stdIds.length} tools did not reach the server, so other visitors still see the old tiers.`,
+    )
   }
 
   const proCount = Object.values(toolTiers).filter((t) => t === "pro").length

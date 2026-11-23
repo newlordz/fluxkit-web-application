@@ -723,13 +723,21 @@ export default function App() {
       ? "Settings"
       : page === "activity"
         ? "Activity"
-        : page === "admin"
-          ? "Admin Dashboard"
-          : page === "admin-integrations"
+        : page === "admin" || page.startsWith("admin-")
+          ? page === "admin-integrations"
             ? "Payment Gateways & APIs"
-            : customPage?.title ||
-              selected?.name ||
-              (page === "help" ? "Help & resources" : "Page not found"))
+            : page === "admin-apis"
+              ? "PDF & Cloud APIs"
+              : page === "admin-users"
+                ? "User Approvals"
+                : page === "admin-pages"
+                  ? "Page Manager"
+                  : page === "admin-settings"
+                    ? "Database & Settings"
+                    : "Admin Dashboard"
+          : customPage?.title ||
+            selected?.name ||
+            (page === "help" ? "Help & resources" : "Page not found"))
 
   const category: Category | undefined =
     page === "files"
@@ -964,7 +972,11 @@ export default function App() {
                 <div className="nav-label">ADMINISTRATION</div>
                 <button
                   key="admin"
-                  className={page === "admin" ? "active" : ""}
+                  className={
+                    page === "admin" || page.startsWith("admin-")
+                      ? "active"
+                      : ""
+                  }
                   onClick={() => navigate("admin")}
                   style={{ color: "#00C9B7", fontWeight: 600 }}
                 >
@@ -2269,9 +2281,7 @@ export default function App() {
                 </form>
               </div>
             </div>
-          ) : page === "admin" ||
-            page === "admin-integrations" ||
-            page === "admin-apis" ? (
+          ) : page === "admin" || page.startsWith("admin-") ? (
             <AdminPanel
               currentUser={currentUser}
               navigate={navigate}
@@ -2280,7 +2290,15 @@ export default function App() {
                   ? "apis"
                   : page === "admin-integrations"
                     ? "integrations"
-                    : "tiers"
+                    : page === "admin-users"
+                      ? "users"
+                      : page === "admin-pages"
+                        ? "pages"
+                        : page === "admin-settings"
+                          ? "settings"
+                          : page === "admin-tiers"
+                            ? "tiers"
+                            : undefined
               }
             />
           ) : customPage ? (

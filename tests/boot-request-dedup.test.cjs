@@ -9,7 +9,7 @@ const ts = require("typescript")
  * The boot sequence has several readers of the same records. A production page
  * load must issue one request per endpoint, so this harness counts fetches.
  */
-function createHarness() {
+function createHarness(adminPayload) {
   const store = new Map()
   const requests = []
   const localStorage = {
@@ -34,10 +34,14 @@ function createHarness() {
   }
 
   const fetch = async (url, init = {}) => {
-    requests.push({ url: String(url), method: (init.method || "GET").toUpperCase() })
+    requests.push({
+      url: String(url),
+      method: (init.method || "GET").toUpperCase(),
+      body: init.body,
+    })
     const body =
       String(url).includes("/api/db/admin")
-        ? {
+        ? adminPayload || {
             ok: true,
             admin: {
               id: "usr_admin_default",
@@ -138,4 +142,64 @@ test("Boot: a settled request is re-fetched rather than served stale", async () 
     2,
     "dedup is single-flight only, not a cache: a later focus refresh must hit the server",
   )
+})
+
+test("Boot: the server tier replaces a stale local entry, not the other way round", async () => {
+  const harness = createHarness({
+    ok: true,
+    toolTiers: { ocr: "standard", "merge-pdf": "standard" },
+    toolPrices: { ocr: 0, "merge-pdf": 0 },
+  })
+  // Left over from an older bundle: this browser still thinks two tools are Pro.
+  harness.store.set(
+    "masterfilepro-tool-tiers",
+    JSON.stringify({ ocr: "pro", "merge-pdf": "pro", qr: "pro" }),
+  )
+  harness.store.set(
+    "masterfilepro-tool-prices",
+    JSON.stringify({ ocr: 4.99, "merge-pdf": 4.99, qr: 4.99 }),
+  )
+
+  const admin = harness.load("adminService")
+  await admin.syncToolTiersFromDatabase()
+
+  assert.equal(
+    admin.getToolTier("ocr"),
+    "standard",
+    "a configured tool must not stay locked because of this browser's cache",
+  )
+  assert.equal(admin.getToolPrice("ocr"), 0)
+  assert.equal(admin.getToolTier("qr"), "standard")
+  assert.equal(
+    harness.store.get("masterfilepro-tool-tiers"),
+    JSON.stringify({ ocr: "standard", "merge-pdf": "standard" }),
+    "the corrected configuration is written back to the cache",
+  )
+})
+
+test("Tier and price edits are sent to Postgres instead of staying in the browser", async () => {
+  const harness = createHarness()
+  const admin = harness.load("adminService")
+
+  await admin.setToolTier("ocr", "pro")
+  await admin.setToolPrice("qr", 2.5)
+  await admin.setBulkToolPrices(["merge-pdf", "split-pdf"], 0)
+
+  const posts = harness.requests
+    .filter((r) => r.url === "/api/db/admin" && r.method === "POST")
+    .map((r) => JSON.parse(r.body))
+
+  assert.equal(posts.length, 3, "every configuration write must reach the server")
+  assert.deepEqual(posts[0], {
+    toolTiers: { ocr: "pro" },
+    toolPrices: { ocr: 4.99 },
+  })
+  assert.deepEqual(posts[1], {
+    toolTiers: { qr: "pro" },
+    toolPrices: { qr: 2.5 },
+  })
+  assert.deepEqual(posts[2], {
+    toolTiers: { "merge-pdf": "standard", "split-pdf": "standard" },
+    toolPrices: { "merge-pdf": 0, "split-pdf": 0 },
+  })
 })

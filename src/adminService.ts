@@ -35,8 +35,10 @@ export {
 const TOOL_TIERS_KEY = "masterfilepro-tool-tiers"
 const TOOL_PRICES_KEY = "masterfilepro-tool-prices"
 
+export type ToolTier = "standard" | "pro"
+
 // In-memory fallback for test harnesses without localStorage
-let inMemoryTiers: Record<string, "standard" | "pro"> | null = null
+let inMemoryTiers: Record<string, ToolTier> | null = null
 let inMemoryPrices: Record<string, number> | null = null
 
 function getStorage(): Storage | null {
@@ -49,7 +51,7 @@ function getStorage(): Storage | null {
   return null
 }
 
-export function getAllToolTiers(): Record<string, "standard" | "pro"> {
+export function getAllToolTiers(): Record<string, ToolTier> {
   const storage = getStorage()
   if (storage) {
     try {
@@ -62,7 +64,7 @@ export function getAllToolTiers(): Record<string, "standard" | "pro"> {
 }
 
 export function saveAllToolTiers(
-  tiers: Record<string, "standard" | "pro">,
+  tiers: Record<string, ToolTier>,
 ): void {
   inMemoryTiers = { ...tiers }
   const storage = getStorage()
@@ -85,7 +87,32 @@ export function isToolPro(toolId: string): boolean {
   return getToolTier(toolId) === "pro"
 }
 
-export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
+/**
+ * Tier and price edits are configuration for every visitor, so they are stored
+ * in Postgres through /api/db/admin rather than left in this browser's cache.
+ * Resolves false when the server rejected the write, which the caller reports.
+ */
+async function persistToolConfig(
+  toolTiers: Record<string, ToolTier>,
+  toolPrices: Record<string, number>,
+): Promise<boolean> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return true
+  try {
+    const res = await fetch("/api/db/admin", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ toolTiers, toolPrices }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function setToolTier(
+  toolId: string,
+  tier: ToolTier,
+): Promise<boolean> {
   const tiers = getAllToolTiers()
   tiers[toolId] = tier
   saveAllToolTiers(tiers)
@@ -94,25 +121,12 @@ export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
   const prices = getAllToolPrices()
   if (tier === "standard") {
     prices[toolId] = 0
-    saveAllToolPrices(prices)
-  } else if (tier === "pro" && (!prices[toolId] || prices[toolId] === 0)) {
+  } else if (!prices[toolId] || prices[toolId] === 0) {
     prices[toolId] = 4.99
-    saveAllToolPrices(prices)
   }
+  saveAllToolPrices(prices)
 
-  // Push update to serverless database if in live browser environment
-  if (typeof window !== "undefined" && typeof fetch === "function") {
-    try {
-      fetch("/api/db/admin", {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          toolTiers: { [toolId]: tier },
-          toolPrices: { [toolId]: tier === "pro" ? prices[toolId] || 4.99 : 0 },
-        }),
-      }).catch(() => {})
-    } catch {}
-  }
+  return persistToolConfig({ [toolId]: tier }, { [toolId]: prices[toolId] })
 }
 
 export function getAllToolPrices(): Record<string, number> {
@@ -151,7 +165,10 @@ export function getToolPrice(toolId: string): number {
   return 4.99
 }
 
-export function setToolPrice(toolId: string, price: number): void {
+export async function setToolPrice(
+  toolId: string,
+  price: number,
+): Promise<boolean> {
   const prices = getAllToolPrices()
   const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
   const finalPrice = isNaN(clean) ? 0 : clean
@@ -160,64 +177,49 @@ export function setToolPrice(toolId: string, price: number): void {
 
   // Keep tier strictly synced with price
   const tiers = getAllToolTiers()
-  const targetTier = finalPrice > 0 ? "pro" : "standard"
+  const targetTier: ToolTier = finalPrice > 0 ? "pro" : "standard"
   if (tiers[toolId] !== targetTier) {
     tiers[toolId] = targetTier
     saveAllToolTiers(tiers)
   }
 
-  // Push update to serverless database if in live browser environment
-  if (typeof window !== "undefined" && typeof fetch === "function") {
-    try {
-      fetch("/api/db/admin", {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          toolTiers: { [toolId]: targetTier },
-          toolPrices: { [toolId]: finalPrice },
-        }),
-      }).catch(() => {})
-    } catch {}
-  }
+  return persistToolConfig({ [toolId]: targetTier }, { [toolId]: finalPrice })
 }
 
 /**
  * Synchronize tool tiers and prices with the serverless database.
  * Fetches configured tiers from /api/db/admin so that all visitors on Vercel
  * receive active Pro gating without relying solely on local browser storage.
+ * The response replaces this browser's cache: a tool the server does not list
+ * is standard, so an entry left behind by an older bundle or a write that never
+ * reached Postgres cannot keep a tool locked for one visitor only.
  */
 export async function syncToolTiersFromDatabase(): Promise<void> {
   if (typeof window === "undefined" || typeof fetch !== "function") return
   try {
     const data = await sharedGetJson("/api/db/admin")
+
+    const serverTiers: Record<string, ToolTier> = {}
     if (data && data.toolTiers && typeof data.toolTiers === "object") {
-      const storage = getStorage()
-      const current = getAllToolTiers()
-      const mergedTiers = { ...data.toolTiers, ...current }
-      inMemoryTiers = { ...mergedTiers }
-      if (storage) {
-        try {
-          storage.setItem(TOOL_TIERS_KEY, JSON.stringify(mergedTiers))
-        } catch {}
+      for (const [key, tier] of Object.entries(data.toolTiers)) {
+        if (tier === "standard" || tier === "pro") serverTiers[key] = tier
       }
-      window.dispatchEvent(
-        new CustomEvent("masterfilepro-tiers-changed", { detail: mergedTiers }),
-      )
     }
+    const serverPrices: Record<string, number> = {}
     if (data && data.toolPrices && typeof data.toolPrices === "object") {
-      const storage = getStorage()
-      const currentPrices = getAllToolPrices()
-      const mergedPrices = { ...data.toolPrices, ...currentPrices }
-      inMemoryPrices = { ...mergedPrices }
-      if (storage) {
-        try {
-          storage.setItem(TOOL_PRICES_KEY, JSON.stringify(mergedPrices))
-        } catch {}
+      for (const [key, price] of Object.entries(data.toolPrices)) {
+        const value = Number(price)
+        if (Number.isFinite(value) && value >= 0) serverPrices[key] = value
       }
-      window.dispatchEvent(
-        new CustomEvent("masterfilepro-prices-changed", { detail: mergedPrices }),
-      )
     }
+
+    // An unreachable endpoint leaves the offline cache untouched.
+    if (!data || (!Object.keys(serverTiers).length && !Object.keys(serverPrices).length)) {
+      return
+    }
+
+    saveAllToolTiers(serverTiers)
+    saveAllToolPrices(serverPrices)
   } catch {}
 }
 
@@ -456,25 +458,35 @@ export function unlockSingleToolForUser(
   return updated
 }
 
-export function setBulkToolPrices(toolIds: string[], price: number): void {
+export async function setBulkToolPrices(
+  toolIds: string[],
+  price: number,
+): Promise<boolean> {
   const prices = getAllToolPrices()
   const clean = Math.max(0, Math.round(Number(price) * 100) / 100)
   const val = isNaN(clean) ? 0 : clean
   const tiers = getAllToolTiers()
-  const targetTier = val > 0 ? "pro" : "standard"
+  const targetTier: ToolTier = val > 0 ? "pro" : "standard"
+  const tierPatch: Record<string, ToolTier> = {}
+  const pricePatch: Record<string, number> = {}
   for (const id of toolIds) {
     prices[id] = val
     tiers[id] = targetTier
+    tierPatch[id] = targetTier
+    pricePatch[id] = val
   }
   saveAllToolPrices(prices)
   saveAllToolTiers(tiers)
+
+  if (toolIds.length === 0) return true
+  return persistToolConfig(tierPatch, pricePatch)
 }
 
-export function setCategoryPrice(category: string, price: number): void {
+export function setCategoryPrice(category: string, price: number): Promise<boolean> {
   const matchingTools = tools.filter(
     (t) => t.category.toLowerCase() === category.toLowerCase(),
   )
-  setBulkToolPrices(
+  return setBulkToolPrices(
     matchingTools.map((t) => t.id),
     price,
   )

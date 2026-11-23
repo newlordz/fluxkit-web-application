@@ -36,9 +36,28 @@ function createHarness(options = {}) {
     key: (i) => Array.from(store.keys())[i] || null,
   }
 
+  const sessionStore = new Map(Object.entries(options.sessionStorageInitial || {}))
+  const sessionStorage = {
+    getItem: (key) => (sessionStore.has(key) ? sessionStore.get(key) : null),
+    setItem: (key, value) => {
+      sessionStore.set(key, String(value))
+    },
+    removeItem: (key) => {
+      sessionStore.delete(key)
+    },
+    clear: () => {
+      sessionStore.clear()
+    },
+    get length() {
+      return sessionStore.size
+    },
+    key: (i) => Array.from(sessionStore.keys())[i] || null,
+  }
+
   const listeners = new Map()
   const windowObj = {
     localStorage,
+    sessionStorage,
     location: { hash: hash.startsWith("#") ? hash : `#${hash}` },
     addEventListener: (event, fn) => {
       if (!listeners.has(event)) listeners.set(event, new Set())
@@ -92,6 +111,7 @@ function createHarness(options = {}) {
         },
         window: windowObj,
         localStorage,
+        sessionStorage,
         location: windowObj.location,
         crypto: globalThis.crypto,
         CustomEvent: class CustomEvent {
@@ -1178,4 +1198,54 @@ test("Tier 4 - S6: Tool payment status accurately shows Paid, Subscribed, or Pro
   const adminStatus = admin.getToolPaymentStatus("pdf-organizer", adminUser)
   assert.equal(adminStatus.badgeType, "admin")
   assert.equal(adminStatus.isUnlocked, true)
+})
+
+test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-linking", (t) => {
+  if (!hasModule("AdminPanel")) {
+    t.skip("Module src/AdminPanel.tsx not yet implemented")
+    return
+  }
+
+  // 1. Direct resolver unit test
+  const adminPanelMod = createHarness().load("AdminPanel")
+  if (adminPanelMod && adminPanelMod.resolveInitialAdminTab) {
+    assert.equal(adminPanelMod.resolveInitialAdminTab("users"), "users", "Explicit prop should be honored")
+    assert.equal(adminPanelMod.resolveInitialAdminTab("apis"), "apis")
+  }
+
+  // 2. Harness with deep link #admin-users and admin credentials
+  const adminUser = {
+    id: "usr_admin",
+    name: "Masterfilepro Admin",
+    email: "admin@fluxkit.com",
+    role: "admin",
+    subscriptionTier: "pro",
+    proStatus: "active",
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  }
+
+  const harnessUsers = createHarness({
+    hash: "admin-users",
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+  })
+
+  const AppWithHash = harnessUsers.load("App").default
+  const htmlUsers = renderToStaticMarkup(React.createElement(AppWithHash))
+  assert.ok(htmlUsers.length > 500)
+  assert.match(htmlUsers, /User Approvals/i)
+  assert.match(htmlUsers, /admin-nav-tab active/i)
+
+  // 3. Harness with hash #admin and sessionStorage holding 'users'
+  const harnessSession = createHarness({
+    hash: "admin",
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+    sessionStorageInitial: { "fluxkit-admin-tab": "users" },
+  })
+
+  const AppWithSession = harnessSession.load("App").default
+  const htmlSession = renderToStaticMarkup(React.createElement(AppWithSession))
+  assert.ok(htmlSession.length > 500)
+  assert.match(htmlSession, /User Approvals/i)
+  assert.match(htmlSession, /admin-nav-tab active/i)
 })
