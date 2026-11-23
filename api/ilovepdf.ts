@@ -1,39 +1,9 @@
-import { currentUser } from "../server/_lib/auth.ts"
+import { cors } from "../server/_lib/db.ts"
 import { getILovePdfCredentials, recordApiCall } from "../server/_lib/providers.ts"
-
-async function parseRequestBody(req: any): Promise<any> {
-  if (req.body && typeof req.body === "object") return req.body
-  if (typeof req.body === "string" && req.body.length > 0) {
-    try {
-      return JSON.parse(req.body)
-    } catch {
-      return {}
-    }
-  }
-  return new Promise((resolve) => {
-    let raw = ""
-    req.on("data", (chunk: any) => {
-      raw += chunk
-    })
-    req.on("end", () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {})
-      } catch {
-        resolve({})
-      }
-    })
-    req.on("error", () => resolve({}))
-  })
-}
-
-function setCorsHeaders(res: any) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-}
+import { readPaidBody, requirePaidAccess } from "../server/_lib/gateway.ts"
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res)
+  cors(req, res)
   if (req.method === "OPTIONS") {
     res.status?.(200)?.end?.() || res.end?.()
     return
@@ -101,8 +71,13 @@ export default async function handler(req: any, res: any) {
     return
   }
 
+  const actor = await requirePaidAccess(req, res, "ilovepdf")
+  if (!actor) return
+
   try {
-    const body = await parseRequestBody(req)
+    const body = await readPaidBody(req, res)
+    if (!body) return
+
     const pdfBase64 = body.pdfBase64
     const compressionLevel = body.compressionLevel || "recommended"
     const { publicKey } = await getILovePdfCredentials()
@@ -198,13 +173,8 @@ export default async function handler(req: any, res: any) {
     })
     const resultBuffer = Buffer.from(await downloadRes.arrayBuffer())
 
-    // Append-only usage ledger; monthly totals are derived, never stored.
-    await recordApiCall(
-      "ilovepdf",
-      "compress",
-      (await currentUser(req))?.id ?? null,
-      "success",
-    )
+    // Append-only usage ledger; monthly totals derive from this, never a stored counter.
+    await recordApiCall("ilovepdf", "compress", actor.id, "success")
 
     const responsePayload = {
       ok: true,

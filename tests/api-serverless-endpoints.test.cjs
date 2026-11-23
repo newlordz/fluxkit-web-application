@@ -11,16 +11,22 @@ const vm = require("node:vm")
  * anything listed in `stubs` is replaced in memory so the tests stay unit-level:
  * no Postgres, no network, no real session tokens.
  */
-function loadHandler(relPath, stubs = {}, extraGlobals = {}) {
+function loadHandler(relPath, stubs = {}, extraGlobals = {}, stubPaths = null) {
   const fullPath = path.resolve(relPath)
   const dir = path.dirname(fullPath)
 
-  const stubPaths = new Map(
-    Object.entries(stubs).map(([spec, mod]) => [
-      path.resolve(dir, spec),
-      { __esModule: true, ...mod },
-    ]),
-  )
+  // Stub specifiers are written from the entry handler's point of view, so they are
+  // made absolute once and reused by every nested import. Resolving them per file
+  // silently missed a module the second hop down (a shared _lib helper pulled in by
+  // a route) and the real implementation ran instead of the stub.
+  if (!stubPaths) {
+    stubPaths = new Map(
+      Object.entries(stubs).map(([spec, mod]) => [
+        path.resolve(dir, spec),
+        { __esModule: true, ...mod },
+      ]),
+    )
+  }
 
   const localRequire = (id) => {
     if (id.startsWith(".")) {
@@ -28,7 +34,7 @@ function loadHandler(relPath, stubs = {}, extraGlobals = {}) {
       if (stubPaths.has(resolved)) return stubPaths.get(resolved)
       for (const ext of ["", ".ts", ".js", ".tsx"]) {
         if (fs.existsSync(resolved + ext)) {
-          return loadHandler(path.relative(process.cwd(), resolved + ext), stubs, extraGlobals)
+          return loadHandler(path.relative(process.cwd(), resolved + ext), stubs, extraGlobals, stubPaths)
         }
       }
       // Fallback for relative specifiers that name an npm package.
@@ -406,4 +412,149 @@ test("API Cloud APIs: POST /api/cloud-apis/ping blocks loopback and SSRF IP addr
   assert.equal(res._getStatus(), 403)
   assert.equal(data.ok, false)
   assert.ok(String(data.error || data.message || "").includes("Prohibited"))
+})
+
+// ---------------------------------------------------------------------------
+// Paid cloud proxies: session, quota and payload gates
+// ---------------------------------------------------------------------------
+
+const MEMBER = { id: "usr_member", role: "user" }
+
+function cloudStubs({ user = null, outOfQuota = false, hooks = {} } = {}) {
+  const s = createStubs({ admin: user })
+
+  const baseReadBody = s.db.readBody
+  s.db.readBody = async (req, maxBytes) => {
+    hooks.onReadBody && hooks.onReadBody(maxBytes)
+    return baseReadBody(req, maxBytes)
+  }
+
+  return {
+    s,
+    stubs: {
+      "../server/_lib/db.ts": s.db,
+      "../server/_lib/auth.ts": s.auth,
+      "../server/_lib/providers.ts": {
+        ...s.providers,
+        getAdobeCredentials: async () => ({ clientId: "client_id", clientSecret: "client_secret" }),
+        getILovePdfCredentials: async () => ({ publicKey: "public_key", secretKey: "secret_key" }),
+        isProviderOutOfQuota: async () => outOfQuota,
+      },
+    },
+  }
+}
+
+function stubOutboundFetch() {
+  const original = globalThis.fetch
+  const seen = []
+
+  globalThis.fetch = async (url, init) => {
+    seen.push(String(url))
+    throw new Error("outbound call attempted")
+  }
+
+  return { seen, restore: () => (globalThis.fetch = original) }
+}
+
+for (const [route, file, body] of [
+  ["/api/adobe-pdf/compress", "api/adobe-pdf.ts", { pdfBase64: "AAAA" }],
+  ["/api/ilovepdf/compress", "api/ilovepdf.ts", { pdfBase64: "AAAA" }],
+  ["/api/ocr-space/parse", "api/ocr-space.ts", { base64Image: "AAAA" }],
+]) {
+  test(`API Cloud: ${route} refuses a caller without a session`, async () => {
+    const { stubs } = cloudStubs({ user: null })
+    const handler = loadHandler(file, stubs)
+    const net = stubOutboundFetch()
+    const { req, res } = createMockReqRes({ method: "POST", body })
+
+    try {
+      await handler(req, res)
+    } finally {
+      net.restore()
+    }
+
+    const data = res._getData()
+    assert.equal(res.statusCode, 401)
+    assert.equal(data.code, "sign_in_required")
+    assert.deepEqual(net.seen, [], "the paid provider is never contacted")
+  })
+}
+
+test("API Cloud: /api/adobe-pdf/compress refuses a member once the monthly quota is spent", async () => {
+  const { stubs } = cloudStubs({ user: MEMBER, outOfQuota: true })
+  const handler = loadHandler("api/adobe-pdf.ts", stubs)
+  const net = stubOutboundFetch()
+  const { req, res } = createMockReqRes({ method: "POST", body: { pdfBase64: "AAAA" } })
+
+  try {
+    await handler(req, res)
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(res.statusCode, 429)
+  assert.equal(res._getData().code, "quota_exhausted")
+  assert.deepEqual(net.seen, [])
+})
+
+test("API Cloud: the session gate runs before the document is read from the wire", async () => {
+  const hooks = {}
+  let readCalled = false
+  const { stubs, s } = cloudStubs({ user: null, hooks })
+  const base = s.db.readBody
+  s.db.readBody = async (req, maxBytes) => {
+    readCalled = true
+    return base(req, maxBytes)
+  }
+
+  const handler = loadHandler("api/adobe-pdf.ts", stubs)
+  const { req, res } = createMockReqRes({ method: "POST", body: { pdfBase64: "AAAA" } })
+  await handler(req, res)
+
+  assert.equal(res.statusCode, 401)
+  assert.equal(readCalled, false, "an oversized anonymous upload is refused without buffering it")
+})
+
+test("API Cloud: gateway reads the document under a bounded body size", async () => {
+  const hooks = {}
+  let cap = 0
+  const { s } = cloudStubs({ user: MEMBER, hooks })
+  const base = s.db.readBody
+  s.db.readBody = async (req, maxBytes) => {
+    cap = maxBytes
+    return base(req, maxBytes)
+  }
+
+  const gateway = loadHandler("server/_lib/gateway.ts", {
+    "./db.ts": s.db,
+    "./auth.ts": s.auth,
+    "./providers.ts": { isProviderOutOfQuota: async () => false },
+  })
+
+  const { req, res } = createMockReqRes({ method: "POST", body: { pdfBase64: "AAAA" } })
+  const user = await gateway.requirePaidAccess(req, res, "adobe")
+  assert.equal(user, MEMBER)
+
+  const body = await gateway.readPaidBody(req, res)
+  assert.deepEqual(body, { pdfBase64: "AAAA" })
+  assert.ok(cap >= 25 * 1024 * 1024, `a 25 MB document must fit under the cap, got ${cap} bytes`)
+})
+
+test("API Cloud: a body larger than the cap is refused with 413 before any provider call", async () => {
+  const gateway = loadHandler("server/_lib/gateway.ts", {
+    "./auth.ts": { currentUser: async () => MEMBER },
+    "./providers.ts": { isProviderOutOfQuota: async () => false },
+  })
+
+  // Real readBody from server/_lib/db.ts, fed just past the 40 MB ceiling.
+  const chunk = Buffer.alloc(1024 * 1024, 65)
+  const { req, res } = createMockReqRes({ method: "POST", body: null })
+  req[Symbol.asyncIterator] = async function* () {
+    for (let i = 0; i < 45; i++) yield chunk
+  }
+
+  const body = await gateway.readPaidBody(req, res)
+  assert.equal(body, null)
+  assert.equal(res.statusCode, 413)
+  assert.equal(res._getData().code, "payload_too_large")
 })

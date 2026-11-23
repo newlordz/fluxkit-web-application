@@ -62,6 +62,19 @@ async function getApiPool(): Promise<any> {
   }
 }
 
+/**
+ * The cloud proxies are billed to this project and reject callers without a
+ * session, so a signed-out visitor is routed to the local engine up front instead
+ * of uploading a document that is only refused after the transfer.
+ */
+async function nextCloudApi(category: string): Promise<any> {
+  const mod = await import("./sessionService").catch(() => null)
+
+  if (!mod?.getSessionToken?.()) return null
+
+  return getNextAvailableApi(category)
+}
+
 function getNextAvailableApi(category: string): any {
   try {
     if (
@@ -102,6 +115,19 @@ function recordApiOutcome(apiId: string, outcome: any): void {
 
     if (pool?.recordApiOutcome) pool.recordApiOutcome(apiId, outcome)
   } catch {}
+}
+
+// The cloud proxies are billed to this project and refuse callers without a
+// session, so the token travels with every document upload. Imported the same way
+// as the API pool so callers without a browser keep the local engine.
+async function sessionHeaders(): Promise<Record<string, string>> {
+  try {
+    const mod = await import("./sessionService")
+
+    return mod.authHeaders()
+  } catch {
+    return {}
+  }
 }
 
 import type { OutputResult } from "./jobTypes"
@@ -459,7 +485,15 @@ async function fetchWithDeadline(
   if (signal) signal.addEventListener("abort", relay, { once: true })
 
   try {
-    return await fetch(path, { ...init, signal: controller.signal })
+    const headers = await sessionHeaders()
+
+    return await fetch(path, {
+      ...init,
+
+      headers: { ...(init.headers as Record<string, string>), ...headers },
+
+      signal: controller.signal,
+    })
   } catch (err: any) {
     if (err?.name === "AbortError") {
       throw new Error(
@@ -1289,7 +1323,7 @@ export async function compressPDF(
 
   // 0. High-Fidelity Adobe PDF Services Cloud Engine (with automatic failover)
 
-  const activeApi = getNextAvailableApi("pdf-compression")
+  const activeApi = await nextCloudApi("pdf-compression")
 
   if (activeApi && activeApi.provider === "adobe") {
     try {
@@ -1410,7 +1444,7 @@ export async function compressPDF(
   const iloveApi =
     activeApi?.provider === "ilovepdf"
       ? activeApi
-      : getNextAvailableApi("pdf-compression")
+      : await nextCloudApi("pdf-compression")
 
   if (iloveApi && iloveApi.provider === "ilovepdf") {
     try {
@@ -3319,7 +3353,7 @@ export async function pdfToWord(
     typeof window !== "undefined" &&
     (format === "docx" || format === "doc")
   ) {
-    const activeApi = getNextAvailableApi("pdf-compression")
+    const activeApi = await nextCloudApi("pdf-compression")
 
     if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
       try {
@@ -3416,7 +3450,7 @@ export async function pdfToWord(
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
-        : getNextAvailableApi("pdf-compression")
+        : await nextCloudApi("pdf-compression")
 
     if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
       try {
@@ -3831,7 +3865,7 @@ export async function pdfToPPT(
   // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
 
   if (typeof window !== "undefined") {
-    const activeApi = getNextAvailableApi("pdf-compression")
+    const activeApi = await nextCloudApi("pdf-compression")
 
     if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
       try {
@@ -3924,7 +3958,7 @@ export async function pdfToPPT(
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
-        : getNextAvailableApi("pdf-compression")
+        : await nextCloudApi("pdf-compression")
 
     if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
       try {
@@ -4359,7 +4393,7 @@ export async function pdfToExcel(
   // 0. Cloud conversion with Adobe Acrobat PDF Services (if linked in Admin / API Pool)
 
   if (format === "xlsx" && typeof window !== "undefined") {
-    const activeApi = getNextAvailableApi("pdf-compression")
+    const activeApi = await nextCloudApi("pdf-compression")
 
     if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
       try {
@@ -5754,7 +5788,7 @@ export async function pptToPDF(
   // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
 
   if (typeof window !== "undefined") {
-    const activeApi = getNextAvailableApi("pdf-compression")
+    const activeApi = await nextCloudApi("pdf-compression")
 
     if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
       try {
@@ -5843,7 +5877,7 @@ export async function pptToPDF(
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
-        : getNextAvailableApi("pdf-compression")
+        : await nextCloudApi("pdf-compression")
 
     if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
       try {
@@ -9226,7 +9260,7 @@ export async function scanOCR(
 
   // 1b. Cloud OCR Engine (OCR.space - 25,000 free operations/mo)
 
-  const ocrApi = getNextAvailableApi("ocr-text")
+  const ocrApi = await nextCloudApi("ocr-text")
 
   if (ocrApi && ocrApi.provider === "ocrspace") {
     try {

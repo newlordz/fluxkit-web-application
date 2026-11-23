@@ -1,39 +1,9 @@
-import { currentUser } from "../server/_lib/auth.ts"
+import { cors } from "../server/_lib/db.ts"
 import { getProviderSecret, recordApiCall } from "../server/_lib/providers.ts"
-
-async function parseRequestBody(req: any): Promise<any> {
-  if (req.body && typeof req.body === "object") return req.body
-  if (typeof req.body === "string" && req.body.length > 0) {
-    try {
-      return JSON.parse(req.body)
-    } catch {
-      return {}
-    }
-  }
-  return new Promise((resolve) => {
-    let raw = ""
-    req.on("data", (chunk: any) => {
-      raw += chunk
-    })
-    req.on("end", () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {})
-      } catch {
-        resolve({})
-      }
-    })
-    req.on("error", () => resolve({}))
-  })
-}
-
-function setCorsHeaders(res: any) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-}
+import { readPaidBody, requirePaidAccess } from "../server/_lib/gateway.ts"
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res)
+  cors(req, res)
   if (req.method === "OPTIONS") {
     res.status?.(200)?.end?.() || res.end?.()
     return
@@ -64,8 +34,13 @@ export default async function handler(req: any, res: any) {
     return
   }
 
+  const actor = await requirePaidAccess(req, res, "ocrspace")
+  if (!actor) return
+
   try {
-    const body = await parseRequestBody(req)
+    const body = await readPaidBody(req, res)
+    if (!body) return
+
     const base64Image = body.base64Image
     const language = body.language || "eng"
     const apiKey = await getProviderSecret("ocrspace", "apiKey", ["OCRSPACE_API_KEY"])
@@ -99,12 +74,7 @@ export default async function handler(req: any, res: any) {
     const parsedText =
       ocrData.ParsedResults?.map((r: any) => r.ParsedText).join("\n") || ""
 
-    await recordApiCall(
-      "ocrspace",
-      "ocr",
-      (await currentUser(req))?.id ?? null,
-      "success",
-    )
+    await recordApiCall("ocrspace", "ocr", actor.id, "success")
 
     const payload = {
       ok: true,
