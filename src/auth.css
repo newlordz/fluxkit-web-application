@@ -49,10 +49,13 @@
   font-family: 'Manrope', sans-serif;
 }
 .auth-story-content {
-  margin-top: clamp(24px, 4vh, 48px);
+  margin-top: 0;
   margin-bottom: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  gap: clamp(10px, 2.2vh, 26px);
   flex: 1;
   position: relative;
   min-height: 0;
@@ -97,16 +100,31 @@
   max-width: 520px;
 }
 .auth-illustration {
+  /* The tiles travel on a fixed pixel orbit, so the stage keeps one internal
+     coordinate system and only --illo-scale changes at short heights. Scaling the
+     box alone would let the tiles escape upward into the copy. */
+  --illo-w: 480px;
+  --illo-h: 248px;
+  --illo-scale: 1;
   position: relative;
-  height: clamp(210px, 28vh, 290px);
-  width: 100%;
-  max-width: 440px;
-  margin: auto auto;
+  width: calc(var(--illo-w) * var(--illo-scale));
+  height: calc(var(--illo-h) * var(--illo-scale));
+  max-width: 100%;
+  margin: 0 auto;
   align-self: center;
   flex-shrink: 0;
-  perspective: 1000px;
   pointer-events: none;
   user-select: none;
+}
+.auth-illo-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--illo-w);
+  height: var(--illo-h);
+  transform: scale(var(--illo-scale));
+  transform-origin: top left;
+  perspective: 1000px;
 }
 .auth-orbit {
   position: absolute;
@@ -385,7 +403,7 @@
   transition: color .2s;
 }
 .auth-top a:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .auth-form-container {
   width: 100%;
@@ -398,7 +416,7 @@
   font-size: 13px;
   font-weight: 750;
   letter-spacing: 1.6px;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: 8px;
   text-transform: uppercase;
 }
@@ -428,7 +446,7 @@
   border-radius: 8px;
 }
 .auth-integration-note > svg {
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -515,7 +533,7 @@
   font-size: 14.5px;
   font-weight: 600;
   margin-top: 10px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .auth-forgot a:hover {
   text-decoration: underline;
@@ -547,7 +565,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 650;
 }
 .auth-switch a:hover {
@@ -591,7 +609,7 @@
   margin-top: 18px;
 }
 .auth-success {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   line-height: 1.6;
   margin-top: 14px;
@@ -602,7 +620,7 @@
 }
 .toast-stack { position: fixed; bottom: 24px; right: 24px; width: min(380px,calc(100vw - 40px)); display: flex; flex-direction: column; gap: 10px; z-index: 100; }
 .toast { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 15px; box-shadow: 0 10px 35px #0002; animation: appear .2s ease both; }
-.toast > svg { color: var(--accent); flex-shrink: 0; }
+.toast > svg { color: var(--accent-text); flex-shrink: 0; }
 .toast p { font-size: 11px; line-height: 1.7; flex: 1; }
 .toast button { display: flex; padding: 4px; color: var(--muted); }
 .error-page { min-height: 100vh; display: grid; place-items: center; }
@@ -681,7 +699,7 @@
 }
 .auth-field-hint {
   font-size: 13.5px;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-top: 8px;
   line-height: 1.5;
   background: rgba(0, 201, 183, 0.08);
@@ -744,7 +762,7 @@
   text-align: center;
 }
 .google-setup-explanation code {
-  color: var(--accent);
+  color: var(--accent-text);
   background: rgba(170, 145, 255, 0.1);
   padding: 1px 4px;
   border-radius: 3px;
@@ -755,7 +773,7 @@
   justify-content: center;
   gap: 6px;
   font-size: 10px;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-top: 8px;
 }
 .google-setup-card {
@@ -778,7 +796,7 @@
   line-height: 1.5;
 }
 .google-setup-header a {
-  color: var(--accent);
+  color: var(--accent-text);
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -861,7 +879,7 @@
   justify-content: center;
   gap: 8px;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-top: 12px;
 }
 .google-error-alert {
@@ -1014,14 +1032,15 @@
   .auth-story-footer > span:last-child { display: none; }
   .auth-story h1 { font-size: clamp(24px, 2.5vw, 32px); }
   .auth-story-content > p { font-size: 15px; }
+  .auth-illustration { --illo-scale: 0.85; }
 }
 @media (max-height: 750px) {
   .auth-story { padding: 16px 24px 12px; }
-  .auth-story-content { flex: 1; display: flex; flex-direction: column; margin-top: clamp(16px, 2.5vh, 28px); margin-bottom: 0; min-height: 0; }
+  .auth-story-content { gap: clamp(8px, 1.6vh, 16px); }
   .auth-story .eyebrow { font-size: 11.5px; margin-bottom: 6px; }
   .auth-story h1 { font-size: 24px; line-height: 1.25; margin-top: 0; margin-bottom: 8px; }
   .auth-story-content > p { font-size: 14px; line-height: 1.45; margin-top: 0; margin-bottom: 0; }
-  .auth-illustration { margin: auto auto; height: 160px; }
+  .auth-illustration { --illo-scale: 0.8; }
   .auth-story-footer { margin-top: 0; padding-top: 8px; }
 }
 @media (max-width: 760px) {
@@ -1061,10 +1080,8 @@
     line-height: 1.4;
   }
   .auth-illustration {
-    height: 180px;
-    max-width: 330px;
-    transform: scale(0.82);
-    margin: 12px auto;
+    --illo-scale: 0.64;
+    margin: 12px auto 0;
   }
   .auth-brand {
     font-size: 24px;
@@ -1093,8 +1110,11 @@
   }
   .auth-story-content {
     max-width: 540px;
-    margin-left: auto;
+    margin-left: 0;
     margin-right: auto;
+  }
+  .auth-illustration {
+    --illo-scale: 1.05;
   }
 }
 @media (min-width: 1800px) {
@@ -1104,6 +1124,9 @@
   .auth-story-content {
     max-width: 620px;
   }
+  .auth-illustration {
+    --illo-scale: 1.15;
+  }
   .auth-form-container {
     max-width: 480px;
   }
@@ -1112,17 +1135,17 @@
   }
 }
 @media (max-height: 680px) {
-  .auth-story-content {
-    margin-top: clamp(8px, 1.5vh, 16px);
-  }
   .auth-story h1 {
-    font-size: 20px;
+    font-size: 21px;
     margin-bottom: 4px;
   }
   .auth-illustration {
-    height: 130px;
-    transform: scale(0.72);
-    margin: 2px auto;
+    --illo-scale: 0.72;
+  }
+}
+@media (max-height: 560px) {
+  .auth-illustration {
+    --illo-scale: 0.52;
   }
 }
 @media (max-height: 850px) { .sidebar .flow-card { display: none; } .sidebar .sidebar-bottom { padding-top: 20px; } }

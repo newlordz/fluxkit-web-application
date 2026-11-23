@@ -180,7 +180,7 @@ export default function AuthPage({
 
   const postAuthRedirect =
     typeof sessionStorage !== "undefined"
-      ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+      ? sessionStorage.getItem("masterfilepro-post-auth-redirect")
       : null
 
   const reset = mode === "reset-password"
@@ -358,10 +358,10 @@ export default function AuthPage({
         } else {
           const redirect =
             typeof sessionStorage !== "undefined"
-              ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+              ? sessionStorage.getItem("masterfilepro-post-auth-redirect")
               : null
           if (redirect) {
-            sessionStorage.removeItem("fluxkit-post-auth-redirect")
+            sessionStorage.removeItem("masterfilepro-post-auth-redirect")
             navigate(redirect)
           } else {
             navigate("overview")
@@ -395,10 +395,10 @@ export default function AuthPage({
     } else {
       const redirect =
         typeof sessionStorage !== "undefined"
-          ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+          ? sessionStorage.getItem("masterfilepro-post-auth-redirect")
           : null
       if (redirect) {
-        sessionStorage.removeItem("fluxkit-post-auth-redirect")
+        sessionStorage.removeItem("masterfilepro-post-auth-redirect")
         navigate(redirect)
       } else {
         navigate("overview")
@@ -430,23 +430,25 @@ export default function AuthPage({
           </h1>
           <p>Your files, words, and ideas. Beautifully brought together.</p>
           <div className="auth-illustration" aria-hidden="true">
-            <div className="auth-orbit" />
-            <div className="auth-orbit inner" />
-            <div className="auth-core">
-              <Zap size={50} fill="currentColor" />
+            <div className="auth-illo-inner">
+              <div className="auth-orbit" />
+              <div className="auth-orbit inner" />
+              <div className="auth-core">
+                <Zap size={50} fill="currentColor" />
+              </div>
+              <div className="auth-float auth-doc">
+                <FileText size={32} />
+                <span>CREATE</span>
+              </div>
+              <div className="auth-float auth-qr">
+                <QrCode size={34} />
+              </div>
+              <div className="auth-float auth-audio">
+                <AudioLines size={32} />
+                <span>TRANSCRIBE</span>
+              </div>
+              <Sparkles className="auth-spark" size={26} />
             </div>
-            <div className="auth-float auth-doc">
-              <FileText size={32} />
-              <span>CREATE</span>
-            </div>
-            <div className="auth-float auth-qr">
-              <QrCode size={34} />
-            </div>
-            <div className="auth-float auth-audio">
-              <AudioLines size={32} />
-              <span>TRANSCRIBE</span>
-            </div>
-            <Sparkles className="auth-spark" size={26} />
           </div>
         </div>
         <div className="auth-story-footer">
@@ -455,7 +457,7 @@ export default function AuthPage({
         </div>
       </aside>
 
-      <section className="auth-form-side">
+      <main className="auth-form-side">
         <header className="auth-top">
           <a href="#overview">
             <ArrowLeft size={16} /> Back to workspace
@@ -614,7 +616,7 @@ export default function AuthPage({
                         className="text-button"
                         style={{
                           fontSize: "11px",
-                          color: "var(--accent)",
+                          color: "var(--accent-text)",
                           cursor: "pointer",
                           border: "none",
                           background: "none",
@@ -660,7 +662,7 @@ export default function AuthPage({
                     )}
 
                     <AuthFormField
-                      name="code"
+                      name="reset-code"
                       label="6-digit reset code"
                       error={errors.code}
                     >
@@ -685,7 +687,7 @@ export default function AuthPage({
                     </AuthFormField>
 
                     <AuthFormField
-                      name="password"
+                      name="new-password"
                       label="New password"
                       error={errors.password}
                     >
@@ -705,7 +707,7 @@ export default function AuthPage({
                     </p>
 
                     <AuthFormField
-                      name="confirm"
+                      name="confirm-password"
                       label="Confirm new password"
                       error={errors.confirm}
                     >
@@ -750,6 +752,7 @@ export default function AuthPage({
                       error={errors.email}
                     >
                       <input
+                        aria-label="Email"
                         id="email"
                         type="email"
                         autoComplete="email"
@@ -893,7 +896,7 @@ export default function AuthPage({
         <footer className="auth-form-footer">
           No account needed for the local QR and PDF tools.
         </footer>
-      </section>
+      </main>
 
       {/* End form side */}
     </div>

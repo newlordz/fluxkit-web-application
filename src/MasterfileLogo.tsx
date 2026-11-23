@@ -54,7 +54,9 @@ export default function MasterfileLogo({
         ? "#06204D"
         : "var(--brand-navy, #06204D)"
 
-  const tealColor = "#00C9B7"
+  // Text-rendered brand teal: #00C9B7 is the dark-theme value; on white the light
+  // theme substitutes the deeper member of the family so the wordmark stays readable.
+  const tealColor = "var(--accent-text, #00C9B7)"
 
   const folderNavy = "#06204D"
 
@@ -92,7 +94,7 @@ export default function MasterfileLogo({
 
               background: "rgba(0, 201, 183, 0.15)",
 
-              color: "#00C9B7",
+              color: tealColor,
 
               border: "1px solid rgba(0, 201, 183, 0.35)",
 
@@ -116,6 +118,7 @@ export default function MasterfileLogo({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       style={{ display: "block", flexShrink: 0 }}
+      role="img"
       aria-label="Masterfilepro mark"
     >
       {/* Back document (Teal) */}
@@ -154,8 +157,13 @@ export default function MasterfileLogo({
 
       {/* Stylized 'M' inside the front folder:
           - Left leg + left diagonal: Crisp White
-          - Center-right diagonal + right leg: Electric Teal */}
-      <g id="emblem-m">
+          - Center-right diagonal + right leg: Electric Teal
+          The paths are authored around (51,57); the transform recentres them on the
+          front card and enlarges them so the emblem still reads at small sizes. */}
+      <g
+        id="emblem-m"
+        transform="translate(55 53) scale(1.18) translate(-51 -57)"
+      >
         {/* Left half of M (White) */}
         <path d="M36 70V44L47 55.5V64.5L41.5 59V70H36Z" fill="#FFFFFF" />
         {/* Left column outer upright (White) */}
@@ -257,7 +265,7 @@ export default function MasterfileLogo({
 
             background: "rgba(0, 201, 183, 0.12)",
 
-            color: "#00C9B7",
+            color: tealColor,
 
             border: "1px solid rgba(0, 201, 183, 0.3)",
 
