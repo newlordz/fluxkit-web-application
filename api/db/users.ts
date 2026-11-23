@@ -1,228 +1,183 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import fs from "node:fs"
-import path from "node:path"
+import { cors, json, query, readBody } from "../_lib/db"
+import { currentUser, requireRole } from "../_lib/auth"
 
-const DB_PATH_1 = path.join(process.cwd(), "data", "masterfile-db.json")
-const DB_PATH_2 = path.join(process.cwd(), "data", "fluxkit-db.json")
-const TMP_PATH = path.join("/tmp", "masterfile-db.json")
-
-export interface StoredUserAccount {
+interface UserRow {
   id: string
-  name: string
   email: string
-  avatar?: string
-  provider: "google" | "email"
-  role: "admin" | "sub-admin" | "user"
-  subscriptionTier: "standard" | "pro"
-  proStatus: "none" | "pending" | "active"
-  unlockedTools?: string[]
-  createdAt: string
-  lastLoginAt: string
-  message?: string
+  name: string
+  avatar: string | null
+  provider: string
+  role: string
+  subscription_tier: string
+  pro_status: string
+  unlocked_tools: string[]
+  created_at: string
+  last_login_at: string | null
 }
 
-function readDb(): any {
-  // 1. Check temporary serverless storage
-  try {
-    if (fs.existsSync(TMP_PATH)) {
-      const content = fs.readFileSync(TMP_PATH, "utf8")
-      const parsed = JSON.parse(content)
-      if (!Array.isArray(parsed.users)) {
-        parsed.users = []
-      }
-      return parsed
-    }
-  } catch {}
+const SELECT = `select id, email, name, avatar, provider, role, subscription_tier, pro_status,
+                       unlocked_tools, created_at, last_login_at
+                  from users`
 
-  // 2. Check bundled database files
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8")
-        const parsed = JSON.parse(content)
-        if (!Array.isArray(parsed.users)) {
-          parsed.users = []
-        }
-        return parsed
-      }
-    } catch {}
+function toClient(row: UserRow) {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    avatar: row.avatar ?? undefined,
+    provider: row.provider,
+    role: row.role,
+    subscriptionTier: row.subscription_tier,
+    proStatus: row.pro_status,
+    unlockedTools: row.unlocked_tools,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
   }
-
-  return { users: [] }
 }
 
-function writeDb(data: any): boolean {
-  let ok = false
-  // 1. Write to /tmp on serverless environments
-  try {
-    fs.writeFileSync(TMP_PATH, JSON.stringify(data, null, 2), "utf8")
-    ok = true
-  } catch {}
-
-  // 2. Write to project disk if writable (local dev)
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
-      ok = true
-    } catch {}
-  }
-  return ok
-}
-
-export default async function handler(req: any, res: any) {
-  res.setHeader("Access-Control-Allow-Credentials", "true")
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST,PUT,DELETE")
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-fluxkit-role, X-Fluxkit-Role",
-  )
-
-  if (req.method === "OPTIONS") {
-    res.status?.(200)?.end?.() || res.end?.()
-    return
-  }
-
-  res.setHeader("Content-Type", "application/json")
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  cors(req, res)
+  if (req.method === "OPTIONS") return json(res, 200, {})
 
   try {
-    const db = readDb()
-    if (!Array.isArray(db.users)) {
-      db.users = []
-    }
-
+    // Previously any visitor could list every account and could set their own
+    // role to "admin" by POSTing a profile. Both are gated now.
     if (req.method === "GET") {
-      const payload = { ok: true, users: db.users, count: db.users.length }
-      res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
-      return
+      const actor = await requireRole(req, ["admin", "sub-admin"])
+      if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+      const rows = await query<UserRow>(`${SELECT} order by created_at desc`)
+      return json(res, 200, { ok: true, users: rows.map(toClient), count: rows.length })
     }
 
     if (req.method === "POST" || req.method === "PUT") {
-      let body: any = req.body
-      if (!body) {
-        const buffers: Buffer[] = []
-        for await (const chunk of req) {
-          buffers.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
+      const actor = await currentUser(req)
+      if (!actor) return json(res, 401, { ok: false, error: "Sign-in required" })
+
+      const body = await readBody(req)
+
+      // Admin batch sync: the console pushes the whole registered-account list.
+      if (Array.isArray(body?.users)) {
+        const actor = await requireRole(req, ["admin", "sub-admin"])
+        if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+
+        let synced = 0
+        for (const u of body.users) {
+          if (!u?.id || !u?.email) continue
+          try {
+            await query(
+              `insert into users
+                 (id, email, name, avatar, provider, role, subscription_tier, pro_status, unlocked_tools, last_login_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               on conflict (id) do update set
+                 name = excluded.name,
+                 avatar = excluded.avatar,
+                 provider = excluded.provider,
+                 role = excluded.role,
+                 subscription_tier = excluded.subscription_tier,
+                 pro_status = excluded.pro_status,
+                 unlocked_tools = excluded.unlocked_tools,
+                 last_login_at = excluded.last_login_at,
+                 updated_at = now()`,
+              [
+                String(u.id),
+                String(u.email).trim().toLowerCase(),
+                u.name ?? "",
+                u.avatar ?? null,
+                u.provider === "google" ? "google" : "email",
+                ["admin", "sub-admin", "user"].includes(u.role) ? u.role : "user",
+                u.subscriptionTier === "pro" ? "pro" : "standard",
+                ["none", "pending", "active"].includes(u.proStatus) ? u.proStatus : "none",
+                Array.isArray(u.unlockedTools) ? u.unlockedTools : [],
+                u.lastLoginAt ?? null,
+              ],
+            )
+            synced++
+          } catch {
+            // A duplicate email means two ids claim one account; skip rather than abort the batch.
+          }
         }
-        const str = Buffer.concat(buffers).toString("utf8")
-        body = JSON.parse(str || "{}")
-      } else if (typeof body === "string") {
-        body = JSON.parse(body || "{}")
+        return json(res, 200, { ok: true, synced })
       }
 
-      // Handle single user upsert
-      if (body.user && typeof body.user === "object") {
-        const incoming = body.user as StoredUserAccount
-        const isRoot =
-          incoming.id === "usr_admin_default" ||
-          incoming.email?.trim().toLowerCase() === "admin@masterfilepro.com" ||
-          incoming.email?.trim().toLowerCase() === "admin@fluxkit.com"
-
-        if (isRoot) {
-          incoming.role = "admin"
-          incoming.subscriptionTier = "pro"
-          incoming.proStatus = "active"
+      if (body?.action === "delete" && body?.userId) {
+        const actor = await requireRole(req, ["admin"])
+        if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+        if (String(body.userId) === actor.id) {
+          return json(res, 400, { ok: false, error: "You cannot delete your own account here" })
         }
-
-        const idx = db.users.findIndex(
-          (u: any) =>
-            u.id === incoming.id ||
-            u.email?.trim().toLowerCase() === incoming.email?.trim().toLowerCase(),
+        await query(`delete from users where id = $1`, [String(body.userId)])
+        await query(
+          `insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`,
+          [actor.id, "user.delete", String(body.userId), "{}"],
         )
-        if (idx >= 0) {
-          if (isRoot) {
-            incoming.name = db.users[idx].name || incoming.name
-          }
-          db.users[idx] = { ...db.users[idx], ...incoming }
-        } else {
-          db.users.push(incoming)
-        }
+        return json(res, 200, { ok: true })
       }
 
-      // Handle multiple users upsert
-      if (Array.isArray(body.users)) {
-        for (const incoming of body.users) {
-          if (!incoming || !incoming.email) continue
-          const isRoot =
-            incoming.id === "usr_admin_default" ||
-            incoming.email?.trim().toLowerCase() === "admin@masterfilepro.com" ||
-            incoming.email?.trim().toLowerCase() === "admin@fluxkit.com"
-
-          if (isRoot) {
-            incoming.role = "admin"
-            incoming.subscriptionTier = "pro"
-            incoming.proStatus = "active"
-          }
-
-          const idx = db.users.findIndex(
-            (u: any) =>
-              u.id === incoming.id ||
-              u.email?.trim().toLowerCase() === incoming.email?.trim().toLowerCase(),
-          )
-          if (idx >= 0) {
-            if (isRoot) {
-              incoming.name = db.users[idx].name || incoming.name
-            }
-            db.users[idx] = { ...db.users[idx], ...incoming }
-          } else {
-            db.users.push(incoming)
-          }
-        }
+      const incoming = body?.user
+      if (!incoming || typeof incoming !== "object") {
+        return json(res, 400, { ok: false, error: "Invalid payload: user object required" })
       }
 
-      // Handle user deletion - protect root admin
-      if (body.action === "delete" && body.userId) {
-        db.users = db.users.filter(
-          (u: any) =>
-            u.id !== body.userId &&
-            u.id !== "usr_admin_default" &&
-            u.email?.trim().toLowerCase() !== "admin@masterfilepro.com" &&
-            u.email?.trim().toLowerCase() !== "admin@fluxkit.com",
+      const isAdmin = actor.role === "admin" || actor.role === "sub-admin"
+      const targetId = String(incoming.id ?? actor.id)
+      if (!isAdmin && targetId !== actor.id) {
+        return json(res, 403, { ok: false, error: "You may only update your own profile" })
+      }
+
+      // Privileged columns are only writable by an administrator.
+      if (isAdmin) {
+        await query(
+          `update users
+             set name = coalesce($2, name),
+                 avatar = coalesce($3, avatar),
+                 role = coalesce($4, role),
+                 subscription_tier = coalesce($5, subscription_tier),
+                 pro_status = coalesce($6, pro_status),
+                 unlocked_tools = coalesce($7, unlocked_tools),
+                 updated_at = now()
+           where id = $1`,
+          [
+            targetId,
+            incoming.name ?? null,
+            incoming.avatar ?? null,
+            incoming.role ?? null,
+            incoming.subscriptionTier ?? null,
+            incoming.proStatus ?? null,
+            Array.isArray(incoming.unlockedTools) ? incoming.unlockedTools : null,
+          ],
         )
+      } else {
+        await query(`update users set name = coalesce($2, name), avatar = coalesce($3, avatar), updated_at = now() where id = $1`, [
+          targetId,
+          incoming.name ?? null,
+          incoming.avatar ?? null,
+        ])
       }
 
-      db.updatedAt = new Date().toISOString()
-      const saved = writeDb(db)
+      const rows = await query<UserRow>(`${SELECT} where id = $1`, [targetId])
+      if (!rows.length) return json(res, 404, { ok: false, error: "User not found" })
 
-      const payload = {
-        ok: true,
-        users: db.users,
-        count: db.users.length,
-        persisted: saved,
-      }
-      res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
-      return
+      await query(
+        `insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`,
+        [actor.id, isAdmin ? "user.update.privileged" : "user.update.self", targetId, JSON.stringify({ name: incoming.name ?? null })],
+      )
+
+      return json(res, 200, { ok: true, user: toClient(rows[0]) })
     }
 
     if (req.method === "DELETE") {
-      let body: any = req.body
-      if (!body) {
-        const buffers: Buffer[] = []
-        for await (const chunk of req) {
-          buffers.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
-        }
-        const str = Buffer.concat(buffers).toString("utf8")
-        body = JSON.parse(str || "{}")
-      }
-      if (body?.userId) {
-        db.users = db.users.filter(
-          (u: any) =>
-            u.id !== body.userId &&
-            u.id !== "usr_admin_default" &&
-            u.email?.trim().toLowerCase() !== "admin@masterfilepro.com" &&
-            u.email?.trim().toLowerCase() !== "admin@fluxkit.com",
-        )
-        writeDb(db)
-      }
-      const payload = { ok: true, users: db.users, count: db.users.length }
-      res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
-      return
+      const actor = await requireRole(req, ["admin"])
+      if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+      const id = new URLSearchParams(req.url?.split("?")[1] || "").get("id")
+      if (!id) return json(res, 400, { ok: false, error: "Query parameter id required" })
+      if (id === actor.id) return json(res, 400, { ok: false, error: "You cannot delete your own account here" })
+      await query(`delete from users where id = $1`, [id])
+      return json(res, 200, { ok: true })
     }
 
-    res.status?.(405)?.json?.({ ok: false, message: "Method not allowed" }) ||
-      res.end?.(JSON.stringify({ ok: false, message: "Method not allowed" }))
-  } catch (error: any) {
-    const payload = { ok: false, error: error?.message || "Internal server error" }
-    res.status?.(500)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+    return json(res, 405, { ok: false, error: "Method not allowed" })
+  } catch (err: any) {
+    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
   }
 }

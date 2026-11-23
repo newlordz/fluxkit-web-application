@@ -1,189 +1,74 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
+import type { ServerResponse } from "node:http"
+import { cors, json, query, readBody, type ApiRequest } from "./_lib/db"
+import { currentUser } from "./_lib/auth"
 
-// In-memory cache across warm serverless container invocations
-const showcaseStore = new Map<string, { data: any; createdAt: number }>()
-
-// Maximum payload size: 4MB
 const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
+const TTL_DAYS = 30
 
-// TTL: 30 days
-const TTL_MS = 30 * 24 * 60 * 60 * 1000
+const ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/
 
-export default async function handler(req: any, res: any) {
-  // CORS Headers
-  res.setHeader("Access-Control-Allow-Credentials", "true")
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,OPTIONS,PATCH,DELETE,POST,PUT",
-  )
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version",
-  )
-
-  if (req.method === "OPTIONS") {
-    res.status?.(200)?.end?.() || res.end?.()
-    return
-  }
-
-  const requestId = Math.random().toString(36).substring(2, 9)
+export default async function handler(req: ApiRequest, res: ServerResponse) {
+  cors(req, res)
+  if (req.method === "OPTIONS") return json(res, 200, {})
 
   try {
-    // ------------------------------------------------------------------------
-    // GET: Retrieve showcase by ID
-    // ------------------------------------------------------------------------
     if (req.method === "GET") {
-      const url = new URL(
-        req.url || "",
-        `http://${req.headers?.host || "localhost"}`,
+      const id = new URL(req.url || "", "http://localhost").searchParams.get("id") || ""
+
+      if (!ID_PATTERN.test(id)) {
+        return json(res, 400, { success: false, error: "Missing or malformed 'id' parameter." })
+      }
+
+      const [row] = await query<{ payload: any }>(
+        `select payload from showcases
+          where id = $1 and published and created_at > now() - ($2 || ' days')::interval`,
+        [id, TTL_DAYS],
       )
-      const id = url.searchParams.get("id")
 
-      if (!id) {
-        res.setHeader("Content-Type", "application/json")
-        res.status?.(400)?.json?.({
-          success: false,
-          error: "Missing required 'id' parameter.",
-        }) ||
-          res.end?.(
-            JSON.stringify({
-              success: false,
-              error: "Missing required 'id' parameter.",
-            }),
-          )
-        return
-      }
+      if (!row) return json(res, 404, { success: false, error: "Showcase not found or expired." })
 
-      const item = showcaseStore.get(id)
-      if (!item) {
-        res.setHeader("Content-Type", "application/json")
-        res.status?.(404)?.json?.({
-          success: false,
-          error: "Showcase not found or expired.",
-        }) ||
-          res.end?.(
-            JSON.stringify({
-              success: false,
-              error: "Showcase not found or expired.",
-            }),
-          )
-        return
-      }
-
-      // Check TTL
-      if (Date.now() - item.createdAt > TTL_MS) {
-        showcaseStore.delete(id)
-        res.setHeader("Content-Type", "application/json")
-        res.status?.(404)?.json?.({
-          success: false,
-          error: "Showcase expired.",
-        }) ||
-          res.end?.(
-            JSON.stringify({
-              success: false,
-              error: "Showcase expired.",
-            }),
-          )
-        return
-      }
-
-      res.setHeader("Content-Type", "application/json")
       res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400")
-      res.status?.(200)?.json?.(item.data) || res.end?.(JSON.stringify(item.data))
-      return
+      return json(res, 200, row.payload)
     }
 
-    // ------------------------------------------------------------------------
-    // POST: Store showcase
-    // ------------------------------------------------------------------------
     if (req.method === "POST") {
-      let body: any = req.body
-      if (!body) {
-        const buffers: Buffer[] = []
-        let totalSize = 0
-        for await (const chunk of req) {
-          const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk
-          totalSize += buf.length
-          if (totalSize > MAX_PAYLOAD_SIZE) {
-            res.setHeader("Content-Type", "application/json")
-            res.status?.(413)?.json?.({
-              success: false,
-              error: "Payload exceeds 4MB size limit.",
-            }) ||
-              res.end?.(
-                JSON.stringify({
-                  success: false,
-                  error: "Payload exceeds 4MB size limit.",
-                }),
-              )
-            return
-          }
-          buffers.push(buf)
-        }
-        const raw = Buffer.concat(buffers).toString("utf-8")
-        if (raw) {
-          try {
-            body = JSON.parse(raw)
-          } catch {
-            // parse error
-          }
-        }
-      } else if (typeof body === "string") {
-        try {
-          body = JSON.parse(body)
-        } catch {
-          // parse error
-        }
-      }
+      const body = await readBody(req, MAX_PAYLOAD_SIZE)
 
-      if (!body || !body.id || !body.imageDataUrl) {
-        res.setHeader("Content-Type", "application/json")
-        res.status?.(400)?.json?.({
+      if (!body || !ID_PATTERN.test(String(body.id || "")) || !body.imageDataUrl) {
+        return json(res, 400, {
           success: false,
-          error: "Invalid showcase payload. Missing 'id' or 'imageDataUrl'.",
-        }) ||
-          res.end?.(
-            JSON.stringify({
-              success: false,
-              error:
-                "Invalid showcase payload. Missing 'id' or 'imageDataUrl'.",
-            }),
-          )
-        return
+          error: "Invalid showcase payload. A well-formed 'id' and 'imageDataUrl' are required.",
+        })
       }
 
-      // Store in memory cache
-      showcaseStore.set(body.id, {
-        data: body,
-        createdAt: Date.now(),
-      })
+      const actor = await currentUser(req)
 
-      // Clean up old items if store exceeds 200 items
-      if (showcaseStore.size > 200) {
-        const oldestKey = showcaseStore.keys().next().value
-        if (oldestKey) showcaseStore.delete(oldestKey)
-      }
+      await query(
+        `insert into showcases (id, owner_user_id, title, published, payload, created_at, updated_at)
+         values ($1, $2, $3, true, $4::jsonb, now(), now())
+         on conflict (id) do update
+            set payload = excluded.payload, title = excluded.title,
+                owner_user_id = excluded.owner_user_id, updated_at = now()`,
+        [
+          String(body.id),
+          actor?.id ?? null,
+          String(body.title || "").slice(0, 120),
+          JSON.stringify(body),
+        ],
+      )
 
-      const resp = {
-        success: true,
-        id: body.id,
-        message: "Showcase saved successfully.",
-        requestId,
-      }
+      // Keep the table bounded; the oldest showcases go first.
+      await query(
+        `delete from showcases where id in (
+           select id from showcases order by created_at desc offset 2000
+         )`,
+      )
 
-      res.setHeader("Content-Type", "application/json")
-      res.status?.(201)?.json?.(resp) || res.end?.(JSON.stringify(resp))
-      return
+      return json(res, 201, { success: true, id: body.id, message: "Showcase saved successfully." })
     }
 
-    res.setHeader("Content-Type", "application/json")
-    res.status?.(405)?.json?.({ error: "Method not allowed" }) ||
-      res.end?.(JSON.stringify({ error: "Method not allowed" }))
+    return json(res, 405, { error: "Method not allowed" })
   } catch (err: any) {
-    console.error(`[showcase][${requestId}] Unhandled error:`, err)
-    res.setHeader("Content-Type", "application/json")
-    res.status?.(500)?.json?.({ error: err?.message || "Internal server error" }) ||
-      res.end?.(JSON.stringify({ error: err?.message || "Internal server error" }))
+    return json(res, 500, { error: err?.message || "Internal server error" })
   }
 }

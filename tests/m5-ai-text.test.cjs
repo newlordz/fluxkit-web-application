@@ -144,7 +144,7 @@ test("Suite 1: Tool #26 summarizeDocument (Extractive TF-ISF Sentence Engine)", 
   const sampleArticle = `
     Artificial intelligence is rapidly transforming modern software development across the globe.
     Developers utilize automated algorithms to accelerate repetitive design and code review workflows.
-    FluxKit delivers a complete suite of browser-native utilities that operate strictly on client hardware.
+    Masterfilepro delivers a complete suite of browser-native utilities that operate strictly on client hardware.
     Data privacy is guaranteed because zero bytes ever leave the local execution environment.
     Extractive summarization identifies high-information sentences through term frequency and inverse sentence frequency.
     Teams achieve significant productivity improvements while maintaining total governance over sensitive intellectual property.
@@ -403,7 +403,7 @@ test("Suite 3: Tool #28 translateText & detectLanguage", async (t) => {
 
 test("Suite 4: Tool #29 askDocumentAI (BM25 Semantic Retrieval & QA Engine)", async (t) => {
   const multiPassageDoc = `
-    FluxKit Security Architecture
+    Masterfilepro Security Architecture
     The encryption protocol utilizes AES-GCM-256 for all local storage persistence. The security review team confirmed zero remote vulnerabilities.
     
     Q4 Project Milestones and Schedule

@@ -39,7 +39,7 @@ test("Visitor Pass: Security Pass Verifier parses scanned QR JSON payload", () =
   ]
 
   const scannedQrJson = JSON.stringify({
-    protocol: "FLUXPASS/1.0",
+    protocol: "MASTERFILEPASS/1.0",
     id: "VP-8492",
     name: "Dr. Sarah Jenkins",
     org: "Apex Quantum",

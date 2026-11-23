@@ -87,13 +87,13 @@ function createHarness() {
   return { load, store }
 }
 
-test("Password Policy: Administrator can toggle 'Require Password Reset on Next Login'", () => {
+test("Password Policy: Administrator can toggle 'Require Password Reset on Next Login'", async () => {
   const { load } = createHarness()
   const admin = load("adminService")
   const auth = load("authService")
 
   // Create a standard user
-  const user = admin.createUserByAdmin({
+  const user = await admin.createUserByAdmin({
     name: "Robert Testing",
     email: "robert.test@example.com",
     password: "InitialPassword123!",
@@ -124,7 +124,7 @@ test("Password Policy: completeForcedPasswordReset enforces minimum 12 chars and
   const admin = load("adminService")
   const auth = load("authService")
 
-  const user = admin.createUserByAdmin({
+  const user = await admin.createUserByAdmin({
     name: "Sarah Testing",
     email: "sarah.test@example.com",
     password: "OldPassword12345!",
@@ -157,11 +157,11 @@ test("Password Policy: completeForcedPasswordReset enforces minimum 12 chars and
   assert.equal(found.requirePasswordReset, false)
 })
 
-test("Password Policy: updateUserDetails respects requirePasswordReset option", () => {
+test("Password Policy: updateUserDetails respects requirePasswordReset option", async () => {
   const { load } = createHarness()
   const admin = load("adminService")
 
-  const user = admin.createUserByAdmin({
+  const user = await admin.createUserByAdmin({
     name: "David Policy",
     email: "david.policy@example.com",
     password: "Password123456!",
@@ -169,7 +169,7 @@ test("Password Policy: updateUserDetails respects requirePasswordReset option", 
     subscriptionTier: "standard",
   })
 
-  const updated = admin.updateUserDetails(user.id, {
+  const updated = await admin.updateUserDetails(user.id, {
     name: "David Policy Updated",
     requirePasswordReset: true,
   })

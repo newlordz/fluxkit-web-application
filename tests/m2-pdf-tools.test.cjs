@@ -422,9 +422,9 @@ test("M2 securePDF: lock mode secures document with password token and header", 
   assert.equal(result.name, `secured-${pdfFile.name}`)
   const reloaded = await PDFDocument.load(await result.blob.arrayBuffer())
   assert.ok(reloaded.getTitle().startsWith("[Secured] "))
-  assert.ok(reloaded.getSubject().startsWith("FluxKit-Protected:"))
+  assert.ok(reloaded.getSubject().startsWith("Masterfilepro-Protected:"))
   const keywords = reloaded.getKeywords()
-  assert.ok(keywords.includes("fluxkit:secured=true"))
+  assert.ok(keywords.includes("masterfilepro:secured=true"))
 })
 
 test("M2 securePDF: unlock mode with matching password successfully removes protection", async () => {
@@ -449,6 +449,34 @@ test("M2 securePDF: unlock mode with matching password successfully removes prot
   const reloaded = await PDFDocument.load(await unlockedRes.blob.arrayBuffer())
   assert.equal(reloaded.getSubject(), "")
   assert.doesNotMatch(reloaded.getTitle() || "", /^\[Secured\] /)
+})
+
+test("M2 securePDF: documents stamped with the pre-rename FluxKit marker still unlock", async () => {
+  const { createHash } = require("node:crypto")
+  const { securePDF } = loadServices()
+  const password = "LegacyVault777"
+  const hash = createHash("sha256").update(password).digest("hex")
+
+  const pdf = await PDFDocument.create()
+  pdf.addPage()
+  pdf.setTitle("[Secured] Legacy Board Minutes")
+  pdf.setSubject(`FluxKit-Protected:${hash}`)
+  const legacyFile = new File([await pdf.save()], "legacy.pdf", {
+    type: "application/pdf",
+  })
+
+  const unlockedRes = await securePDF(legacyFile, { action: "unlock", password })
+  const reloaded = await PDFDocument.load(await unlockedRes.blob.arrayBuffer())
+  assert.equal(reloaded.getSubject(), "")
+  assert.doesNotMatch(reloaded.getTitle(), /^\[Secured\] /)
+
+  const lockedFile = new File([await pdf.save()], "legacy.pdf", {
+    type: "application/pdf",
+  })
+  await assert.rejects(
+    async () => securePDF(lockedFile, { action: "unlock", password: "NotIt456" }),
+    /Incorrect password/,
+  )
 })
 
 test("M2 securePDF: unlock mode with wrong password rejects with error", async () => {
@@ -535,7 +563,7 @@ test("M2 textToPDF: sanitizes Unicode non-WinAnsi characters without crashing", 
     "Typography: “smart quotes” & ‘apostrophes’ — em-dash • bullet ★ stars ✓ checkmarks"
   const result = await textToPDF(exoticText, "WinAnsi Sanitization Test")
 
-  assert.equal(result.name, "fluxkit-document.pdf")
+  assert.equal(result.name, "masterfilepro-document.pdf")
   assert.ok(result.blob.size > 800)
 
   const reloaded = await PDFDocument.load(await result.blob.arrayBuffer())
@@ -578,7 +606,7 @@ test("M2 URL Auto-Prefix: rejects adversarial non-http protocols directly", () =
 })
 
 test("M2 URL Auto-Prefix: auto-prefixes bare domains and paths with https://", () => {
-  assert.equal(normalizeToolPageUrl("fluxkit.io"), "https://fluxkit.io")
+  assert.equal(normalizeToolPageUrl("masterfilepro.io"), "https://masterfilepro.io")
   assert.equal(
     normalizeToolPageUrl("example.com/docs/guide"),
     "https://example.com/docs/guide",
@@ -591,8 +619,8 @@ test("M2 URL Auto-Prefix: auto-prefixes bare domains and paths with https://", (
 
 test("M2 URL Auto-Prefix: preserves valid https:// and http:// URLs intact", () => {
   assert.equal(
-    normalizeToolPageUrl("https://fluxkit.io"),
-    "https://fluxkit.io",
+    normalizeToolPageUrl("https://masterfilepro.io"),
+    "https://masterfilepro.io",
   )
   assert.equal(
     normalizeToolPageUrl("http://localhost:3000/app"),
@@ -610,7 +638,7 @@ test("M2 Stress: 5-step full pipeline (textToPDF -> watermarkPDF -> signPDF -> c
 
   // Step 1: Text to PDF (generating multi-page document)
   const paragraph =
-    "FluxKit universal document processing pipeline test. ".repeat(40)
+    "Masterfilepro universal document processing pipeline test. ".repeat(40)
   const res1 = await textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Enterprise Whitepaper",

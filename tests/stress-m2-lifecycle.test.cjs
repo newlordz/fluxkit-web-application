@@ -161,7 +161,7 @@ test("Lifecycle Step 1: textToPDF generates a multi-page valid document", async 
 
   // Generate 4 long paragraphs that will definitely span multiple pages
   const paragraph =
-    "FluxKit client-side processing architecture delivers private, browser-first tools for document manipulation, format conversion, and visual editing without requiring server execution. "
+    "Masterfilepro client-side processing architecture delivers private, browser-first tools for document manipulation, format conversion, and visual editing without requiring server execution. "
       .repeat(10)
   const fullText = [
     "SECTION 1: ARCHITECTURAL OVERVIEW",
@@ -174,9 +174,9 @@ test("Lifecycle Step 1: textToPDF generates a multi-page valid document", async 
     paragraph,
   ].join("\n\n")
 
-  const res1 = await services.textToPDF(fullText, "FluxKit Multi-Page Lifecycle Specification")
+  const res1 = await services.textToPDF(fullText, "Masterfilepro Multi-Page Lifecycle Specification")
   assert.ok(res1 && res1.blob, "Step 1 must return OutputResult with a blob")
-  assert.equal(res1.name, "fluxkit-document.pdf")
+  assert.equal(res1.name, "masterfilepro-document.pdf")
   assert.equal(res1.blob.type, "application/pdf")
 
   const doc1 = await PDFDocument.load(await res1.blob.arrayBuffer())
@@ -199,7 +199,7 @@ test("Lifecycle Step 2: watermarkPDF applies rotated watermark across all pages"
   const services = loadServices()
 
   // Generate multi-page PDF base
-  const paragraph = "FluxKit document content. ".repeat(40)
+  const paragraph = "Masterfilepro document content. ".repeat(40)
   const baseRes = await services.textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Watermark Test Document",
@@ -217,7 +217,7 @@ test("Lifecycle Step 2: watermarkPDF applies rotated watermark across all pages"
   })
 
   assert.ok(res2 && res2.blob)
-  assert.equal(res2.name, "watermarked-fluxkit-document.pdf")
+  assert.equal(res2.name, "watermarked-masterfilepro-document.pdf")
 
   const doc2 = await PDFDocument.load(await res2.blob.arrayBuffer())
   assert.equal(
@@ -237,7 +237,7 @@ test("Lifecycle Step 2: watermarkPDF applies rotated watermark across all pages"
 test("Lifecycle Step 3: signPDF stamps embedded PNG signature on target page", async () => {
   const services = loadServices()
 
-  const paragraph = "FluxKit document signing flow. ".repeat(40)
+  const paragraph = "Masterfilepro document signing flow. ".repeat(40)
   const baseRes = await services.textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Sign Test Document",
@@ -255,7 +255,7 @@ test("Lifecycle Step 3: signPDF stamps embedded PNG signature on target page", a
   })
 
   assert.ok(res3 && res3.blob)
-  assert.equal(res3.name, "signed-fluxkit-document.pdf")
+  assert.equal(res3.name, "signed-masterfilepro-document.pdf")
 
   const doc3 = await PDFDocument.load(await res3.blob.arrayBuffer())
   assert.equal(doc3.getPageCount(), initialPageCount, "Signing must preserve page count")
@@ -264,7 +264,7 @@ test("Lifecycle Step 3: signPDF stamps embedded PNG signature on target page", a
 test("Lifecycle Step 4: editPDF stamps header callout box on target page", async () => {
   const services = loadServices()
 
-  const paragraph = "FluxKit document annotation workflow. ".repeat(40)
+  const paragraph = "Masterfilepro document annotation workflow. ".repeat(40)
   const baseRes = await services.textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Annotation Test Document",
@@ -274,14 +274,14 @@ test("Lifecycle Step 4: editPDF stamps header callout box on target page", async
   const file = await resultToFile(baseRes)
 
   const res4 = await services.editPDF(file, {
-    annotation: "VERIFIED & APPROVED FOR RELEASE - FluxKit M2",
+    annotation: "VERIFIED & APPROVED FOR RELEASE - Masterfilepro M2",
     pageNumber: 1,
     type: "callout",
     position: "top",
   })
 
   assert.ok(res4 && res4.blob)
-  assert.equal(res4.name, "edited-fluxkit-document.pdf")
+  assert.equal(res4.name, "edited-masterfilepro-document.pdf")
 
   const doc4 = await PDFDocument.load(await res4.blob.arrayBuffer())
   assert.equal(doc4.getPageCount(), initialPageCount, "Editing must preserve page count")
@@ -290,7 +290,7 @@ test("Lifecycle Step 4: editPDF stamps header callout box on target page", async
 test("Lifecycle Step 5: compressPDF optimizes object streams with high level", async () => {
   const services = loadServices()
 
-  const paragraph = "FluxKit compression and stream optimization. ".repeat(50)
+  const paragraph = "Masterfilepro compression and stream optimization. ".repeat(50)
   const baseRes = await services.textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Compress Test Document",
@@ -301,11 +301,11 @@ test("Lifecycle Step 5: compressPDF optimizes object streams with high level", a
 
   const res5 = await services.compressPDF(file, { level: "high" })
   assert.ok(res5 && res5.blob)
-  assert.equal(res5.name, "compressed-fluxkit-document.pdf")
+  assert.equal(res5.name, "compressed-masterfilepro-document.pdf")
 
   const doc5 = await PDFDocument.load(await res5.blob.arrayBuffer())
   assert.equal(doc5.getPageCount(), initialPageCount, "Compression must preserve page count")
-  assert.equal(doc5.getCreator(), "FluxKit")
+  assert.equal(doc5.getCreator(), "Masterfilepro")
   assert.equal(doc5.getTitle(), "")
   assert.equal(doc5.getAuthor(), "")
 })
@@ -313,7 +313,7 @@ test("Lifecycle Step 5: compressPDF optimizes object streams with high level", a
 test("Lifecycle Step 6: splitPDF extracts subrange 1-2 from multi-page document", async () => {
   const services = loadServices()
 
-  const paragraph = "FluxKit split page extraction. ".repeat(50)
+  const paragraph = "Masterfilepro split page extraction. ".repeat(50)
   const baseRes = await services.textToPDF(
     `${paragraph}\n\n${paragraph}\n\n${paragraph}`,
     "Split Test Document",
@@ -322,7 +322,7 @@ test("Lifecycle Step 6: splitPDF extracts subrange 1-2 from multi-page document"
 
   const res6 = await services.splitPDF(file, "1-2")
   assert.ok(res6 && res6.blob)
-  assert.equal(res6.name, "split-fluxkit-document.pdf")
+  assert.equal(res6.name, "split-masterfilepro-document.pdf")
 
   const doc6 = await PDFDocument.load(await res6.blob.arrayBuffer())
   assert.equal(
@@ -338,7 +338,7 @@ test("Full 6-Step End-to-End Chain: textToPDF -> watermarkPDF -> signPDF -> edit
   // 1. textToPDF
   const fullText = [
     "SECTION 1: EXECUTIVE MANDATE",
-    "FluxKit provides an integrated 37-tool suite running entirely inside the user browser. ".repeat(15),
+    "Masterfilepro provides an integrated 37-tool suite running entirely inside the user browser. ".repeat(15),
     "SECTION 2: SECURITY & SIGNING SPECIFICATIONS",
     "Digital signatures, watermark stamps, and annotations are applied client-side without remote telemetry. ".repeat(15),
     "SECTION 3: ARCHIVAL & COMPRESSION",
@@ -397,7 +397,7 @@ test("Full 6-Step End-to-End Chain: textToPDF -> watermarkPDF -> signPDF -> edit
   assert.ok(step5.blob && step5.blob.size > 0, "Step 5 returned valid blob")
   const doc5 = await PDFDocument.load(await step5.blob.arrayBuffer())
   assert.equal(doc5.getPageCount(), totalPages, "Step 5 preserved total pages")
-  assert.equal(doc5.getCreator(), "FluxKit")
+  assert.equal(doc5.getCreator(), "Masterfilepro")
 
   // 6. splitPDF
   const file5 = await resultToFile(step5, "lifecycle-5.pdf")
@@ -499,7 +499,7 @@ test("Lifecycle Variant: rotatePDF -> securePDF lock -> securePDF unlock cycle p
   })
   const lockedDoc = await PDFDocument.load(await lockRes.blob.arrayBuffer())
   assert.ok(lockedDoc.getTitle().startsWith("[Secured] "))
-  assert.ok(lockedDoc.getSubject().startsWith("FluxKit-Protected:"))
+  assert.ok(lockedDoc.getSubject().startsWith("Masterfilepro-Protected:"))
 
   // Unlock document with matching password
   const lockedFile = await resultToFile(lockRes, "locked.pdf")

@@ -21,8 +21,8 @@ import {
 
 console.log("--> Testing EDI Parsing and Conversions...")
 const sampleEDI = [
-  "ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~",
-  "GS*PO*FLUXKIT*ACME*20260101*1200*1*X*004010~",
+  "ISA*00*          *00*          *ZZ*MASTERFILEPRO  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~",
+  "GS*PO*MASTERFILEPRO*ACME*20260101*1200*1*X*004010~",
   "ST*850*0001~",
   "BEG*00*NE*PO-984321**20260101~",
   "CUR*BY*USD~",
@@ -62,7 +62,7 @@ assert(ediXml.includes('<Segment tag="BEG"'))
 console.log("  [✓] convertEDIToXML generated valid XML.")
 
 const ediReport = convertEDIToReadableReport(sampleEDI)
-assert(ediReport.includes("FLUXKIT EDI BUSINESS DOCUMENT REPORT"))
+assert(ediReport.includes("MASTERFILEPRO EDI BUSINESS DOCUMENT REPORT"))
 assert(ediReport.includes("PO Number      : PO-984321"))
 assert(ediReport.includes("ITEM-409"))
 console.log("  [✓] convertEDIToReadableReport produced human-readable PO report.")
@@ -73,7 +73,7 @@ console.log("  [✓] convertDataToEDIX12 generated reverse EDI syntax.")
 
 console.log("\n--> Testing CSV Conversions...")
 const sampleCsv = `ID,Product,Price,Quantity
-101,FluxKit Pro,49.99,10
+101,Masterfilepro Pro,49.99,10
 102,"Cables, High Speed",14.50,150
 103,Optic Adapter,29.00,45`
 
@@ -100,7 +100,7 @@ console.log("  [✓] convertCSVToSQL created SQL statements.")
 
 const csvMd = convertCSVToMarkdown(sampleCsv)
 assert(csvMd.includes("| ID | Product | Price | Quantity |"))
-assert(csvMd.includes("| 101 | FluxKit Pro | 49.99 | 10 |"))
+assert(csvMd.includes("| 101 | Masterfilepro Pro | 49.99 | 10 |"))
 console.log("  [✓] convertCSVToMarkdown created markdown table.")
 
 const semicolonCsv = reformatCSVDelimiter(sampleCsv, ";")
@@ -109,34 +109,34 @@ console.log("  [✓] reformatCSVDelimiter reformatted delimiter to semicolon.")
 
 console.log("\n--> Testing Batch File Script Conversions & Studio...")
 const sampleBat = `@echo off
-set "APP_DIR=C:\\Program Files\\FluxKit"
-echo Launching FluxKit from %APP_DIR%
+set "APP_DIR=C:\\Program Files\\Masterfilepro"
+echo Launching Masterfilepro from %APP_DIR%
 if exist "%APP_DIR%" (
   echo Directory verified
 )
-mkdir "C:\\Logs\\FluxKit"
+mkdir "C:\\Logs\\Masterfilepro"
 del /f "C:\\Logs\\old.log"
 pause
 exit /b 0`
 
 const psCode = convertBatchToPowerShell(sampleBat)
-assert(psCode.includes('$APP_DIR = "C:\\Program Files\\FluxKit"'))
-assert(psCode.includes('Write-Host "Launching FluxKit from $APP_DIR"'))
+assert(psCode.includes('$APP_DIR = "C:\\Program Files\\Masterfilepro"'))
+assert(psCode.includes('Write-Host "Launching Masterfilepro from $APP_DIR"'))
 assert(psCode.includes("Test-Path"))
-assert(psCode.includes('New-Item -ItemType Directory -Path "C:\\Logs\\FluxKit"'))
+assert(psCode.includes('New-Item -ItemType Directory -Path "C:\\Logs\\Masterfilepro"'))
 assert(psCode.includes('Remove-Item -Path "C:\\Logs\\old.log"'))
 console.log("  [✓] convertBatchToPowerShell transpiled Batch to PowerShell.")
 
 const bashCode = convertBatchToBash(sampleBat)
 assert(bashCode.includes("#!/usr/bin/env bash"))
-assert(bashCode.includes('APP_DIR="C:/Program Files/FluxKit"'))
-assert(bashCode.includes('mkdir -p "C:/Logs/FluxKit"'))
+assert(bashCode.includes('APP_DIR="C:/Program Files/Masterfilepro"'))
+assert(bashCode.includes('mkdir -p "C:/Logs/Masterfilepro"'))
 assert(bashCode.includes('rm -f "C:/Logs/old.log"'))
 console.log("  [✓] convertBatchToBash transpiled Batch to Bash.")
 
 const pyCode = convertBatchToPython(sampleBat)
 assert(pyCode.includes("def main():"))
-assert(pyCode.includes('APP_DIR = "C:\\Program Files\\FluxKit"'))
+assert(pyCode.includes('APP_DIR = "C:\\Program Files\\Masterfilepro"'))
 assert(pyCode.includes("sys.exit(0)"))
 console.log("  [✓] convertBatchToPython transpiled Batch to Python.")
 

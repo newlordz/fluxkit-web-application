@@ -1,91 +1,5 @@
-import fs from "fs"
-import path from "path"
-
-function getStoredSecret(provider: string, field: "clientSecret" | "apiKey"): string {
-  try {
-    const dbPaths = [
-      path.join(process.cwd(), "data", "masterfile-db.json"),
-      path.join(process.cwd(), "data", "fluxkit-db.json"),
-      path.join("/tmp", "masterfile-db.json"),
-    ]
-    for (const p of dbPaths) {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8")
-        const data = JSON.parse(content)
-        const match = data?.apiPool?.find((a: any) => a.provider === provider)
-        if (match && match[field]) return match[field]
-      }
-    }
-  } catch {}
-  return ""
-}
-
-function recordServerApiCall(apiId: string) {
-  try {
-    const tmpPath = path.join("/tmp", "masterfile-db.json")
-    const bundledPaths = [
-      path.join(process.cwd(), "data", "masterfile-db.json"),
-      path.join(process.cwd(), "data", "fluxkit-db.json"),
-    ]
-    let data: any = null
-
-    if (fs.existsSync(tmpPath)) {
-      try {
-        data = JSON.parse(fs.readFileSync(tmpPath, "utf8"))
-      } catch {}
-    }
-    if (!data) {
-      for (const p of bundledPaths) {
-        if (fs.existsSync(p)) {
-          try {
-            data = JSON.parse(fs.readFileSync(p, "utf8"))
-            break
-          } catch {}
-        }
-      }
-    }
-    if (!data) data = { apiPool: [] }
-    if (!Array.isArray(data.apiPool)) data.apiPool = []
-
-    const match = data.apiPool.find(
-      (a: any) => a.id === apiId || a.provider === apiId,
-    )
-    if (match) {
-      match.usedThisMonth = (match.usedThisMonth || 0) + 1
-    }
-
-    try {
-      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8")
-    } catch {}
-
-    for (const p of bundledPaths) {
-      try {
-        fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
-      } catch {}
-    }
-  } catch {}
-}
-
-function getAdobeCredentials(req: any = {}, body: any = {}) {
-  const q = req.query || {}
-  const clientId =
-    q.clientId ||
-    body.clientId ||
-    req.headers?.["x-adobe-client-id"] ||
-    process.env.VITE_ADOBE_CLIENT_ID ||
-    process.env.ADOBE_CLIENT_ID ||
-    getStoredSecret("adobe", "apiKey") ||
-    ""
-  const clientSecret =
-    q.clientSecret ||
-    body.clientSecret ||
-    req.headers?.["x-adobe-client-secret"] ||
-    process.env.VITE_ADOBE_CLIENT_SECRET ||
-    process.env.ADOBE_CLIENT_SECRET ||
-    getStoredSecret("adobe", "clientSecret") ||
-    ""
-  return { clientId, clientSecret }
-}
+import { currentUser } from "./_lib/auth"
+import { getAdobeCredentials, recordApiCall } from "./_lib/providers"
 
 async function parseRequestBody(req: any): Promise<any> {
   if (req.body && typeof req.body === "object") return req.body
@@ -139,7 +53,7 @@ export default async function handler(req: any, res: any) {
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
     try {
-      const { clientId, clientSecret } = getAdobeCredentials(req)
+      const { clientId, clientSecret } = await getAdobeCredentials()
 
       if (!clientId || !clientSecret) {
         const payload = {
@@ -200,7 +114,7 @@ export default async function handler(req: any, res: any) {
     const body = await parseRequestBody(req)
     const pdfBase64 = body.pdfBase64
     const compressionLevel = (body.compressionLevel || "MEDIUM").toUpperCase()
-    const { clientId, clientSecret } = getAdobeCredentials(req, body)
+    const { clientId, clientSecret } = await getAdobeCredentials()
 
     if (!pdfBase64) {
       res.status?.(400)?.json?.({ error: "pdfBase64 is required" }) ||
@@ -323,8 +237,13 @@ export default async function handler(req: any, res: any) {
     const dlRes = await fetch(downloadUri)
     const resultBuffer = Buffer.from(await dlRes.arrayBuffer())
 
-    // Record usage in serverless database
-    recordServerApiCall("adobe-pdf-services")
+    // Append-only usage ledger; monthly totals are derived, never stored.
+    await recordApiCall(
+      "adobe",
+      isExport ? "export" : "compress",
+      (await currentUser(req))?.id ?? null,
+      "success",
+    )
 
     const responsePayload = isExport
       ? {

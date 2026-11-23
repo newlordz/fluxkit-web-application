@@ -1,11 +1,11 @@
 /**
- * FluxKit Admin & Database Service
+ * Masterfilepro Admin & Database Service
  * Provides database-backed persistence for Administrator credentials,
  * security configurations, and user accounts.
  *
- * Backed by two synchronized database layers:
- * 1. Server-side Disk Database (Node.js JSON/Disk DB in data/fluxkit-db.json)
- * 2. Client-side IndexedDB (fluxkit_database -> admin_settings)
+ * Backed by three layers, most authoritative first:
+ * 1. Supabase Postgres behind /api/db/* (credentials and pricing live server-side)
+ * 2. Client-side IndexedDB (masterfilepro_database -> admin_settings)
  * 3. Synchronous localStorage cache for zero-latency lookups and offline capability
  */
 
@@ -20,10 +20,16 @@ import {
   SEEDED_ADMIN_ACCOUNT,
   SEEDED_ADMIN_CREDENTIALS,
 } from "./authService"
+import {
+  authHeaders,
+  serverChangePassword,
+  serverSignIn,
+  sharedGetJson,
+} from "./sessionService"
 
-export const ADMIN_CONFIG_KEY = "fluxkit-admin-config"
+export const ADMIN_CONFIG_KEY = "masterfilepro-admin-config"
 
-export const CREDENTIALS_KEY = "fluxkit-credentials"
+export const CREDENTIALS_KEY = "masterfilepro-credentials"
 
 export interface AdminDatabaseRecord {
   id: string
@@ -33,10 +39,6 @@ export interface AdminDatabaseRecord {
   email: string
 
   role: "admin"
-
-  salt: string
-
-  hash: string
 
   updatedAt: string
 
@@ -67,10 +69,6 @@ const DEFAULT_ADMIN_CONFIG: AdminDatabaseRecord = {
   email: "admin@masterfilepro.com",
 
   role: "admin",
-
-  salt: "salt_mwnoc4fj_x1mn5i",
-
-  hash: "228b21ca7b585a77e974223be2279fea79785f132b3687f3c7655c548a3f5c85",
 
   updatedAt: "2026-11-19T14:57:23.342Z",
 
@@ -134,7 +132,7 @@ export function saveAdminConfigToLocal(config: AdminDatabaseRecord): void {
     storage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(config))
 
     window.dispatchEvent(
-      new CustomEvent("fluxkit-admin-config-changed", { detail: config }),
+      new CustomEvent("masterfilepro-admin-config-changed", { detail: config }),
     )
   } catch {}
 }
@@ -143,7 +141,7 @@ export function saveAdminConfigToLocal(config: AdminDatabaseRecord): void {
  * IndexedDB helper for robust browser-backed database storage
  */
 
-const DB_NAME = "fluxkit_admin_db"
+const DB_NAME = "masterfilepro_admin_db"
 
 const DB_STORE = "admin_settings"
 
@@ -217,29 +215,20 @@ async function readFromIndexedDB(): Promise<AdminDatabaseRecord | null> {
   }
 }
 
-/**
- * Syncs and saves admin credentials to the server-side disk database (`data/fluxkit-db.json`)
- */
+/** Saves the admin profile through /api/db/admin; credentials themselves are server-only. */
 
 async function saveToServerDatabase(payload: {
   name: string
 
   email: string
 
-  salt: string
-
-  hash: string
-
   passwordChanged?: boolean
-}): Promise<{ ok: boolean; message: string }> {
+}): Promise<{ ok: boolean ; message: string }> {
   try {
     const res = await fetch("/api/db/admin", {
       method: "POST",
 
-      headers: {
-        "Content-Type": "application/json",
-        "x-fluxkit-role": "admin",
-      },
+      headers: authHeaders({ "Content-Type": "application/json" }),
 
       body: JSON.stringify(payload),
     })
@@ -274,7 +263,7 @@ export async function updateAdminSettings(options: {
   newPassword?: string
 
   overrideAuthCheck?: boolean
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean ; message: string }> {
   const currentConfig = getAdminConfig()
 
   // Root admin display name and status are locked; only email and password can change
@@ -296,53 +285,33 @@ export async function updateAdminSettings(options: {
     throw new Error("Please enter a valid administrator email address.")
   }
 
-  // Password verification: required unless overrideAuthCheck is explicitly granted
+  // The server verifies the current password; the browser holds no hash that
+  // could be checked here.
+  if (newPassword) {
+    if (newPassword.length < 12) {
+      throw new Error("New password must be at least 12 characters long.")
+    }
 
-  if (
-    !options.overrideAuthCheck &&
-    (newPassword || cleanEmail !== currentConfig.email)
-  ) {
+    const result = await serverChangePassword(currentPassword, newPassword)
+
+    if (result && !result.ok) {
+      throw new Error(result.error || "Password change was rejected.")
+    }
+
+    if (!result) {
+      throw new Error(
+        "Could not reach the server to verify your password. Please try again.",
+      )
+    }
+
+    // The session was revoked by the change, so the new password is signed in again.
+    await serverSignIn(cleanEmail, newPassword)
+  } else if (cleanEmail !== currentConfig.email && !options.overrideAuthCheck) {
     if (!currentPassword) {
       throw new Error(
         "Please enter your current password to authorize changes.",
       )
     }
-
-    const currentSalt = currentConfig.salt
-
-    const currentHash = currentConfig.hash
-
-    const computedCurrentHash = hashPassword(currentPassword, currentSalt)
-
-    // Check against configured hash or fallback seeded credentials
-
-    const isConfiguredMatch = computedCurrentHash === currentHash
-
-    const isSeededMatch =
-      (hashPassword(currentPassword, "fluxkit_admin_salt_2026") ===
-        "78f317ede7ceb91576215cb1a23d77e5b7dfc27d66abb6d004dae23b248fafe7" ||
-        hashPassword(currentPassword, "salt_mwnoc4fj_x1mn5i") ===
-          "228b21ca7b585a77e974223be2279fea79785f132b3687f3c7655c548a3f5c85") &&
-      (currentConfig.email === SEEDED_ADMIN_CREDENTIALS.email ||
-        currentConfig.email === "admin@fluxkit.com")
-
-    if (!isConfiguredMatch && !isSeededMatch) {
-      throw new Error("Current password verification failed. Please try again.")
-    }
-  }
-
-  let newSalt = currentConfig.salt
-
-  let newHash = currentConfig.hash
-
-  if (newPassword) {
-    if (newPassword.length < 8) {
-      throw new Error("New password must be at least 8 characters long.")
-    }
-
-    newSalt = generateSalt()
-
-    newHash = hashPassword(newPassword, newSalt)
   }
 
   const now = new Date().toISOString()
@@ -356,10 +325,6 @@ export async function updateAdminSettings(options: {
 
     role: "admin",
 
-    salt: newSalt,
-
-    hash: newHash,
-
     updatedAt: now,
 
     source: "database",
@@ -369,7 +334,7 @@ export async function updateAdminSettings(options: {
 
   saveAdminConfigToLocal(updatedRecord)
 
-  // 2. Save credential hash for authentication lookup
+  // 2. Keep the offline sign-in mirror under the new address
 
   const storage = getStorage()
 
@@ -379,12 +344,16 @@ export async function updateAdminSettings(options: {
 
       const creds = rawCreds ? JSON.parse(rawCreds) : {}
 
-      creds[cleanEmail] = { salt: newSalt, hash: newHash }
-
       if (cleanEmail !== currentConfig.email.toLowerCase()) {
-        creds[currentConfig.email.toLowerCase()] = {
-          salt: newSalt,
-          hash: newHash,
+        delete creds[currentConfig.email.toLowerCase()]
+      }
+
+      if (newPassword) {
+        const mirrorSalt = generateSalt()
+
+        creds[cleanEmail] = {
+          salt: mirrorSalt,
+          hash: hashPassword(newPassword, mirrorSalt),
         }
       }
 
@@ -461,16 +430,12 @@ export async function updateAdminSettings(options: {
 
   await saveToIndexedDB(updatedRecord)
 
-  // 6. Save to server-side Disk Database (data/fluxkit-db.json)
+  // 6. Save the profile through the server API
 
   await saveToServerDatabase({
     name: cleanName,
 
     email: cleanEmail,
-
-    salt: newSalt,
-
-    hash: newHash,
 
     passwordChanged: Boolean(newPassword),
   })
@@ -494,47 +459,35 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
   // 1. Fetch server database state
 
   try {
-    const currentUser = getCurrentUser()
-    const isAdmin = currentUser?.role === "admin"
-    const res = await fetch("/api/db/admin", {
-      headers: isAdmin ? { "x-fluxkit-role": "admin" } : {},
-    })
+    const data = await sharedGetJson("/api/db/admin")
 
-    if (res.ok) {
-      const data = await res.json()
+    if (data?.ok && data.admin) {
+      serverConnected = true
 
-      if (data.ok && data.admin) {
-        serverConnected = true
+      lastSync = data.database?.syncedAt || lastSync
 
-        lastSync = data.database?.syncedAt || lastSync
+      const serverAdmin = data.admin
 
-        const serverAdmin = data.admin
+      const localAdmin = getAdminConfig()
 
-        const localAdmin = getAdminConfig()
+      // If server has more recent or custom data, sync into local cache
 
-        // If server has more recent or custom data, sync into local cache
+      if (
+        serverAdmin.email &&
+        (serverAdmin.email !== DEFAULT_ADMIN_CONFIG.email ||
+          new Date(serverAdmin.updatedAt) > new Date(localAdmin.updatedAt))
+      ) {
+        saveAdminConfigToLocal({
+          ...localAdmin,
 
-        if (
-          serverAdmin.email &&
-          (serverAdmin.email !== DEFAULT_ADMIN_CONFIG.email ||
-            new Date(serverAdmin.updatedAt) > new Date(localAdmin.updatedAt))
-        ) {
-          saveAdminConfigToLocal({
-            ...localAdmin,
+          name: serverAdmin.name || localAdmin.name,
 
-            name: serverAdmin.name || localAdmin.name,
+          email: serverAdmin.email || localAdmin.email,
 
-            email: serverAdmin.email || localAdmin.email,
+          updatedAt: serverAdmin.updatedAt || localAdmin.updatedAt,
 
-            salt: serverAdmin.salt || localAdmin.salt,
-
-            hash: serverAdmin.hash || localAdmin.hash,
-
-            updatedAt: serverAdmin.updatedAt || localAdmin.updatedAt,
-
-            source: "database",
-          })
-        }
+          source: "database",
+        })
       }
     }
   } catch {}
@@ -561,10 +514,10 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
     connected: true,
 
     engine: serverConnected
-      ? "Server Disk Database (data/masterfile-db.json) + Client IndexedDB"
+      ? "Supabase Postgres (/api/db/*) + Client IndexedDB"
       : "Client IndexedDB + Local Database Cache",
 
-    serverDbPath: "data/masterfile-db.json",
+    serverDbPath: "/api/db/admin",
 
     indexedDbReady: typeof window !== "undefined" && "indexedDB" in window,
 
@@ -575,7 +528,8 @@ export async function initializeDatabaseSync(): Promise<DatabaseStatus> {
 }
 
 /**
- * Resets administrator credentials to factory default hashes without exposing plaintext passwords.
+ * Restores the default administrator name and email in the local config store.
+ * The password itself is only ever changed through the server.
  */
 export async function resetAdminToDefaults(): Promise<{
   success: boolean
@@ -592,9 +546,6 @@ export async function resetAdminToDefaults(): Promise<{
   await saveToServerDatabase({
     name: record.name,
     email: record.email,
-    salt: record.salt,
-    hash: record.hash,
-    passwordChanged: true,
   })
 
   return {

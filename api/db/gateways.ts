@@ -1,198 +1,144 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import fs from "node:fs"
-import path from "node:path"
+import { cors, json, query, readBody } from "../_lib/db"
+import { requireAdmin } from "../_lib/auth"
 
-const DB_PATH_1 = path.join(process.cwd(), "data", "masterfile-db.json")
-const DB_PATH_2 = path.join(process.cwd(), "data", "fluxkit-db.json")
-const TMP_PATH = path.join("/tmp", "masterfile-db.json")
-
-const DEFAULT_GATEWAYS = [
-  {
-    id: "paystack",
-    name: "Paystack",
-    description: "Modern payments for Africa and global cards (Cards, Mobile Money, Bank Transfer, Apple Pay).",
-    enabled: true,
-    mode: "test",
-    publicKey: "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e",
-    secretKey: "sk_test_96b831d571847ca59855678b5f671de0ad8a0632",
-    webhookSecret: "whsec_paystack_test_hook",
-    currency: "GHS",
-    notes: "Supports GHS (Ghana Cedis), NGN (Naira), USD, ZAR, KES.",
-    testStatus: "untested",
-  },
-  {
-    id: "stripe",
-    name: "Stripe",
-    description: "Global credit card processing, Apple Pay, Google Pay, and recurring subscription checkouts.",
-    enabled: false,
-    mode: "test",
-    publicKey: "",
-    secretKey: "",
-    webhookSecret: "",
-    currency: "USD",
-    notes: "Supports 135+ global currencies, 3D Secure, and Stripe Billing webhooks.",
-    testStatus: "untested",
-  },
-  {
-    id: "flutterwave",
-    name: "Flutterwave",
-    description: "Pan-African and international checkout gateway supporting cards, USSD, and MPesa.",
-    enabled: false,
-    mode: "test",
-    publicKey: "",
-    secretKey: "",
-    webhookSecret: "",
-    currency: "USD",
-    notes: "Requires FLWPUBK and FLWSECK keys from Flutterwave Dashboard.",
-    testStatus: "untested",
-  },
-  {
-    id: "custom",
-    name: "Custom Payment Webhook / API",
-    description: "Connect your self-hosted backend, LemonSqueezy, Paddle, or custom billing API.",
-    enabled: false,
-    mode: "test",
-    publicKey: "",
-    secretKey: "",
-    endpointUrl: "https://api.yourdomain.com/v1/payments/initialize",
-    currency: "USD",
-    notes: "Sends HMAC-signed JSON payload to your custom endpoint.",
-    testStatus: "untested",
-  },
-]
-
-function readDb(): any {
-  // 1. Check temporary serverless storage
-  try {
-    if (fs.existsSync(TMP_PATH)) {
-      const content = fs.readFileSync(TMP_PATH, "utf8")
-      return JSON.parse(content)
-    }
-  } catch {}
-
-  // 2. Check bundled database files
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8")
-        return JSON.parse(content)
-      }
-    } catch {}
-  }
-  return { paymentGateways: DEFAULT_GATEWAYS }
+interface GatewayRow {
+  id: string
+  name: string
+  description: string | null
+  enabled: boolean
+  mode: string
+  public_key: string | null
+  secret_key: string | null
+  webhook_secret: string | null
+  currency: string
+  notes: string | null
+  endpoint_url: string | null
+  test_status: string | null
+  last_tested_at: string | null
+  test_message: string | null
 }
 
-function writeDb(data: any): boolean {
-  let ok = false
-  // 1. Write to /tmp on serverless environments
-  try {
-    fs.writeFileSync(TMP_PATH, JSON.stringify(data, null, 2), "utf8")
-    ok = true
-  } catch {}
-
-  // 2. Write to project disk if writable (local dev)
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
-      ok = true
-    } catch {}
-  }
-  return ok
+function maskSecret(value: string | null, prefix: string | null): string {
+  if (!value) return ""
+  const tail = value.slice(-4)
+  if (prefix && value.startsWith(prefix)) return `${prefix}••••••••${tail}`
+  return "••••••••••••••••"
 }
 
-export default async function handler(req: any, res: any) {
-  res.setHeader("Access-Control-Allow-Credentials", "true")
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST,PUT")
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization",
-  )
-
-  if (req.method === "OPTIONS") {
-    res.status?.(200)?.end?.() || res.end?.()
-    return
+function toClient(row: GatewayRow) {
+  const out: Record<string, any> = {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    enabled: row.enabled,
+    mode: row.mode,
+    publicKey: row.public_key ?? "",
+    secretKey: maskSecret(row.secret_key, row.mode === "live" ? "sk_live_" : "sk_test_"),
+    hasSecretKey: !!row.secret_key,
+    webhookSecret: maskSecret(row.webhook_secret, "whsec_"),
+    hasWebhookSecret: !!row.webhook_secret,
+    currency: row.currency,
+    notes: row.notes,
+    testStatus: row.test_status ?? "untested",
+    lastTestedAt: row.last_tested_at,
+    testMessage: row.test_message,
   }
+  if (row.endpoint_url) out.endpointUrl = row.endpoint_url
+  return out
+}
 
-  res.setHeader("Content-Type", "application/json")
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  cors(req, res)
+  if (req.method === "OPTIONS") return json(res, 200, {})
 
   try {
-    const db = readDb()
-
     if (req.method === "GET") {
-      const rawGateways = Array.isArray(db.paymentGateways) && db.paymentGateways.length > 0
-        ? db.paymentGateways
-        : DEFAULT_GATEWAYS
+      // Gateway mode, key presence and connection test results are operator-only data;
+      // checkout itself goes through /api/paystack, which never reads this response.
+      const actor = await requireAdmin(req)
+      if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
 
-      // Mask secret keys and webhook secrets to prevent secret leakage in client
-      const sanitizedGateways = rawGateways.map((gw: any) => {
-        const copy = { ...gw }
-        if (copy.secretKey) {
-          copy.hasSecretKey = true
-          if (copy.secretKey.startsWith("sk_test_")) {
-            copy.secretKey = `sk_test_••••••••${copy.secretKey.slice(-4)}`
-          } else if (copy.secretKey.startsWith("sk_live_")) {
-            copy.secretKey = `sk_live_••••••••${copy.secretKey.slice(-4)}`
-          } else {
-            copy.secretKey = "••••••••••••••••"
-          }
-        }
-        if (copy.webhookSecret) {
-          copy.hasWebhookSecret = true
-          copy.webhookSecret = "••••••••••••••••"
-        }
-        return copy
-      })
-
-      const payload = { ok: true, gateways: sanitizedGateways }
-      res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
-      return
+      const rows = await query<GatewayRow>(
+        `select id, name, description, enabled, mode, public_key, secret_key, webhook_secret,
+                currency, notes, endpoint_url, test_status, last_tested_at, test_message
+           from payment_gateways order by id`,
+      )
+      return json(res, 200, { ok: true, gateways: rows.map(toClient) })
     }
 
     if (req.method === "POST" || req.method === "PUT") {
-      let body: any = req.body
-      if (!body) {
-        const buffers: Buffer[] = []
-        for await (const chunk of req) {
-          buffers.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
-        }
-        const str = Buffer.concat(buffers).toString("utf8")
-        body = JSON.parse(str || "{}")
-      } else if (typeof body === "string") {
-        body = JSON.parse(body || "{}")
+      // Writes previously accepted any caller's payload and could overwrite gateway keys.
+      const actor = await requireAdmin(req)
+      if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+
+      const body = await readBody(req)
+      const incoming = Array.isArray(body?.gateways) ? body.gateways : null
+      if (!incoming) return json(res, 400, { ok: false, error: "Invalid payload: gateways array required" })
+
+      for (const gw of incoming) {
+        if (!gw?.id) continue
+        // A masked value coming back from the UI means "unchanged".
+        const keepSecret = typeof gw.secretKey === "string" && gw.secretKey.includes("••••")
+        const keepWebhook = typeof gw.webhookSecret === "string" && gw.webhookSecret.includes("••••")
+        await query(
+          `insert into payment_gateways
+             (id, name, description, enabled, mode, public_key, secret_key, webhook_secret,
+              currency, notes, endpoint_url, test_status, last_tested_at, test_message, updated_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
+           on conflict (id) do update set
+             name = excluded.name,
+             description = excluded.description,
+             enabled = excluded.enabled,
+             mode = excluded.mode,
+             public_key = excluded.public_key,
+             secret_key = coalesce($15, payment_gateways.secret_key),
+             webhook_secret = coalesce($16, payment_gateways.webhook_secret),
+             currency = excluded.currency,
+             notes = excluded.notes,
+             endpoint_url = excluded.endpoint_url,
+             test_status = excluded.test_status,
+             last_tested_at = excluded.last_tested_at,
+             test_message = excluded.test_message,
+             updated_at = now()`,
+          [
+            String(gw.id),
+            String(gw.name ?? gw.id),
+            gw.description ?? null,
+            gw.enabled === true,
+            gw.mode === "live" ? "live" : "test",
+            gw.publicKey ?? null,
+            keepSecret ? null : (gw.secretKey ?? null),
+            keepWebhook ? null : (gw.webhookSecret ?? null),
+            gw.currency ?? "GHS",
+            gw.notes ?? null,
+            gw.endpointUrl ?? null,
+            gw.testStatus ?? "untested",
+            gw.lastTestedAt ?? null,
+            gw.testMessage ?? null,
+            keepSecret ? null : (gw.secretKey ?? null),
+            keepWebhook ? null : (gw.webhookSecret ?? null),
+          ],
+        )
       }
 
-      const incomingGateways = Array.isArray(body.gateways) ? body.gateways : []
-      const existingGateways = Array.isArray(db.paymentGateways) ? db.paymentGateways : DEFAULT_GATEWAYS
+      await query(`insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`, [
+        actor.id,
+        "gateways.update",
+        "payment_gateways",
+        JSON.stringify({ count: incoming.length }),
+      ])
 
-      // Preserve stored secrets if incoming payload contains masked tokens
-      const preservedGateways = incomingGateways.map((inGw: any) => {
-        const existing = existingGateways.find((e: any) => e.id === inGw.id)
-        const merged = { ...inGw }
-        if (existing) {
-          if (merged.secretKey && merged.secretKey.includes("••••")) {
-            merged.secretKey = existing.secretKey
-          }
-          if (merged.webhookSecret && merged.webhookSecret.includes("••••")) {
-            merged.webhookSecret = existing.webhookSecret
-          }
-        }
-        return merged
-      })
-
-      db.paymentGateways = preservedGateways
-      db.updatedAt = new Date().toISOString()
-      writeDb(db)
-
-      const payload = { ok: true, count: preservedGateways.length }
-      res.status?.(200)?.json?.(payload) || res.end?.(JSON.stringify(payload))
-      return
+      const rows = await query<GatewayRow>(
+        `select id, name, description, enabled, mode, public_key, secret_key, webhook_secret,
+                currency, notes, endpoint_url, test_status, last_tested_at, test_message
+           from payment_gateways order by id`,
+      )
+      return json(res, 200, { ok: true, gateways: rows.map(toClient), message: "Gateways saved to Postgres." })
     }
 
-    res.status?.(405)?.json?.({ ok: false, message: "Method not allowed" }) ||
-      res.end?.(JSON.stringify({ ok: false, message: "Method not allowed" }))
-  } catch (error: any) {
-    const payload = { ok: false, error: error?.message || "Internal server error" }
-    res.status?.(500)?.json?.(payload) || res.end?.(JSON.stringify(payload))
+    return json(res, 405, { ok: false, error: "Method not allowed" })
+  } catch (err: any) {
+    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
   }
 }

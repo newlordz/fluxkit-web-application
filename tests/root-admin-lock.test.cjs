@@ -9,7 +9,7 @@ function createHarness() {
   const moduleCache = new Map()
   const storage = new Map([
     [
-      "fluxkit-registered-accounts",
+      "masterfilepro-registered-accounts",
       JSON.stringify([
         {
           id: "usr_admin_default",
@@ -34,7 +34,7 @@ function createHarness() {
       ]),
     ],
     [
-      "fluxkit-current-user",
+      "masterfilepro-current-user",
       JSON.stringify({
         id: "usr_admin_default",
         name: "Masterfilepro Administrator",
@@ -150,12 +150,12 @@ test("Root Admin Lock: Status is locked and cannot be demoted, revoked, or strip
   )
 })
 
-test("Root Admin Lock: updateUserDetails locks status, role, tier, and name, but allows email and password update", () => {
+test("Root Admin Lock: updateUserDetails locks status, role, tier, and name, but allows email and password update", async () => {
   const harness = createHarness()
   const admin = harness.load("adminService")
 
   // Try changing name, role, tier, proStatus, and email on root admin
-  const updated = admin.updateUserDetails("usr_admin_default", {
+  const updated = await admin.updateUserDetails("usr_admin_default", {
     name: "Hacked Hacker Name", // Should be ignored/locked
     email: "newroot@masterfilepro.com", // Should succeed
     role: "user", // Should be locked to admin

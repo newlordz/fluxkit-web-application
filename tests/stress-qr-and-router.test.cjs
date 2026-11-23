@@ -138,7 +138,7 @@ async function runTests() {
   const { tools, categories, brand } = load("config")
 
   testCase("Config: Brand definition contains valid styling tokens", () => {
-    assert.ok(brand.name === "Masterfilepro" || brand.name === "FluxKit")
+    assert.ok(brand.name === "Masterfilepro" || brand.name === "Masterfilepro")
     assert.ok(brand.colors.dark.accent)
     assert.ok(brand.colors.light.accent)
   })
@@ -244,7 +244,7 @@ async function runTests() {
 
   await asyncTestCase("QR Service: Valid HTTP/HTTPS URLs produce valid PNG data URL", async () => {
     const sampleUrls = [
-      "https://fluxkit.io",
+      "https://masterfilepro.io",
       "http://localhost:8443/app",
       "https://subdomain.example.com/path?foo=bar&baz=1#section",
       "https://example.com/very/long/nested/path/with/parameters?key1=value1&key2=value2&timestamp=1731250000",
@@ -265,7 +265,7 @@ async function runTests() {
 
   await asyncTestCase("QR Service: UTF-8 International & Multilingual Payloads", async () => {
     const multilingual = [
-      "你好世界，欢迎使用 FluxKit 工具箱！",
+      "你好世界，欢迎使用 Masterfilepro 工具箱！",
       "こんにちは世界！日本語のQRコードテスト",
       "مرحبا بالعالم! اختبار رمز الاستجابة السريعة", // Arabic RTL
       "שלום עולם! בדיקת קוד QR", // Hebrew RTL
@@ -308,7 +308,7 @@ async function runTests() {
   await asyncTestCase("QR Service: Email Mailto Payloads", async () => {
     const emails = [
       { email: "user@example.com", subject: "Inquiry" },
-      { email: "john.doe+fluxkit@company.co.uk", subject: "Order #123 & Status = Done!" },
+      { email: "john.doe+masterfilepro@company.co.uk", subject: "Order #123 & Status = Done!" },
       { email: "support@domain.org", subject: "Need help with QR generation & PDF tools" },
       { email: "contact@agency.com", subject: "Special characters: ä, ö, ü, é, ñ, 🚀" },
     ]
@@ -322,7 +322,7 @@ async function runTests() {
   await asyncTestCase("QR Service: High-density payload stress (1,000+ chars)", async () => {
     const lengths = [1000, 1200, 1500, 1800, 2000]
     for (const len of lengths) {
-      const payload = "FluxKit-M1-Density-Check-".repeat(Math.ceil(len / 25)).slice(0, len)
+      const payload = "Masterfilepro-M1-Density-Check-".repeat(Math.ceil(len / 25)).slice(0, len)
       assert.equal(payload.length, len)
       const dataUrl = await generateQR(payload)
       assert.ok(dataUrl.startsWith("data:image/png;base64,"))
@@ -334,7 +334,7 @@ async function runTests() {
   await asyncTestCase("QR Service: Concurrency stress (50 parallel generation requests)", async () => {
     const promises = []
     for (let i = 0; i < 50; i++) {
-      promises.push(generateQR(`https://fluxkit.io/stress-concurrency/${i}?salt=${Math.random()}`))
+      promises.push(generateQR(`https://masterfilepro.io/stress-concurrency/${i}?salt=${Math.random()}`))
     }
     const results = await Promise.all(promises)
     assert.equal(results.length, 50)
@@ -380,10 +380,10 @@ async function runTests() {
 
   testCase("QR Validation: URL scheme auto-prefixing and protocol enforcement", () => {
     // Valid without scheme
-    let val = "fluxkit.io"
+    let val = "masterfilepro.io"
     let content = val.trim()
     if (!/^https?:\/\//i.test(content)) content = `https://${content}`
-    assert.equal(content, "https://fluxkit.io")
+    assert.equal(content, "https://masterfilepro.io")
     const parsed = new URL(content)
     assert.ok(["http:", "https:"].includes(parsed.protocol))
 
@@ -396,7 +396,7 @@ async function runTests() {
     // Subdomains and complex paths without scheme
     // Test auto-prefixing on bare domains and paths
     const bareDomains = [
-      { input: "fluxkit.io", expected: "https://fluxkit.io" },
+      { input: "masterfilepro.io", expected: "https://masterfilepro.io" },
       { input: "http://localhost:8443", expected: "http://localhost:8443" },
       { input: "https://secure.site.com", expected: "https://secure.site.com" },
       { input: "sub.example.org/path?k=v#h", expected: "https://sub.example.org/path?k=v#h" },
@@ -518,7 +518,7 @@ async function runTests() {
     const env = createEnv("")
     const App = env.load("App").default
     const html = renderToStaticMarkup(React.createElement(App))
-    assert.ok(html.includes("All tools") || html.includes("Overview") || html.includes("FluxKit"))
+    assert.ok(html.includes("All tools") || html.includes("Overview") || html.includes("Masterfilepro"))
   })
 
   testCase("Router: Rapid sequential navigations across 10 distinct routes", () => {

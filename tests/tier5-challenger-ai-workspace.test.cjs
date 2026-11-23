@@ -180,7 +180,7 @@ test("Tier 5 Adversarial AI: Tool #26 summarizeDocument tokenization & scoring e
   })
 
   await t.test("Single sentence input formats gracefully without division-by-zero", () => {
-    const text = "A single sentence explaining FluxKit architecture."
+    const text = "A single sentence explaining Masterfilepro architecture."
     const bulletRes = summarizeDocument(text, { format: "bullet" })
     assert.equal(bulletRes.originalSentenceCount, 1)
     assert.equal(bulletRes.summarySentenceCount, 1)
@@ -522,8 +522,8 @@ test("Tier 5 Adversarial AI: Tool #32 compareTexts LCS dynamic programming & gra
   })
 
   await t.test("ignoreWhitespace and ignoreCase toggles", () => {
-    const a = "   FluxKit Web App   "
-    const b = "fluxkit web app"
+    const a = "   Masterfilepro Web App   "
+    const b = "masterfilepro web app"
 
     const strictRes = compareTexts(a, b, { ignoreWhitespace: false, ignoreCase: false })
     assert.ok(strictRes.stats.similarityPercentage < 100)
@@ -578,7 +578,7 @@ test("Tier 5 Adversarial QR: Tool #17 qr protocol security & formatting validati
   const { generateQR } = services
 
   await t.test("generateQR creates valid data URL for standard input", async () => {
-    const dataUrl = await generateQR("https://fluxkit.app")
+    const dataUrl = await generateQR("https://masterfilepro.app")
     assert.match(dataUrl, /^data:image\/png;base64,/)
   })
 
@@ -607,7 +607,7 @@ test("Tier 5 Adversarial QR: Tool #17 qr protocol security & formatting validati
       return `https://${urlStr}`
     }
 
-    assert.equal(validateUrl("fluxkit.app/test"), "https://fluxkit.app/test")
+    assert.equal(validateUrl("masterfilepro.app/test"), "https://masterfilepro.app/test")
     assert.equal(validateUrl("http://internal.net"), "http://internal.net")
     assert.throws(() => validateUrl("javascript:alert(1)"), /Use a valid https:\/\/ or http:\/\/ URL/)
     assert.throws(() => validateUrl("data:text/html,<h1>Pwn</h1>"), /Use a valid https:\/\/ or http:\/\/ URL/)
@@ -616,7 +616,7 @@ test("Tier 5 Adversarial QR: Tool #17 qr protocol security & formatting validati
   })
 
   await t.test("High-density QR code stress (1,200 chars) and maximum capacity limit", async () => {
-    const densePayload = "FLUXKIT-VERIFIED-DATA-".repeat(50)
+    const densePayload = "MASTERFILEPRO-VERIFIED-DATA-".repeat(50)
     const dataUrl = await generateQR(densePayload)
     assert.ok(dataUrl.length > 500)
 

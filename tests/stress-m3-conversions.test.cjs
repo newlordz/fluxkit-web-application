@@ -123,7 +123,7 @@ function createDOMEnv(hash = "overview") {
         document: mockDocument,
         navigator: { userAgent: "Node" },
         URL: {
-          createObjectURL: () => "blob:fluxkit-test",
+          createObjectURL: () => "blob:masterfilepro-test",
           revokeObjectURL: () => {},
         },
         console,
@@ -536,7 +536,7 @@ test("Stress Round-Trip: 6-slide outline pptToPDF -> pdfToPPT slide preservation
   // 2. Convert PDF to PPTX presentation
   const pptRes = await s.pdfToPPT(pdfBytes, {
     aspectRatio: "16:9",
-    theme: "fluxkit-dark",
+    theme: "masterfilepro-dark",
   })
   const pptBytes = new Uint8Array(await pptRes.blob.arrayBuffer())
   const pptEntries = await s.unzipEntries(pptBytes)

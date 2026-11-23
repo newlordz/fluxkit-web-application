@@ -1,14 +1,5 @@
-function getOcrSpaceKey(req: any = {}, body: any = {}) {
-  const q = req.query || {}
-  return (
-    q.apiKey ||
-    body.apiKey ||
-    req.headers?.["x-api-key"] ||
-    process.env.VITE_OCRSPACE_API_KEY ||
-    process.env.OCRSPACE_API_KEY ||
-    ""
-  )
-}
+import { currentUser } from "./_lib/auth"
+import { getProviderSecret, recordApiCall } from "./_lib/providers"
 
 async function parseRequestBody(req: any): Promise<any> {
   if (req.body && typeof req.body === "object") return req.body
@@ -77,7 +68,7 @@ export default async function handler(req: any, res: any) {
     const body = await parseRequestBody(req)
     const base64Image = body.base64Image
     const language = body.language || "eng"
-    const apiKey = getOcrSpaceKey(req, body)
+    const apiKey = await getProviderSecret("ocrspace", "apiKey", ["OCRSPACE_API_KEY"])
 
     if (!base64Image) {
       res.status?.(400)?.json?.({ error: "base64Image is required" }) ||
@@ -107,6 +98,13 @@ export default async function handler(req: any, res: any) {
 
     const parsedText =
       ocrData.ParsedResults?.map((r: any) => r.ParsedText).join("\n") || ""
+
+    await recordApiCall(
+      "ocrspace",
+      "ocr",
+      (await currentUser(req))?.id ?? null,
+      "success",
+    )
 
     const payload = {
       ok: true,

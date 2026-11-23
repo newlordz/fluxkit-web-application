@@ -12,6 +12,7 @@ import {
   pushUserToCloud,
   SEEDED_ADMIN_ACCOUNT,
 } from "./authService"
+import { authHeaders, getSessionToken, sharedGetJson } from "./sessionService"
 export { isRootAdmin } from "./authService"
 import { tools } from "./config"
 import {
@@ -31,8 +32,8 @@ export {
   type SupportedCurrency,
 }
 
-const TOOL_TIERS_KEY = "fluxkit-tool-tiers"
-const TOOL_PRICES_KEY = "fluxkit-tool-prices"
+const TOOL_TIERS_KEY = "masterfilepro-tool-tiers"
+const TOOL_PRICES_KEY = "masterfilepro-tool-prices"
 
 // In-memory fallback for test harnesses without localStorage
 let inMemoryTiers: Record<string, "standard" | "pro"> | null = null
@@ -69,7 +70,7 @@ export function saveAllToolTiers(
     try {
       storage.setItem(TOOL_TIERS_KEY, JSON.stringify(tiers))
       window.dispatchEvent(
-        new CustomEvent("fluxkit-tiers-changed", { detail: tiers }),
+        new CustomEvent("masterfilepro-tiers-changed", { detail: tiers }),
       )
     } catch {}
   }
@@ -104,7 +105,7 @@ export function setToolTier(toolId: string, tier: "standard" | "pro"): void {
     try {
       fetch("/api/db/admin", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           toolTiers: { [toolId]: tier },
           toolPrices: { [toolId]: tier === "pro" ? prices[toolId] || 4.99 : 0 },
@@ -133,7 +134,7 @@ export function saveAllToolPrices(prices: Record<string, number>): void {
     try {
       storage.setItem(TOOL_PRICES_KEY, JSON.stringify(prices))
       window.dispatchEvent(
-        new CustomEvent("fluxkit-prices-changed", { detail: prices }),
+        new CustomEvent("masterfilepro-prices-changed", { detail: prices }),
       )
     } catch {}
   }
@@ -170,7 +171,7 @@ export function setToolPrice(toolId: string, price: number): void {
     try {
       fetch("/api/db/admin", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           toolTiers: { [toolId]: targetTier },
           toolPrices: { [toolId]: finalPrice },
@@ -188,37 +189,34 @@ export function setToolPrice(toolId: string, price: number): void {
 export async function syncToolTiersFromDatabase(): Promise<void> {
   if (typeof window === "undefined" || typeof fetch !== "function") return
   try {
-    const res = await fetch("/api/db/admin", { method: "GET" })
-    if (res.ok) {
-      const data = await res.json()
-      if (data && data.toolTiers && typeof data.toolTiers === "object") {
-        const storage = getStorage()
-        const current = getAllToolTiers()
-        const mergedTiers = { ...data.toolTiers, ...current }
-        inMemoryTiers = { ...mergedTiers }
-        if (storage) {
-          try {
-            storage.setItem(TOOL_TIERS_KEY, JSON.stringify(mergedTiers))
-          } catch {}
-        }
-        window.dispatchEvent(
-          new CustomEvent("fluxkit-tiers-changed", { detail: mergedTiers }),
-        )
+    const data = await sharedGetJson("/api/db/admin")
+    if (data && data.toolTiers && typeof data.toolTiers === "object") {
+      const storage = getStorage()
+      const current = getAllToolTiers()
+      const mergedTiers = { ...data.toolTiers, ...current }
+      inMemoryTiers = { ...mergedTiers }
+      if (storage) {
+        try {
+          storage.setItem(TOOL_TIERS_KEY, JSON.stringify(mergedTiers))
+        } catch {}
       }
-      if (data && data.toolPrices && typeof data.toolPrices === "object") {
-        const storage = getStorage()
-        const currentPrices = getAllToolPrices()
-        const mergedPrices = { ...data.toolPrices, ...currentPrices }
-        inMemoryPrices = { ...mergedPrices }
-        if (storage) {
-          try {
-            storage.setItem(TOOL_PRICES_KEY, JSON.stringify(mergedPrices))
-          } catch {}
-        }
-        window.dispatchEvent(
-          new CustomEvent("fluxkit-prices-changed", { detail: mergedPrices }),
-        )
+      window.dispatchEvent(
+        new CustomEvent("masterfilepro-tiers-changed", { detail: mergedTiers }),
+      )
+    }
+    if (data && data.toolPrices && typeof data.toolPrices === "object") {
+      const storage = getStorage()
+      const currentPrices = getAllToolPrices()
+      const mergedPrices = { ...data.toolPrices, ...currentPrices }
+      inMemoryPrices = { ...mergedPrices }
+      if (storage) {
+        try {
+          storage.setItem(TOOL_PRICES_KEY, JSON.stringify(mergedPrices))
+        } catch {}
       }
+      window.dispatchEvent(
+        new CustomEvent("masterfilepro-prices-changed", { detail: mergedPrices }),
+      )
     }
   } catch {}
 }
@@ -340,7 +338,11 @@ export function getToolPaymentStatus(
     user.unlockedTools.includes(toolId)
 
   if (isUnlockedList) {
-    if (sub && sub.expiresAt && new Date(sub.expiresAt).getTime() < Date.now()) {
+    if (
+      sub &&
+      sub.expiresAt &&
+      new Date(sub.expiresAt).getTime() < Date.now()
+    ) {
       return {
         isProTool: true,
         isUnlocked: false,
@@ -504,7 +506,7 @@ export function activateProSimulatedPayment(userId: string): UserAccount {
       updated = {
         id: userId,
         name: "Pro User",
-        email: `${userId}@fluxkit.com`,
+        email: `${userId}@masterfilepro.com`,
         provider: "email",
         role: "user",
         subscriptionTier: "pro",
@@ -547,7 +549,7 @@ export function requestProApproval(userId: string): UserAccount {
       updated = {
         id: userId,
         name: "Applicant User",
-        email: `${userId}@fluxkit.com`,
+        email: `${userId}@masterfilepro.com`,
         provider: "email",
         role: "user",
         subscriptionTier: "standard",
@@ -596,7 +598,7 @@ export function approveProSubscription(userId: string): UserAccount {
       updated = {
         id: userId,
         name: "Approved User",
-        email: `${userId}@fluxkit.com`,
+        email: `${userId}@masterfilepro.com`,
         provider: "email",
         role: "user",
         subscriptionTier: "pro",
@@ -645,7 +647,7 @@ export function revokeProSubscription(userId: string): UserAccount {
       updated = {
         id: userId,
         name: "Standard User",
-        email: `${userId}@fluxkit.com`,
+        email: `${userId}@masterfilepro.com`,
         provider: "email",
         role: "user",
         subscriptionTier: "standard",
@@ -683,7 +685,7 @@ export async function pushUsersToServer(users: UserAccount[]): Promise<void> {
   try {
     await fetch("/api/db/users", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ users }),
     })
   } catch (err) {
@@ -699,7 +701,7 @@ export async function deleteUserFromServer(userId: string): Promise<void> {
   try {
     await fetch("/api/db/users", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action: "delete", userId }),
     })
   } catch (err) {
@@ -716,23 +718,26 @@ export async function syncUsersWithServer(): Promise<UserAccount[]> {
   if (typeof window === "undefined" || typeof fetch !== "function") {
     return getRegisteredAccounts()
   }
+  // The roster is admin-only; without one of these roles the call is a guaranteed 401.
+  const viewer = getCurrentUser()
+  if (
+    !getSessionToken() ||
+    (viewer?.role !== "admin" && viewer?.role !== "sub-admin")
+  ) {
+    return getRegisteredAccounts()
+  }
   try {
-    const res = await fetch("/api/db/users", { method: "GET" })
+    const res = await fetch("/api/db/users", {
+      method: "GET",
+      headers: authHeaders(),
+    })
     if (res.ok) {
       const data = await res.json()
       if (data && Array.isArray(data.users)) {
-        const localAccounts = getRegisteredAccounts()
         const current = getCurrentUser()
-        if (
-          current &&
-          current.email &&
-          !localAccounts.some(
-            (a) => a.email.toLowerCase() === current.email.toLowerCase(),
-          )
-        ) {
-          localAccounts.push(current)
-        }
 
+        // The server roster is authoritative: an admin browser must not re-add
+        // accounts that were deleted server-side from its own stale cache.
         const mergedMap = new Map<string, UserAccount>()
 
         for (const u of data.users) {
@@ -741,20 +746,8 @@ export async function syncUsersWithServer(): Promise<UserAccount[]> {
           }
         }
 
-        const unpushed: UserAccount[] = []
-        for (const u of localAccounts) {
-          if (u && u.email) {
-            const emailKey = u.email.toLowerCase()
-            if (!mergedMap.has(emailKey)) {
-              mergedMap.set(emailKey, u)
-              unpushed.push(u)
-            } else {
-              const serverAcc = mergedMap.get(emailKey)!
-              if (u.proStatus !== "none" && serverAcc.proStatus === "none") {
-                mergedMap.set(emailKey, { ...serverAcc, ...u })
-              }
-            }
-          }
+        if (current?.email && !mergedMap.has(current.email.toLowerCase())) {
+          mergedMap.set(current.email.toLowerCase(), current)
         }
 
         const mergedList = Array.from(mergedMap.values())
@@ -773,15 +766,13 @@ export async function syncUsersWithServer(): Promise<UserAccount[]> {
           }
         }
 
-        if (unpushed.length > 0) {
-          pushUsersToServer(unpushed).catch(() => {})
+        if (typeof window === "undefined") {
+          return mergedList
         }
 
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("fluxkit-users-synced", { detail: mergedList }),
-          )
-        }
+        window.dispatchEvent(
+          new CustomEvent("masterfilepro-users-synced", { detail: mergedList }),
+        )
 
         return mergedList
       }
@@ -841,13 +832,13 @@ export function deleteUser(userId: string): void {
   deleteUserFromServer(userId).catch(() => {})
 }
 
-export function createUserByAdmin(payload: {
+export async function createUserByAdmin(payload: {
   name: string
   email: string
   password: string
   role?: "admin" | "sub-admin" | "user"
   subscriptionTier?: "standard" | "pro"
-}): UserAccount {
+}): Promise<UserAccount> {
   const cleanName = (payload.name || "").trim()
   const cleanEmail = (payload.email || "").trim().toLowerCase()
   const password = payload.password || ""
@@ -861,8 +852,8 @@ export function createUserByAdmin(payload: {
   if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     throw new Error("Please enter a valid email address.")
   }
-  if (!password || password.length < 8) {
-    throw new Error("Password must be at least 8 characters long.")
+  if (!password || password.length < 12) {
+    throw new Error("Password must be at least 12 characters long.")
   }
 
   const accounts = getRegisteredAccounts()
@@ -873,9 +864,6 @@ export function createUserByAdmin(payload: {
   ) {
     throw new Error("An account with this email address already exists.")
   }
-
-  // Hash & store credential
-  changeAccountPassword(cleanEmail, password)
 
   const now = new Date().toISOString()
   const newUser: UserAccount = {
@@ -892,14 +880,18 @@ export function createUserByAdmin(payload: {
 
   accounts.push(newUser)
   saveRegisteredAccounts(accounts)
-  pushUserToCloud(newUser)
+
+  // The account has to exist server-side before its password can be set there.
+  await pushUserToCloud(newUser)
+  await changeAccountPassword(cleanEmail, password)
+
   return newUser
 }
 
-export function changeUserPassword(
+export async function changeUserPassword(
   userIdOrEmail: string,
   newPassword: string,
-): void {
+): Promise<void> {
   const accounts = getRegisteredAccounts()
   const found = accounts.find(
     (a) =>
@@ -907,10 +899,10 @@ export function changeUserPassword(
       a.email.toLowerCase() === userIdOrEmail.toLowerCase(),
   )
   const targetEmail = found ? found.email : userIdOrEmail
-  changeAccountPassword(targetEmail, newPassword)
+  await changeAccountPassword(targetEmail, newPassword)
 }
 
-export function updateUserDetails(
+export async function updateUserDetails(
   userId: string,
   updates: {
     name?: string
@@ -921,7 +913,7 @@ export function updateUserDetails(
     requirePasswordReset?: boolean
     newPassword?: string
   },
-): UserAccount {
+): Promise<UserAccount> {
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.id === userId)
   const isRoot = isRootAdmin(userId)
@@ -981,7 +973,7 @@ export function updateUserDetails(
       const storage = getStorage()
       if (storage) {
         try {
-          storage.setItem("fluxkit-credentials", JSON.stringify(creds))
+          storage.setItem("masterfilepro-credentials", JSON.stringify(creds))
         } catch {}
       }
     }
@@ -991,7 +983,7 @@ export function updateUserDetails(
       const storage = getStorage()
       if (storage) {
         try {
-          const raw = storage.getItem("fluxkit-admin-config")
+          const raw = storage.getItem("masterfilepro-admin-config")
           const parsed = raw ? JSON.parse(raw) : {}
           const updatedConfig = {
             ...parsed,
@@ -1001,10 +993,10 @@ export function updateUserDetails(
             role: "admin",
             updatedAt: new Date().toISOString(),
           }
-          storage.setItem("fluxkit-admin-config", JSON.stringify(updatedConfig))
+          storage.setItem("masterfilepro-admin-config", JSON.stringify(updatedConfig))
           if (typeof window !== "undefined") {
             window.dispatchEvent(
-              new CustomEvent("fluxkit-admin-config-changed", {
+              new CustomEvent("masterfilepro-admin-config-changed", {
                 detail: updatedConfig,
               }),
             )
@@ -1015,7 +1007,7 @@ export function updateUserDetails(
       if (typeof window !== "undefined" && typeof fetch === "function") {
         fetch("/api/db/admin", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ email: newEmail }),
         }).catch(() => {})
       }
@@ -1023,10 +1015,10 @@ export function updateUserDetails(
   }
 
   if (updates.newPassword) {
-    if (updates.newPassword.length < 8) {
-      throw new Error("Password must be at least 8 characters long.")
+    if (updates.newPassword.length < 12) {
+      throw new Error("Password must be at least 12 characters long.")
     }
-    changeAccountPassword(email, updates.newPassword)
+    await changeAccountPassword(email, updates.newPassword)
   }
 
   let requirePasswordReset =
@@ -1093,7 +1085,11 @@ export function requireUserPasswordReset(
   saveRegisteredAccounts(accounts)
 
   const current = getCurrentUser()
-  if (current && (current.id === updated.id || current.email.toLowerCase() === updated.email.toLowerCase())) {
+  if (
+    current &&
+    (current.id === updated.id ||
+      current.email.toLowerCase() === updated.email.toLowerCase())
+  ) {
     saveCurrentUser(updated)
   }
 

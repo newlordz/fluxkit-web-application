@@ -81,14 +81,14 @@ test("Gateways: updates gateway credentials and mode", () => {
 
   svc.saveGateway({
     ...current,
-    publicKey: "pk_live_fluxkit_prod_abc123",
-    secretKey: "sk_live_fluxkit_prod_xyz456",
+    publicKey: "pk_live_masterfilepro_prod_abc123",
+    secretKey: "sk_live_masterfilepro_prod_xyz456",
     mode: "live",
     currency: "USD",
   })
 
   const updated = svc.getGateway("paystack")
-  assert.equal(updated.publicKey, "pk_live_fluxkit_prod_abc123")
+  assert.equal(updated.publicKey, "pk_live_masterfilepro_prod_abc123")
   assert.equal(updated.mode, "live")
   assert.equal(updated.currency, "USD")
 })
@@ -97,7 +97,17 @@ test("Gateways: testGatewayConnection validates Paystack and Stripe key formats"
   const harness = createHarness()
   const svc = harness.load("paymentIntegrationService")
 
-  // Test default valid paystack keys
+  // Default catalog ships without credentials: an unconfigured gateway must
+  // fail the test rather than report a simulated success.
+  const resEmpty = await svc.testGatewayConnection("paystack")
+  assert.equal(resEmpty.success, false)
+  assert.match(resEmpty.message, /Public Key and Secret Key are both required/i)
+
+  svc.saveGateway({
+    ...svc.getGateway("paystack"),
+    publicKey: "pk_test_sample123",
+    secretKey: "sk_test_sample456",
+  })
   const res1 = await svc.testGatewayConnection("paystack")
   assert.equal(res1.success, true)
   assert.match(res1.message, /Paystack API handshake simulated/i)

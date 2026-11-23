@@ -857,7 +857,7 @@ test("M3 Round-Trip: wordToPDF -> pdfToWord preserves text integrity", async () 
   const { wordToPDF, pdfToWord, unzipEntries } = loadServices()
   const originalText = [
     "# Universal Document Pipeline",
-    "FluxKit converts documents client-side without data loss.",
+    "Masterfilepro converts documents client-side without data loss.",
     "Round-trip text integrity verified.",
   ].join("\n\n")
 
@@ -939,7 +939,7 @@ test("UI Mounting #pdf-to-ppt: mounts dropzone (.pdf), aspect ratio selector, sl
   assert.match(html, /Slide Aspect Ratio/)
   assert.match(html, /Widescreen 16:9/)
   assert.match(html, /Slide Theme/)
-  assert.match(html, /Masterfilepro Dark|FluxKit Dark/)
+  assert.match(html, /Masterfilepro Dark|Masterfilepro Dark/)
   assert.match(html, /Convert to PowerPoint/)
 })
 

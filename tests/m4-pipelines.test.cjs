@@ -136,7 +136,7 @@ function createDOMEnv(hash = "overview") {
 }
 
 // Helpers
-async function createTestPDF(pageCount = 1, text = "FluxKit Document") {
+async function createTestPDF(pageCount = 1, text = "Masterfilepro Document") {
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   for (let i = 0; i < pageCount; i++) {
@@ -160,7 +160,7 @@ test("Suite 1: Pure Client-Side ZIP Archive Engine", async (t) => {
   const services = loadServices()
 
   await t.test("1.1 Multi-file packaging of mixed text, unicode, and raw binary entries", async () => {
-    const textData = "Hello FluxKit Archiving! 🚀"
+    const textData = "Hello Masterfilepro Archiving! 🚀"
     const binaryData = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd, 0xaa, 0x55])
 
     const files = [
@@ -270,7 +270,7 @@ test("Suite 2: Client-Side OCR Text Recognition Engine", async (t) => {
   const services = loadServices()
 
   await t.test("2.1 Synthetic Image OCR Recognition with Otsu binarization and glyph matching", async () => {
-    const testText = "FLUXKIT OCR 2026"
+    const testText = "MASTERFILEPRO OCR 2026"
     const bmpBytes = services.createSyntheticTestImage(testText)
     assert.ok(bmpBytes.length > 54)
     assert.strictEqual(bmpBytes[0], 0x42)
@@ -280,7 +280,7 @@ test("Suite 2: Client-Side OCR Text Recognition Engine", async (t) => {
     assert.strictEqual(ocr.sourceType, "image-raster")
     assert.ok(ocr.confidence >= 0.85, `Confidence was ${ocr.confidence}, expected >= 0.85`)
     assert.ok(ocr.lines.length >= 1)
-    assert.ok(ocr.text.includes("FLUXKIT") || ocr.text.includes("OCR"))
+    assert.ok(ocr.text.includes("MASTERFILEPRO") || ocr.text.includes("OCR"))
   })
 
   await t.test("2.2 Multi-line image recognition and bounding box estimation", async () => {

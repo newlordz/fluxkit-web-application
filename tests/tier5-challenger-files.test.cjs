@@ -363,7 +363,7 @@ test("Suite 1: PDF Core & Page Manipulation White-Box Coverage", async (t) => {
 
     const lockedDoc = await PDFDocument.load(await lockedRes.blob.arrayBuffer())
     assert.ok(lockedDoc.getTitle().startsWith("[Secured] "))
-    assert.ok(lockedDoc.getSubject().startsWith("FluxKit-Protected:"))
+    assert.ok(lockedDoc.getSubject().startsWith("Masterfilepro-Protected:"))
     const keywords = lockedDoc.getKeywords()
     assert.ok(keywords.includes("preventPrinting=true"))
     assert.ok(keywords.includes("preventCopying=true"))
@@ -415,7 +415,7 @@ test("Suite 1: PDF Core & Page Manipulation White-Box Coverage", async (t) => {
       "\n",
     )
     const textRes = await services.textToPDF(longText, "My Test Report")
-    assert.strictEqual(textRes.name, "fluxkit-document.pdf")
+    assert.strictEqual(textRes.name, "masterfilepro-document.pdf")
     const textDoc = await PDFDocument.load(await textRes.blob.arrayBuffer())
     assert.ok(textDoc.getPageCount() > 1, "Must paginate across multiple pages")
 
@@ -456,8 +456,8 @@ test("Suite 1: PDF Core & Page Manipulation White-Box Coverage", async (t) => {
     assert.strictEqual(highDoc.getAuthor(), "")
     assert.strictEqual(highDoc.getSubject(), "")
     assert.strictEqual(highDoc.getKeywords().length, 0)
-    assert.strictEqual(highDoc.getProducer(), "FluxKit PDF Optimizer")
-    assert.strictEqual(highDoc.getCreator(), "FluxKit")
+    assert.strictEqual(highDoc.getProducer(), "Masterfilepro PDF Optimizer")
+    assert.strictEqual(highDoc.getCreator(), "Masterfilepro")
 
     // Missing file rejection
     await assert.rejects(
@@ -759,7 +759,7 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
   await t.test("3.1 zipFiles & extractZipArchive: store mode (method 0), filter predicate, and traversal guards", async () => {
     // 1. zipFiles with store mode (compressionLevel 0)
     const files = [
-      { name: "readme.txt", data: "Hello FluxKit Archiver" },
+      { name: "readme.txt", data: "Hello Masterfilepro Archiver" },
       { name: "data.bin", data: new Uint8Array([1, 2, 3, 4, 5]) },
       { name: "notes/todo.txt", data: "1. Build\n2. Test" },
     ]
@@ -819,10 +819,10 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
     assert.ok(pdfOcr.confidence >= 0.85)
 
     // 2. Optical raster scan on synthetic 24-bpp BMP
-    const bmpBytes24 = services.createSyntheticTestImage("FLUXKIT TEST")
+    const bmpBytes24 = services.createSyntheticTestImage("MASTERFILEPRO TEST")
     const ocr24 = await services.scanOCR(bmpBytes24)
     assert.strictEqual(ocr24.sourceType, "image-raster")
-    assert.strictEqual(ocr24.text, "FLUXKIT TEST")
+    assert.strictEqual(ocr24.text, "MASTERFILEPRO TEST")
 
     // 3. Optical raster scan on 32-bpp RGBA BMP
     const bmpBytes32 = createSyntheticBMP(60, 20, 32)
@@ -853,7 +853,7 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
     // Text -> PDF conversion
     const txtFile = createMockFile(Buffer.from("Sample notes content"), "notes.txt", "text/plain")
     const txtConv = await services.universalConvert(txtFile, { targetFormat: "pdf" })
-    assert.strictEqual(txtConv.name, "fluxkit-document.pdf")
+    assert.strictEqual(txtConv.name, "masterfilepro-document.pdf")
     const docTxt = await PDFDocument.load(await txtConv.blob.arrayBuffer())
     assert.strictEqual(docTxt.getPageCount(), 1)
 

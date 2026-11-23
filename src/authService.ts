@@ -1,3 +1,15 @@
+import {
+  authHeaders,
+  serverConfirmPasswordReset,
+  serverRequestPasswordReset,
+  serverResetPassword,
+  serverSignIn,
+  serverSignOut,
+  serverSignUp,
+  verifySession,
+  type ServerSession,
+} from "./sessionService"
+
 export interface SignInValues {
   email: string
 
@@ -45,7 +57,7 @@ export function getActiveAdminEmail(): string {
 
   if (storage) {
     try {
-      const raw = storage.getItem("fluxkit-admin-config")
+      const raw = storage.getItem("masterfilepro-admin-config")
 
       if (raw) {
         const parsed = JSON.parse(raw)
@@ -91,9 +103,10 @@ export interface AuthAdapter {
 
   signUp(values: SignUpValues): Promise<UserAccount>
 
-  requestPasswordReset(
-    email: string,
-  ): Promise<{ message: string; code?: string }>
+  requestPasswordReset(email: string): Promise<{
+    message: string
+    code?: string
+  }>
 }
 
 export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
@@ -120,32 +133,19 @@ export const SEEDED_ADMIN_CREDENTIALS = {
   email: "admin@masterfilepro.com",
 }
 
-export const DATABASE_ADMIN_SALT = "salt_mwnoc4fj_x1mn5i"
-
-export const DATABASE_ADMIN_HASH =
-  "228b21ca7b585a77e974223be2279fea79785f132b3687f3c7655c548a3f5c85"
-
-const SEEDED_ADMIN_SALT = "fluxkit_admin_salt_2026"
-
-const SEEDED_ADMIN_HASH =
-  "78f317ede7ceb91576215cb1a23d77e5b7dfc27d66abb6d004dae23b248fafe7"
-
-const SEEDED_ADMIN_MFP_HASH =
-  "609358c3a0495bc10bacd60317db39a3dd058ba81930fea77269dfb4e03f323f"
-
 // --- Storage Keys ---
 
-const CURRENT_USER_KEY = "fluxkit-current-user"
+const CURRENT_USER_KEY = "masterfilepro-current-user"
 
-const REGISTERED_ACCOUNTS_KEY = "fluxkit-accounts"
+const REGISTERED_ACCOUNTS_KEY = "masterfilepro-accounts"
 
-const CREDENTIALS_KEY = "fluxkit-credentials"
+const CREDENTIALS_KEY = "masterfilepro-credentials"
 
-const GOOGLE_CLIENT_ID_KEY = "fluxkit-google-client-id"
+const GOOGLE_CLIENT_ID_KEY = "masterfilepro-google-client-id"
 
-const RESET_TOKENS_KEY = "fluxkit-reset-tokens"
+const RESET_TOKENS_KEY = "masterfilepro-reset-tokens"
 
-const LOGIN_ATTEMPTS_KEY = "fluxkit-login-attempts"
+const LOGIN_ATTEMPTS_KEY = "masterfilepro-login-attempts"
 
 interface ResetTokenRecord {
   code: string
@@ -201,7 +201,11 @@ export function getStoredCredentials(): Record<string, StoredCredential> {
   }
 }
 
-export function saveStoredCredential(email: string, salt: string, hash: string): void {
+export function saveStoredCredential(
+  email: string,
+  salt: string,
+  hash: string,
+): void {
   const storage = getStorage()
 
   if (!storage || typeof storage.setItem !== "function") return
@@ -298,7 +302,9 @@ export function checkLoginLockout(email: string): void {
     const remainingSec = Math.ceil((record.lockoutUntil - Date.now()) / 1000)
     const mins = Math.ceil(remainingSec / 60)
     throw new Error(
-      `Too many failed sign-in attempts. Account temporarily locked for security. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`,
+      `Too many failed sign-in attempts. Account temporarily locked for security. Please try again in ${mins} minute${
+        mins > 1 ? "s" : ""
+      }.`,
     )
   }
 }
@@ -580,7 +586,7 @@ export function getCurrentUser(): UserAccount | null {
 
     if (
       user &&
-      (user.name === "FluxKit Administrator" ||
+      (user.name === "Masterfilepro Administrator" ||
         user.email === "admin@fluxkit.com")
     ) {
       user.name = "Masterfilepro Administrator"
@@ -624,15 +630,18 @@ export function saveRegisteredAccounts(accounts: UserAccount[]): void {
   } catch {}
 }
 
-export function pushUserToCloud(user: UserAccount): void {
-  if (typeof window === "undefined" || typeof fetch !== "function") return
+export async function pushUserToCloud(user: UserAccount): Promise<boolean> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return false
   try {
-    fetch("/api/db/users", {
+    const res = await fetch("/api/db/users", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ user }),
-    }).catch(() => {})
-  } catch {}
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 export function saveCurrentUser(user: UserAccount): void {
@@ -665,7 +674,7 @@ export function saveCurrentUser(user: UserAccount): void {
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent("fluxkit-auth-change", { detail: user }),
+        new CustomEvent("masterfilepro-auth-change", { detail: user }),
       )
     }
   } catch {
@@ -724,7 +733,7 @@ export function clearCurrentUser(): void {
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(
-      new CustomEvent("fluxkit-auth-change", { detail: null }),
+      new CustomEvent("masterfilepro-auth-change", { detail: null }),
     )
   }
 }
@@ -780,17 +789,23 @@ export function generateSalt(): string {
   return `salt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function changeAccountPassword(
+/** Browser-side copy of a credential, used only when the API is unreachable. */
+function mirrorStoredCredential(email: string, newPassword: string): void {
+  const salt = generateSalt()
+  saveStoredCredential(email, salt, hashPassword(newPassword, salt))
+}
+
+export async function changeAccountPassword(
   email: string,
 
   newPassword: string,
-): void {
+): Promise<void> {
   const cleanEmail = (email || "").trim().toLowerCase()
 
   if (!cleanEmail) throw new Error("Email is required.")
 
-  if (!newPassword || newPassword.length < 8) {
-    throw new Error("Password must be at least 8 characters long.")
+  if (!newPassword || newPassword.length < 12) {
+    throw new Error("Password must be at least 12 characters long.")
   }
 
   const salt = generateSalt()
@@ -810,38 +825,31 @@ export function changeAccountPassword(
     const storage = getStorage()
     if (storage) {
       try {
-        const raw = storage.getItem("fluxkit-admin-config")
+        const raw = storage.getItem("masterfilepro-admin-config")
         const parsed = raw ? JSON.parse(raw) : {}
         const updatedConfig = {
           ...parsed,
-          salt,
-          hash,
           updatedAt: new Date().toISOString(),
           lastPasswordChange: new Date().toISOString(),
         }
-        storage.setItem("fluxkit-admin-config", JSON.stringify(updatedConfig))
+        storage.setItem("masterfilepro-admin-config", JSON.stringify(updatedConfig))
         if (typeof window !== "undefined") {
           window.dispatchEvent(
-            new CustomEvent("fluxkit-admin-config-changed", {
+            new CustomEvent("masterfilepro-admin-config-changed", {
               detail: updatedConfig,
             }),
           )
         }
       } catch {}
     }
+  }
 
-    if (typeof window !== "undefined" && typeof fetch === "function") {
-      fetch("/api/db/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: cleanEmail,
-          salt,
-          hash,
-          newPassword: true,
-        }),
-      }).catch(() => {})
-    }
+  // The server owns the credential that actually grants access; the local
+  // mirror above only keeps an offline sign-in working.
+  const result = await serverResetPassword(cleanEmail, newPassword)
+
+  if (result && !result.ok) {
+    throw new Error(result.error || "Could not update that password.")
   }
 
   const current = getCurrentUser()
@@ -878,6 +886,33 @@ async function localSignUp(values: SignUpValues): Promise<UserAccount> {
 
   if (password.length < 12) {
     throw new Error("Password must be at least 12 characters long.")
+  }
+
+  // Create the account server-side so the credential and role live in Postgres.
+  const { session, error } = await serverSignUp(cleanName, cleanEmail, password)
+
+  if (error) {
+    throw new Error(error)
+  }
+
+  if (session) {
+    const created: UserAccount = {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      provider: "email",
+      role: session.user.role,
+      subscriptionTier: session.user.subscriptionTier,
+      proStatus: session.user.proStatus,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      message: "Account created.",
+    }
+
+    saveRegisteredAccounts([...getRegisteredAccounts(), created])
+    saveCurrentUser(created)
+
+    return created
   }
 
   // Duplicate check
@@ -926,6 +961,61 @@ async function localSignUp(values: SignUpValues): Promise<UserAccount> {
   return newUser
 }
 
+function userFromServerSession(session: ServerSession): UserAccount {
+  const email = session.user.email.toLowerCase()
+
+  const known = getRegisteredAccounts().find(
+    (a) => a.email.toLowerCase() === email,
+  )
+
+  return {
+    id: session.user.id,
+    name: session.user.name || known?.name || formatNameFromEmail(email),
+    email: session.user.email,
+    avatar: known?.avatar,
+    provider: "email",
+    role: session.user.role,
+    subscriptionTier: session.user.subscriptionTier,
+    proStatus: session.user.proStatus,
+    unlockedTools: session.user.unlockedTools,
+    createdAt: known?.createdAt || new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+    message: "Successfully signed in.",
+  }
+}
+
+/**
+ * Re-asks the server who this browser is before the workspace trusts its cache.
+ * An unreachable server leaves the signed-in state untouched; a rejected
+ * session clears it, so a revoked account cannot keep browsing.
+ */
+export async function reconcileSessionWithServer(): Promise<"signed-in" | "signed-out" | "unchanged"> {
+  const check = await verifySession()
+
+  if (check.state === "offline" || check.state === "none") return "unchanged"
+
+  if (check.state === "expired") {
+    if (getCurrentUser()) clearCurrentUser()
+    return "signed-out"
+  }
+
+  const serverUser = userFromServerSession(check.session)
+
+  const local = getCurrentUser()
+
+  if (
+    !local ||
+    local.id !== serverUser.id ||
+    local.role !== serverUser.role ||
+    local.subscriptionTier !== serverUser.subscriptionTier ||
+    local.proStatus !== serverUser.proStatus
+  ) {
+    saveCurrentUser(serverUser)
+  }
+
+  return "signed-in"
+}
+
 async function localSignIn(values: SignInValues): Promise<UserAccount> {
   const cleanEmail = (values.email || "").trim().toLowerCase()
 
@@ -935,6 +1025,20 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
   if (!cleanEmail || !password) {
     throw new Error("Email and password are required.")
+  }
+
+  // Server sign-in first. Privileged /api endpoints only accept a token the
+  // server issued, so the local checks below cannot grant them.
+  const session = await serverSignIn(cleanEmail, password)
+
+  if (session) {
+    clearFailedLogins(cleanEmail)
+
+    const serverUser = userFromServerSession(session)
+
+    saveCurrentUser(serverUser)
+
+    return serverUser
   }
 
   // 1. Seeded or Custom Admin Account Check (supports password & email change backed by database)
@@ -958,63 +1062,18 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
     // Check multiple valid credentials layers:
 
-    // 1. Dynamic admin configuration from localStorage / IndexedDB if available
-
-    const adminConfig = (() => {
-      const storage = getStorage()
-
-      if (storage) {
-        try {
-          const raw = storage.getItem("fluxkit-admin-config")
-
-          if (raw) return JSON.parse(raw)
-        } catch {}
-      }
-
-      return null
-    })()
-
     const isCustomMatch = customAdminCred
       ? hashPassword(password, customAdminCred.salt) === customAdminCred.hash
       : false
 
-    const isAdminConfigMatch =
-      adminConfig?.salt && adminConfig?.hash
-        ? hashPassword(password, adminConfig.salt) === adminConfig.hash
-        : false
-
-    const isDatabaseHashMatch =
-      hashPassword(password, DATABASE_ADMIN_SALT) === DATABASE_ADMIN_HASH
-
-    const isSeededHashMatch =
-      hashPassword(password, SEEDED_ADMIN_SALT) === SEEDED_ADMIN_HASH ||
-      hashPassword(password, SEEDED_ADMIN_SALT) === SEEDED_ADMIN_MFP_HASH
-
-    if (
-      !isCustomMatch &&
-      !isAdminConfigMatch &&
-      !isDatabaseHashMatch &&
-      !isSeededHashMatch
-    ) {
+    // Only a credential produced by a previous successful sign-in is accepted
+    // offline; the server is the authority on first use.
+    if (!isCustomMatch) {
       recordFailedLogin(cleanEmail)
       throw new Error("Invalid email or password.")
     }
 
     clearFailedLogins(cleanEmail)
-
-    // Sync credentials cache to ensure local storage remains in sync with the authenticated password
-
-    if (isDatabaseHashMatch) {
-      saveStoredCredential(cleanEmail, DATABASE_ADMIN_SALT, DATABASE_ADMIN_HASH)
-
-      saveStoredCredential(
-        "admin@masterfilepro.com",
-        DATABASE_ADMIN_SALT,
-        DATABASE_ADMIN_HASH,
-      )
-    } else if (isSeededHashMatch) {
-      saveStoredCredential(cleanEmail, SEEDED_ADMIN_SALT, SEEDED_ADMIN_HASH)
-    }
 
     const storage = getStorage()
 
@@ -1022,14 +1081,14 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
     if (storage) {
       try {
-        const raw = storage.getItem("fluxkit-admin-config")
+        const raw = storage.getItem("masterfilepro-admin-config")
 
         if (raw) {
           const parsed = JSON.parse(raw)
 
           if (parsed?.name) {
             adminName =
-              parsed.name === "FluxKit Administrator"
+              parsed.name === "Masterfilepro Administrator"
                 ? "Masterfilepro Administrator"
                 : parsed.name
           }
@@ -1054,48 +1113,6 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
     saveCurrentUser(adminUser)
 
     return adminUser
-  }
-
-  // 2. Initial Known User (Alice) Fallback if running in fresh test harness
-
-  if (
-    cleanEmail === "alice@fluxkit.com" &&
-    hashPassword(password, "salt_alice_test_2026") ===
-      "246771268bebc70f5cfc67664b9eb3e609281f72f82b28d213bc51359109471e"
-  ) {
-    const existing = getRegisteredAccounts().find(
-      (a) => a.email.toLowerCase() === cleanEmail,
-    )
-
-    const now = new Date().toISOString()
-
-    const aliceUser: UserAccount = {
-      id: existing ? existing.id : "usr_alice_montgomery",
-
-      name: existing ? existing.name : "Alice Montgomery",
-
-      email: "alice@fluxkit.com",
-
-      provider: "email",
-
-      role: existing?.role || "user",
-
-      subscriptionTier: existing?.subscriptionTier || "standard",
-
-      proStatus: existing?.proStatus || "none",
-
-      createdAt: existing?.createdAt || "2026-01-01T00:00:00.000Z",
-
-      lastLoginAt: now,
-
-      message: "Successfully signed in.",
-    }
-
-    clearFailedLogins(cleanEmail)
-
-    saveCurrentUser(aliceUser)
-
-    return aliceUser
   }
 
   // 2. Standard User Account Check
@@ -1150,7 +1167,7 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
 async function localRequestPasswordReset(
   email: string,
-): Promise<{ message: string; code?: string }> {
+): Promise<{ message: string ; code?: string }> {
   const cleanEmail = (email || "").trim().toLowerCase()
 
   if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
@@ -1169,14 +1186,29 @@ async function localRequestPasswordReset(
       (30 * 1000 - (Date.now() - existing.lastRequestedAt)) / 1000,
     )
     throw new Error(
-      `Please wait ${waitSec} second${waitSec > 1 ? "s" : ""} before requesting another reset code.`,
+      `Please wait ${waitSec} second${
+        waitSec > 1 ? "s" : ""
+      } before requesting another reset code.`,
     )
   }
 
-  // Generate 6-digit verification code
+  // The server issues and verifies the code; generating one in the browser is
+  // only the fallback for when the endpoint cannot be reached at all.
+  const server = await serverRequestPasswordReset(cleanEmail)
+
+  if (server) {
+    if (!server.ok)
+      throw new Error(server.error || "Could not start a password reset.")
+    return {
+      message:
+        server.message ||
+        "If that address is registered, a reset code has been sent.",
+      code: server.devCode,
+    }
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString()
   saveStoredResetToken(cleanEmail, code)
-
   return {
     message: "Password reset verification code generated.",
     code,
@@ -1203,7 +1235,7 @@ export function signUp(values: SignUpValues): Promise<UserAccount> {
 
 export function requestPasswordReset(
   email: string,
-): Promise<{ message: string; code?: string }> {
+): Promise<{ message: string ; code?: string }> {
   assertConnected(email)
 
   if (customAdapter) return customAdapter.requestPasswordReset(email)
@@ -1252,7 +1284,7 @@ export async function completePasswordReset(
   email: string,
   code: string,
   newPassword: string,
-): Promise<{ success: boolean; message: string; user?: UserAccount }> {
+): Promise<{ success: boolean ; message: string ; user?: UserAccount }> {
   const cleanEmail = (email || "").trim().toLowerCase()
   assertConnected(cleanEmail)
 
@@ -1264,12 +1296,26 @@ export async function completePasswordReset(
     throw new Error("Password must be at least 12 characters long.")
   }
 
-  const valid = verifyResetCode(cleanEmail, code)
-  if (!valid) {
-    throw new Error("Invalid or expired 6-digit verification code.")
+  // The code lives in Postgres, so the server is the authority on it. Local
+  // verification is only used when the endpoint could not be reached.
+  const server = await serverConfirmPasswordReset(
+    cleanEmail,
+    (code || "").trim(),
+    newPassword,
+  )
+
+  if (server && !server.ok) {
+    throw new Error(server.error || "Invalid or expired verification code.")
   }
 
-  changeAccountPassword(cleanEmail, newPassword)
+  if (server) {
+    mirrorStoredCredential(cleanEmail, newPassword)
+  } else {
+    if (!verifyResetCode(cleanEmail, code)) {
+      throw new Error("Invalid or expired 6-digit verification code.")
+    }
+    await changeAccountPassword(cleanEmail, newPassword)
+  }
 
   const accounts = getRegisteredAccounts()
   let user = accounts.find((a) => a.email.toLowerCase() === cleanEmail)
@@ -1301,7 +1347,9 @@ export async function completePasswordReset(
     }
   } else {
     user.requirePasswordReset = false
-    const existingIdx = accounts.findIndex((a) => a.email.toLowerCase() === cleanEmail)
+    const existingIdx = accounts.findIndex(
+      (a) => a.email.toLowerCase() === cleanEmail,
+    )
     if (existingIdx >= 0) {
       accounts[existingIdx] = {
         ...accounts[existingIdx],
@@ -1330,7 +1378,7 @@ export async function completePasswordReset(
 export async function completeForcedPasswordReset(
   email: string,
   newPassword: string,
-): Promise<{ success: boolean; message: string; user: UserAccount }> {
+): Promise<{ success: boolean ; message: string ; user: UserAccount }> {
   const cleanEmail = (email || "").trim().toLowerCase()
   assertConnected(cleanEmail)
 
@@ -1342,7 +1390,7 @@ export async function completeForcedPasswordReset(
     throw new Error("Password must be at least 12 characters long.")
   }
 
-  changeAccountPassword(cleanEmail, newPassword)
+  await changeAccountPassword(cleanEmail, newPassword)
 
   const accounts = getRegisteredAccounts()
   const idx = accounts.findIndex((a) => a.email.toLowerCase() === cleanEmail)
@@ -1371,7 +1419,8 @@ export async function completeForcedPasswordReset(
 
   return {
     success: true,
-    message: "Your password has been successfully updated. Welcome to your workspace!",
+    message:
+      "Your password has been successfully updated. Welcome to your workspace!",
     user: updatedUser,
   }
 }
@@ -1485,6 +1534,7 @@ export async function signInWithGoogle(payload: {
 }
 
 export function signOut(): void {
+  void serverSignOut()
   clearCurrentUser()
 }
 
@@ -1499,7 +1549,7 @@ export function onAuthStateChanged(
     callback(custom.detail)
   }
 
-  window.addEventListener("fluxkit-auth-change", handler)
+  window.addEventListener("masterfilepro-auth-change", handler)
 
   const storageHandler = (e: StorageEvent) => {
     if (e.key === CURRENT_USER_KEY) {
@@ -1510,7 +1560,7 @@ export function onAuthStateChanged(
   window.addEventListener("storage", storageHandler)
 
   return () => {
-    window.removeEventListener("fluxkit-auth-change", handler)
+    window.removeEventListener("masterfilepro-auth-change", handler)
 
     window.removeEventListener("storage", storageHandler)
   }

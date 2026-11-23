@@ -135,14 +135,14 @@ test("Tier 1 - F1: User Registration creates persistent account with standard ti
   try {
     const newUser = await auth.signUp({
       name: "Alice Montgomery",
-      email: "alice@fluxkit.com",
+      email: "alice@masterfilepro.com",
       password: "StrongPassword2026!",
     })
 
     assert.ok(newUser, "signUp should return created UserAccount")
     assert.ok(typeof newUser.id === "string" && newUser.id.length > 0, "User must have a non-empty id")
     assert.equal(newUser.name, "Alice Montgomery")
-    assert.equal(newUser.email, "alice@fluxkit.com")
+    assert.equal(newUser.email, "alice@masterfilepro.com")
     assert.equal(newUser.role, "user")
     assert.equal(newUser.subscriptionTier, "standard")
     assert.equal(newUser.proStatus, "none")
@@ -150,7 +150,7 @@ test("Tier 1 - F1: User Registration creates persistent account with standard ti
     assert.ok(newUser.lastLoginAt, "lastLoginAt timestamp must be set")
 
     const accounts = auth.getRegisteredAccounts()
-    const found = accounts.find((a) => a.email.toLowerCase() === "alice@fluxkit.com")
+    const found = accounts.find((a) => a.email.toLowerCase() === "alice@masterfilepro.com")
     assert.ok(found, "Registered account must be persisted in registered accounts list")
   } catch (err) {
     if (/not connected/i.test(err.message)) {
@@ -165,17 +165,25 @@ test("Tier 1 - F2: User Authentication with valid credentials returns active ses
   const harness = createHarness()
   const auth = harness.load("authService")
 
+  // Each harness starts with an empty store, so the account has to exist in
+  // this one before a session can be issued for it.
+  await auth.signUp({
+    name: "Alice Montgomery",
+    email: "alice@masterfilepro.com",
+    password: "StrongPassword2026!",
+  })
+
   try {
     const session = await auth.signIn({
-      email: "alice@fluxkit.com",
+      email: "alice@masterfilepro.com",
       password: "StrongPassword2026!",
     })
     assert.ok(session, "signIn must return authenticated UserAccount")
-    assert.equal(session.email, "alice@fluxkit.com")
+    assert.equal(session.email, "alice@masterfilepro.com")
 
     const current = auth.getCurrentUser()
     assert.ok(current, "getCurrentUser should return authenticated user")
-    assert.equal(current.email, "alice@fluxkit.com")
+    assert.equal(current.email, "alice@masterfilepro.com")
     assert.ok(Date.parse(current.lastLoginAt) >= Date.parse(current.createdAt))
   } catch (err) {
     if (/not connected/i.test(err.message)) {
@@ -240,7 +248,7 @@ test("Tier 1 - F5: Pro Tool Access Gating restricts unapproved users and display
   const standardUser = {
     id: "usr_regular",
     name: "Regular User",
-    email: "regular@fluxkit.com",
+    email: "regular@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -271,7 +279,7 @@ test("Tier 1 - F6: Simulated Payment Activation grants active Pro status", (t) =
   const standardUser = {
     id: "usr_buyer_1",
     name: "Buyer User",
-    email: "buyer@fluxkit.com",
+    email: "buyer@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -301,7 +309,7 @@ test("Tier 1 - F7: Admin Approval Request flow transitions status to pending", (
   const candidate = {
     id: "usr_applicant_1",
     name: "Applicant User",
-    email: "applicant@fluxkit.com",
+    email: "applicant@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -318,40 +326,59 @@ test("Tier 1 - F7: Admin Approval Request flow transitions status to pending", (
   assert.equal(admin.canUserAccessTool("ocr", pendingUser), false, "Pending user remains gated")
 })
 
-test("Tier 1 - F8: Seeded Admin Account Authentication with admin privileges", async (t) => {
+test("Tier 1 - F8: Administrator sign-in requires a server-synced credential, never a built-in password", async (t) => {
   const harness = createHarness()
   const auth = harness.load("authService")
 
-  try {
-    const adminAccount = await auth.signIn({
-      email: "admin@fluxkit.com",
-      password: "Admin@FluxKit2026!",
-    })
-    assert.ok(adminAccount)
-    assert.equal(adminAccount.email, "admin@fluxkit.com")
-    assert.equal(adminAccount.role, "admin")
-  } catch (err) {
-    if (/not connected/i.test(err.message)) {
-      t.skip("Admin account sign-in pending Milestone 1 implementation")
-      return
-    }
-    throw err
-  }
+  // The historical behaviour was to accept a literal password compiled into the
+  // bundle, which meant anyone who read the source could sign in offline. That
+  // backdoor is gone: until a credential exists in the offline mirror, sign-in
+  // must be refused and the server stays the only authority.
+  await assert.rejects(
+    () =>
+      auth.signIn({
+        email: "admin@fluxkit.com",
+        password: "Admin@Masterfilepro2026!",
+      }),
+    /Invalid email or password/,
+    "an unsynced administrator credential must not authenticate offline",
+  )
+
+  await auth.changeAccountPassword(
+    "admin@masterfilepro.com",
+    "RotatedAdminPassword2026!",
+  )
+
+  const adminAccount = await auth.signIn({
+    email: "admin@fluxkit.com",
+    password: "RotatedAdminPassword2026!",
+  })
+  assert.ok(adminAccount)
+  assert.equal(adminAccount.role, "admin")
 })
 
-test("Tier 1 - F8b: Masterfilepro Database Admin Authentication with botsio212nyc", async (t) => {
+test("Tier 1 - F8b: Root administrator session reports the locked Pro identity", async () => {
   const harness = createHarness()
   const auth = harness.load("authService")
+
+  await auth.changeAccountPassword(
+    "admin@masterfilepro.com",
+    "RotatedAdminPassword2026!",
+  )
 
   const adminAccount = await auth.signIn({
     email: "admin@masterfilepro.com",
-    password: "botsio212nyc",
+    password: "RotatedAdminPassword2026!",
   })
   assert.ok(adminAccount, "Admin account must be returned")
   assert.equal(adminAccount.email, "admin@masterfilepro.com")
   assert.equal(adminAccount.role, "admin")
   assert.equal(adminAccount.subscriptionTier, "pro")
   assert.equal(adminAccount.proStatus, "active")
+
+  const current = auth.getCurrentUser()
+  assert.ok(current, "the administrator session must persist as the current user")
+  assert.equal(current.role, "admin")
 })
 
 test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin", (t) => {
@@ -362,7 +389,7 @@ test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin"
 
   const adminUser = {
     id: "usr_admin",
-    name: "FluxKit Admin",
+    name: "Masterfilepro Admin",
     email: "admin@fluxkit.com",
     role: "admin",
     subscriptionTier: "pro",
@@ -373,7 +400,7 @@ test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin"
 
   const harness = createHarness({
     hash: "admin",
-    storageInitial: { "fluxkit-current-user": JSON.stringify(adminUser) },
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
   })
 
   const App = harness.load("App").default
@@ -415,7 +442,7 @@ test("Tier 1 - F11: Admin User Approvals UI approves pending subscriptions", (t)
   const pendingUser = {
     id: "usr_pending_approval",
     name: "Pending Member",
-    email: "pending@fluxkit.com",
+    email: "pending@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "pending",
@@ -450,8 +477,8 @@ test("Tier 1 - F12: Page Manager CRUD Operations create, read, update and delete
     slug: "api-reference",
     title: "API Reference",
     navTitle: "API",
-    description: "FluxKit Developer Documentation",
-    content: "# FluxKit API\nUse the client SDK to automate workflow tasks.",
+    description: "Masterfilepro Developer Documentation",
+    content: "# Masterfilepro API\nUse the client SDK to automate workflow tasks.",
     showInNav: true,
     navOrder: 2,
     status: "published",
@@ -491,7 +518,7 @@ test("Tier 2 - B1: Password length validation rejects passwords < 12 characters"
     try {
       await auth.signUp({
         name: "Short Pwd",
-        email: `short_${pwd.length}@fluxkit.com`,
+        email: `short_${pwd.length}@masterfilepro.com`,
         password: pwd,
       })
       assert.fail(`Password of length ${pwd.length} should be rejected`)
@@ -512,14 +539,14 @@ test("Tier 2 - B2: Duplicate registration attempt with existing email is rejecte
   try {
     await auth.signUp({
       name: "Original User",
-      email: "duplicate-check@fluxkit.com",
+      email: "duplicate-check@masterfilepro.com",
       password: "ValidSecurePassword2026!",
     })
 
     // Case-insensitive duplicate attempt
     await auth.signUp({
       name: "Imposter User",
-      email: "DUPLICATE-CHECK@FLUXKIT.COM",
+      email: "DUPLICATE-CHECK@MASTERFILEPRO.COM",
       password: "AnotherSecurePassword2026!",
     })
     assert.fail("Duplicate email registration should throw an error")
@@ -538,7 +565,7 @@ test("Tier 2 - B3: Authentication fails with invalid password or unregistered em
 
   try {
     await auth.signIn({
-      email: "nonexistent@fluxkit.com",
+      email: "nonexistent@masterfilepro.com",
       password: "SomePassword123!",
     })
     assert.fail("Nonexistent email should be rejected")
@@ -555,7 +582,7 @@ test("Tier 2 - B4: Non-admin user accessing #admin is denied access", (t) => {
   const standardUser = {
     id: "usr_regular_bob",
     name: "Regular Bob",
-    email: "bob@fluxkit.com",
+    email: "bob@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -565,7 +592,7 @@ test("Tier 2 - B4: Non-admin user accessing #admin is denied access", (t) => {
 
   const harness = createHarness({
     hash: "admin",
-    storageInitial: { "fluxkit-current-user": JSON.stringify(standardUser) },
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(standardUser) },
   })
 
   const App = harness.load("App").default
@@ -640,7 +667,7 @@ test("Tier 2 - B7: User with pending approval status remains gated from Pro tool
   const pendingUser = {
     id: "usr_pending_dan",
     name: "Dan Pending",
-    email: "dan@fluxkit.com",
+    email: "dan@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "pending",
@@ -669,7 +696,7 @@ test("Tier 2 - B9: Password reset request handles non-existent email gracefully"
   const auth = harness.load("authService")
 
   try {
-    await auth.requestPasswordReset("nonexistent_user@fluxkit.com")
+    await auth.requestPasswordReset("nonexistent_user@masterfilepro.com")
   } catch (err) {
     if (/not connected/i.test(err.message)) {
       t.skip("Password reset backend adapter pending Milestone 1 implementation")
@@ -716,7 +743,7 @@ test("Tier 3 - C1: Registration -> Simulated Payment -> Pro Tool Access", async 
   try {
     user = await auth.signUp({
       name: "C1 User",
-      email: "c1_flow@fluxkit.com",
+      email: "c1_flow@masterfilepro.com",
       password: "SecurePass2026!C1",
     })
   } catch (err) {
@@ -755,7 +782,7 @@ test("Tier 3 - C2: Registration -> Request Approval -> Admin Approval -> Pro Too
   try {
     applicant = await auth.signUp({
       name: "Applicant C2",
-      email: "c2_approval@fluxkit.com",
+      email: "c2_approval@masterfilepro.com",
       password: "SecurePass2026!C2",
     })
   } catch (err) {
@@ -792,7 +819,7 @@ test("Tier 3 - C3: Admin Tool Tier Toggle dynamically controls user access witho
   const standardUser = {
     id: "usr_dyn_tier",
     name: "Dynamic User",
-    email: "dyn@fluxkit.com",
+    email: "dyn@masterfilepro.com",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -1033,7 +1060,7 @@ test("Tier 4 - S3: Monetization & Tool Tier Administration Lifecycle", (t) => {
 test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", () => {
   const adminUser = {
     id: "usr_admin_default",
-    name: "FluxKit Administrator",
+    name: "Masterfilepro Administrator",
     email: "admin@fluxkit.com",
     role: "admin",
     subscriptionTier: "pro",
@@ -1044,7 +1071,7 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
 
   const harness = createHarness({
     hash: "overview",
-    storageInitial: { "fluxkit-current-user": JSON.stringify(adminUser) },
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
   })
   const App = harness.load("App").default
   const html = renderToStaticMarkup(React.createElement(App))
@@ -1054,7 +1081,7 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
   assert.ok(html.includes("WORKSTATION"), "Admin has workstation tools available at their disposal")
 })
 
-test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", (t) => {
+test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", async (t) => {
   const harness = createHarness({
     hash: "admin",
   })
@@ -1078,9 +1105,9 @@ test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", (t) 
   )
 
   // 4. Admin creates new user with sub-admin role
-  const subAdmin = admin.createUserByAdmin({
+  const subAdmin = await admin.createUserByAdmin({
     name: "Operations Lead",
-    email: "ops@fluxkit.com",
+    email: "ops@masterfilepro.com",
     password: "OpsPassword2026!",
     role: "sub-admin",
     subscriptionTier: "pro",
@@ -1091,15 +1118,11 @@ test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", (t) 
   // 5. Sub-Admin can access tools
   assert.equal(admin.canUserAccessTool("merge-pdf", subAdmin), true)
 
-  // 6. Change user password
-  assert.doesNotThrow(() => {
-    admin.changeUserPassword(subAdmin.id, "NewOpsPassword2026!")
-  })
+  // 6. Change user password (must resolve; a rejection fails the test)
+  await admin.changeUserPassword(subAdmin.id, "NewOpsPassword2026!")
 
   // 7. Change Root admin password
-  assert.doesNotThrow(() => {
-    admin.changeUserPassword("admin@fluxkit.com", "BrandNewRootAdminPass123!")
-  })
+  await admin.changeUserPassword("admin@fluxkit.com", "BrandNewRootAdminPass123!")
 
   // 8. Non-root user can be deleted
   assert.doesNotThrow(() => {

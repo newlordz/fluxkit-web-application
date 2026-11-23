@@ -456,7 +456,7 @@ test("M6 Suite 3: getSampleDocuments seeds 4 starter documents when library is i
   assert.equal(samples.length, 4)
   assert.ok(
     samples[0].name === "MasterfilePro_Quickstart_Guide.pdf" ||
-      samples[0].name === "FluxKit_Quickstart_Guide.pdf"
+      samples[0].name === "Masterfilepro_Quickstart_Guide.pdf"
   )
   assert.equal(samples[1].name, "Quarterly_Financial_Summary.xlsx")
   assert.equal(samples[2].name, "Architecture_Design_Notes.docx")
@@ -471,8 +471,8 @@ test("M6 Suite 4: Video meeting room state, chat dispatch, and participant roste
   const services = loadServices()
   const { createMeetingState, sendChatMessage } = services
 
-  let state = createMeetingState("fluxkit-team-room", "Jamie (Host)")
-  assert.equal(state.roomKey, "fluxkit-team-room")
+  let state = createMeetingState("masterfilepro-team-room", "Jamie (Host)")
+  assert.equal(state.roomKey, "masterfilepro-team-room")
   assert.equal(state.inMeeting, false)
   assert.equal(state.participants.length, 4)
   assert.equal(state.participants[0].name, "Jamie (Host)")

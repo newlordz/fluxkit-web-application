@@ -36,9 +36,9 @@ async function createEmpiricalPDF(options = {}) {
   const {
     numPages = 5,
     title = "Empirical Challenge Document",
-    author = "FluxKit Adversary",
+    author = "Masterfilepro Adversary",
     subject = "Milestone 2 Stress Test",
-    keywords = ["security", "stress", "pdf-lib", "fluxkit"],
+    keywords = ["security", "stress", "pdf-lib", "masterfilepro"],
   } = options
 
   const doc = await PDFDocument.create()
@@ -224,7 +224,7 @@ test("CHALLENGE: compressPDF standard vs high stream savings & metadata strippin
     title: "Large Metadata Document",
     author: "Original Author Full Name",
     subject: "Detailed Subject Line For Testing Stream Compression",
-    keywords: ["compaction", "metadata", "streams", "payload", "fluxkit"],
+    keywords: ["compaction", "metadata", "streams", "payload", "masterfilepro"],
   })
   const originalSize = originalFile.size
 
@@ -249,7 +249,7 @@ test("CHALLENGE: compressPDF standard vs high stream savings & metadata strippin
   assert.equal(highDoc.getSubject(), "")
   assert.ok(!highDoc.getKeywords() || highDoc.getKeywords() === "")
   assert.ok(highDoc.getProducer())
-  assert.equal(highDoc.getCreator(), "FluxKit")
+  assert.equal(highDoc.getCreator(), "Masterfilepro")
 
   // 3. High compression size is less than or equal to standard compression size (within 10 bytes for stream dictionary variance)
   assert.ok(
@@ -290,7 +290,7 @@ test("CHALLENGE: editPDF handles massive strings and hostile Unicode without Win
   assert.equal(docUnicode.getPageCount(), 3)
 
   // 2. Massive length string stress (2,000 characters)
-  const longText = "FluxKit Enterprise Annotation Stress Test. ".repeat(45)
+  const longText = "Masterfilepro Enterprise Annotation Stress Test. ".repeat(45)
   const resLong = await editPDF(pdfFile, {
     annotation: longText,
     type: "callout",
@@ -450,9 +450,9 @@ test("CHALLENGE: securePDF lock, unlock with matching password, and wrong passwo
 
   const lockedDoc = await PDFDocument.load(await lockResult.blob.arrayBuffer())
   assert.ok(lockedDoc.getTitle().startsWith("[Secured] "))
-  assert.ok(lockedDoc.getSubject().startsWith("FluxKit-Protected:"))
+  assert.ok(lockedDoc.getSubject().startsWith("Masterfilepro-Protected:"))
   const keywords = lockedDoc.getKeywords()
-  assert.ok(keywords.includes("fluxkit:secured=true"))
+  assert.ok(keywords.includes("masterfilepro:secured=true"))
   assert.ok(keywords.includes("preventPrinting=true"))
 
   // Create a File from the locked PDF bytes
@@ -531,14 +531,14 @@ test("CHALLENGE: Adversarial URL Auto-Prefix accepts legitimate URLs and auto-pr
     "http://localhost:8443/preview",
   )
   assert.equal(
-    evaluateToolPageUrl("https://fluxkit.io/tools/qr?lang=en#options"),
-    "https://fluxkit.io/tools/qr?lang=en#options",
+    evaluateToolPageUrl("https://masterfilepro.io/tools/qr?lang=en#options"),
+    "https://masterfilepro.io/tools/qr?lang=en#options",
   )
 
   // 2. Bare domains and paths correctly prefixed with https://
   assert.equal(
-    evaluateToolPageUrl("fluxkit.dev"),
-    "https://fluxkit.dev",
+    evaluateToolPageUrl("masterfilepro.dev"),
+    "https://masterfilepro.dev",
   )
   assert.equal(
     evaluateToolPageUrl("www.google.com/search?q=pdf"),

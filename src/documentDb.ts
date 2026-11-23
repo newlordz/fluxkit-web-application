@@ -1,5 +1,5 @@
 /**
- * FluxKit Document & File Database
+ * Masterfilepro Document & File Database
  *
  * Re-exports persistent client-side database capabilities powered by IndexedDB.
  */

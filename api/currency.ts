@@ -1,9 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-import fs from "node:fs"
-import path from "node:path"
-
-const DB_PATH_1 = path.join(process.cwd(), "data", "masterfile-db.json")
-const DB_PATH_2 = path.join(process.cwd(), "data", "fluxkit-db.json")
+import { query } from "./_lib/db"
+import { requireAdmin } from "./_lib/auth"
 
 const DEFAULT_USD_TO_GHS_RATE = 11.78
 let baseCurrency = "USD"
@@ -12,27 +8,28 @@ let baseCurrency = "USD"
 let cachedLiveRate: { rate: number; timestamp: number } | null = null
 const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
-function readDb(): any {
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8")
-        return JSON.parse(content)
-      }
-    } catch {}
+async function getSettings(): Promise<{ exchangeRate?: number; customExchangeRate?: number }> {
+  try {
+    const rows = await query<{ key: string; value: any }>(`select key, value from settings where key = any($1)`, [
+      ["exchange_rate", "custom_exchange_rate"],
+    ])
+    const out: { exchangeRate?: number; customExchangeRate?: number } = {}
+    for (const row of rows) {
+      if (row.key === "exchange_rate") out.exchangeRate = Number(row.value?.rate) || undefined
+      if (row.key === "custom_exchange_rate") out.customExchangeRate = Number(row.value?.rate) || undefined
+    }
+    return out
+  } catch {
+    return {}
   }
-  return {}
 }
 
-function writeDb(data: any): boolean {
-  let ok = false
-  for (const p of [DB_PATH_1, DB_PATH_2]) {
-    try {
-      fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf8")
-      ok = true
-    } catch {}
-  }
-  return ok
+async function saveSetting(key: string, value: unknown): Promise<void> {
+  await query(
+    `insert into settings (key, value, updated_at) values ($1, $2::jsonb, now())
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [key, JSON.stringify(value)],
+  )
 }
 
 async function fetchLiveMarketRate(): Promise<number | null> {
@@ -64,7 +61,7 @@ async function fetchLiveMarketRate(): Promise<number | null> {
 }
 
 async function resolveActiveRate(): Promise<{ rate: number; isLive: boolean; liveRate: number | null }> {
-  const db = readDb()
+  const db = await getSettings()
   const live = await fetchLiveMarketRate()
 
   // If admin explicitly saved a custom override rate
@@ -85,7 +82,7 @@ async function resolveActiveRate(): Promise<{ rate: number; isLive: boolean; liv
     }
   }
 
-  // Fallback to database stored rate or default
+  // Fallback to stored rate or default
   const storedRate = typeof db.exchangeRate === "number" ? db.exchangeRate : DEFAULT_USD_TO_GHS_RATE
   return {
     rate: storedRate,
@@ -234,18 +231,24 @@ export default async function handler(req: any, res: any) {
         } catch {}
       }
 
+      // Both POST actions change platform pricing inputs, so they are admin-only.
+      const actor = await requireAdmin(req)
+      if (!actor) {
+        const denied = { success: false, message: "Administrator sign-in required." }
+        res.setHeader("Content-Type", "application/json")
+        res.status?.(403)?.json?.(denied) || res.end?.(JSON.stringify(denied))
+        return
+      }
+
       // Action: Force refresh live market rate
       if (body?.action === "fetch_live" || body?.action === "sync_live") {
         cachedLiveRate = null // clear cache
         const freshLive = await fetchLiveMarketRate()
         const targetRate = freshLive || activeRate
 
-        // Reset any custom override in database to allow live market tracking
-        const db = readDb()
-        delete db.customExchangeRate
-        db.exchangeRate = targetRate
-        db.lastRateUpdate = new Date().toISOString()
-        writeDb(db)
+        // Reset any custom override so live market tracking resumes
+        await saveSetting("custom_exchange_rate", { rate: null })
+        await saveSetting("exchange_rate", { rate: targetRate })
 
         const resp = {
           success: true,
@@ -264,11 +267,8 @@ export default async function handler(req: any, res: any) {
       // Action: Updating/customizing the exchange rate
       if (body?.action === "set_rate" && typeof body?.rate === "number" && body.rate > 0) {
         const cleanRate = Math.round(body.rate * 100) / 100
-        const db = readDb()
-        db.customExchangeRate = cleanRate
-        db.exchangeRate = cleanRate
-        db.lastRateUpdate = new Date().toISOString()
-        writeDb(db)
+        await saveSetting("custom_exchange_rate", { rate: cleanRate })
+        await saveSetting("exchange_rate", { rate: cleanRate })
 
         const resp = {
           success: true,

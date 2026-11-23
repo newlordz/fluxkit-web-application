@@ -182,7 +182,7 @@ test("Challenger Suite 1: ZIP & Unzip Binary Round-Trip & Security Invariants", 
     "1.1 Full Round-Trip fidelity across mixed media, binary, and empty files",
     async () => {
       const textData =
-        "FluxKit Pure Client-Side ZIP Packaging Engine\nLine 2 with UTF-8: ⚡ 🚀 📦\nEnd."
+        "Masterfilepro Pure Client-Side ZIP Packaging Engine\nLine 2 with UTF-8: ⚡ 🚀 📦\nEnd."
       const binaryData = new Uint8Array([
         0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04, 0x55, 0xaa,
       ])
@@ -265,7 +265,7 @@ test("Challenger Suite 1: ZIP & Unzip Binary Round-Trip & Security Invariants", 
     "1.2 Compression ratio comparison: Store (0) vs Deflate (6)",
     async () => {
       // Generate highly compressible text
-      const repetitiveText = "FluxKitHighCompressionTestStringRepeat_".repeat(
+      const repetitiveText = "MasterfileproHighCompressionTestStringRepeat_".repeat(
         500,
       ) // ~19.5 KB
 
@@ -447,7 +447,7 @@ test("Challenger Suite 2: Client-Side OCR Scanner Engine Verification", async (t
   await t.test(
     "2.1 Synthetic Raster BMP: Single line alphanumeric recognition",
     async () => {
-      const sampleText = "FLUXKIT 2026"
+      const sampleText = "MASTERFILEPRO 2026"
       const bmpBytes = services.createSyntheticTestImage(sampleText)
 
       assert.ok(bmpBytes.length > 54, "BMP must be larger than 54 header bytes")
@@ -462,8 +462,8 @@ test("Challenger Suite 2: Client-Side OCR Scanner Engine Verification", async (t
         `Confidence should be high, got ${result.confidence}`,
       )
       assert.ok(
-        result.text.includes("FLUXKIT"),
-        `Recognized text should contain 'FLUXKIT', got: "${result.text}"`,
+        result.text.includes("MASTERFILEPRO"),
+        `Recognized text should contain 'MASTERFILEPRO', got: "${result.text}"`,
       )
       assert.ok(
         result.text.includes("2026"),
@@ -733,7 +733,7 @@ test("Challenger Suite 3: Universal Format Converter", async (t) => {
 
   await t.test("3.6 Plain Text to PDF conversion", async () => {
     const textContent =
-      "FluxKit Automated Conversion\nAuthor: Empirical Challenger\nDate: 2026-11-10"
+      "Masterfilepro Automated Conversion\nAuthor: Empirical Challenger\nDate: 2026-11-10"
     const textFile = makeFile("summary.txt", textContent, "text/plain")
 
     const result = await services.universalConvert(textFile, {

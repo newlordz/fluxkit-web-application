@@ -259,7 +259,7 @@ test("Tier 2 [QR Code Studio]: URL scheme validation accepts HTTP/HTTPS and reje
   }
 
   // Valid protocols
-  assert.equal(validateURL("https://fluxkit.app"), "https://fluxkit.app")
+  assert.equal(validateURL("https://masterfilepro.app"), "https://masterfilepro.app")
   assert.equal(validateURL("http://192.168.1.1:8080/path"), "http://192.168.1.1:8080/path")
 
   // Invalid protocols and malformed URLs
@@ -298,7 +298,7 @@ test("Tier 2 [QR Code Studio]: Wi-Fi WPA format and escaping of special characte
   }
 
   // Standard credentials
-  assert.equal(formatWiFi("FluxKit_Office", "Secret123"), "WIFI:T:WPA;S:FluxKit_Office;P:Secret123;;")
+  assert.equal(formatWiFi("Masterfilepro_Office", "Secret123"), "WIFI:T:WPA;S:Masterfilepro_Office;P:Secret123;;")
 
   // Adversarial characters needing backslash escaping
   const adversarialSSID = 'My;Wifi:Room\\4"Special'
@@ -318,8 +318,8 @@ test("Tier 2 [QR Code Studio]: Email address format validation and URL escaping"
 
   // Valid email addresses
   assert.equal(
-    formatEmail("founder@fluxkit.app", "Q3 Proposal"),
-    "mailto:founder@fluxkit.app?subject=Q3%20Proposal",
+    formatEmail("founder@masterfilepro.app", "Q3 Proposal"),
+    "mailto:founder@masterfilepro.app?subject=Q3%20Proposal",
   )
   assert.equal(
     formatEmail("user+tag@domain.co.uk", "Question & Answer"),
@@ -337,7 +337,7 @@ test("Tier 2 [QR Code Studio]: High-density payload stress (1,000 characters)", 
   const { load } = createLoader()
   const { generateQR } = load("services")
 
-  const largePayload = "https://fluxkit.app/secure/document-verification?token=" + "A".repeat(900)
+  const largePayload = "https://masterfilepro.app/secure/document-verification?token=" + "A".repeat(900)
   const qr = await generateQR(largePayload)
 
   assert.ok(typeof qr === "string")
@@ -351,7 +351,7 @@ test("Tier 2 [Text to PDF]: Empty title fallback and pagination boundary handlin
 
   // Case A: Untitled fallback
   const docA = await textToPDF("Sample body text.", "")
-  assert.equal(docA.name, "fluxkit-document.pdf")
+  assert.equal(docA.name, "masterfilepro-document.pdf")
   assert.ok(docA.blob.size > 500)
 
   // Case B: Multi-page document stress (> 2 pages with pagination triggering y < 55)
@@ -491,7 +491,7 @@ test("Tier 3 [PDF Lifecycle]: Text-to-PDF -> Rotate PDF -> Merge PDF pipeline", 
 
   // Step 1: Author Document A (Executive Brief)
   const docA = await textToPDF("Executive Summary: Operational throughput up 34% year-over-year.", "Annual Report 2026")
-  assert.equal(docA.name, "fluxkit-document.pdf")
+  assert.equal(docA.name, "masterfilepro-document.pdf")
   const fileA = new File([await docA.blob.arrayBuffer()], "annual-report-a.pdf", { type: "application/pdf" })
 
   // Step 2: Rotate Document A by 90° clockwise
@@ -524,7 +524,7 @@ test("Tier 3 [QR Studio -> Download]: QR Generation and Browser Download Lifecyc
   const { generateQR, download } = load("services")
 
   // Generate QR code data URI
-  const targetUrl = "https://fluxkit.app/tools/all"
+  const targetUrl = "https://masterfilepro.app/tools/all"
   const qrDataUri = await generateQR(targetUrl)
 
   // Verify PNG header structure from base64 payload
@@ -539,7 +539,7 @@ test("Tier 3 [QR Studio -> Download]: QR Generation and Browser Download Lifecyc
 
   // Trigger client-side download simulation
   const qrBlob = new Blob([buffer], { type: "image/png" })
-  download({ name: "fluxkit-qr.png", blob: qrBlob })
+  download({ name: "masterfilepro-qr.png", blob: qrBlob })
 
   // Download simulation executed without throwing unhandled exceptions
   assert.ok(qrBlob.size > 0)
@@ -594,7 +594,7 @@ test("Tier 4 [Scenario 1]: Multi-Tool Conference Materials Publishing Workflow",
   assert.ok(wifiQr.startsWith("data:image/png;base64,"))
 
   // 5. Generates Digital Feedback URL QR
-  const feedbackQr = await generateQR("https://summit.fluxkit.org/feedback")
+  const feedbackQr = await generateQR("https://summit.masterfilepro.org/feedback")
   assert.ok(feedbackQr.startsWith("data:image/png;base64,"))
 })
 
@@ -701,7 +701,7 @@ test("Tier 4 [Scenario 4]: Error Recovery and Form Self-Healing Interaction", ()
   assert.equal(formState.error, "Use a valid https:// or http:// URL.")
 
   // 3. User corrects input to valid HTTPS URL -> success and error cleared
-  handleInput("https://fluxkit.app/docs")
+  handleInput("https://masterfilepro.app/docs")
   assert.equal(handleSubmit(), true)
   assert.equal(formState.error, "")
 })

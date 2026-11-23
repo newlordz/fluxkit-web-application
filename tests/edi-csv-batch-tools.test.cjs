@@ -13,8 +13,8 @@ assert(fs.existsSync(codePath), "src/dataConversionService.ts must exist")
 
 // Test 1: Sample EDI data parsing & conversions
 const sampleEDI = [
-  "ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~",
-  "GS*PO*FLUXKIT*ACME*20260101*1200*1*X*004010~",
+  "ISA*00*          *00*          *ZZ*MASTERFILEPRO  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~",
+  "GS*PO*MASTERFILEPRO*ACME*20260101*1200*1*X*004010~",
   "ST*850*0001~",
   "BEG*00*NE*PO-984321**20260101~",
   "CUR*BY*USD~",
