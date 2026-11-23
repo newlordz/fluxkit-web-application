@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import crypto from "node:crypto"
 import { cors, json, query, readBody } from "../_lib/db.ts"
-import { createSession, generateSalt, hashPassword } from "../_lib/auth.ts"
+import { createSession, generateSalt, hashPasswordScrypt } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)
@@ -32,7 +32,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     await query(
       `insert into users (id, email, name, provider, role, subscription_tier, pro_status, password_salt, password_hash)
        values ($1, $2, $3, 'email', 'user', 'standard', 'none', $4, $5)`,
-      [id, email, name || email.split("@")[0], salt, hashPassword(password, salt)],
+      [id, email, name || email.split("@")[0], salt, await hashPasswordScrypt(password, salt)],
     )
 
     const { token, expiresAt } = await createSession(id)

@@ -5,7 +5,9 @@ import {
   createSession,
   findUserByEmail,
   isLocked,
+  needsPasswordUpgrade,
   registerFailedAttempt,
+  upgradePasswordHash,
   verifyPassword,
 } from "../_lib/auth.ts"
 
@@ -35,6 +37,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     await clearFailedAttempts(user.id)
     const { token, expiresAt } = await createSession(user.id)
+
+    // Opportunistic: the password is only in hand at sign-in. A failure here leaves
+    // the working legacy hash in place, so it must never break the login.
+    if (needsPasswordUpgrade(user)) {
+      await upgradePasswordHash(user.id, password).catch(() => null)
+    }
 
     return json(res, 200, {
       ok: true,

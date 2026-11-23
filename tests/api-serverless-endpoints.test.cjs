@@ -558,3 +558,168 @@ test("API Cloud: a body larger than the cap is refused with 413 before any provi
   assert.equal(res.statusCode, 413)
   assert.equal(res._getData().code, "payload_too_large")
 })
+
+// ---------------------------------------------------------------------------
+// Password hashing: scrypt for new credentials, sha256 honoured until next sign-in
+// ---------------------------------------------------------------------------
+
+const PASSWORD = "long-enough-serial-killer"
+
+function loadAuth() {
+  return loadHandler("server/_lib/auth.ts", { "./db.ts": { query: async () => [] } })
+}
+
+test("Auth: a freshly hashed password is scrypt and never carries the plaintext", async () => {
+  const auth = loadAuth()
+  const salt = auth.generateSalt()
+  const hash = await auth.hashPasswordScrypt(PASSWORD, salt)
+
+  assert.match(hash, /^scrypt\$\d+\$\d+\$\d+\$/)
+  assert.ok(!hash.includes(PASSWORD))
+  assert.equal(auth.needsPasswordUpgrade({ password_hash: hash }), false)
+
+  // Two hashes of the same password differ because each account gets its own salt.
+  const other = await auth.hashPasswordScrypt(PASSWORD, auth.generateSalt())
+  assert.notEqual(other, hash)
+})
+
+test("Auth: scrypt and migrated sha256 credentials both sign in", async () => {
+  const auth = loadAuth()
+  const salt = auth.generateSalt()
+  const scryptHash = await auth.hashPasswordScrypt(PASSWORD, salt)
+  const legacyHash = auth.hashPassword(PASSWORD, salt)
+
+  assert.equal(await auth.verifyPassword({ password_salt: salt, password_hash: scryptHash }, PASSWORD), true)
+  assert.equal(await auth.verifyPassword({ password_salt: salt, password_hash: legacyHash }, PASSWORD), true)
+
+  assert.equal(await auth.verifyPassword({ password_salt: salt, password_hash: scryptHash }, `${PASSWORD}x`), false)
+  assert.equal(await auth.verifyPassword({ password_salt: salt, password_hash: legacyHash }, `${PASSWORD}x`), false)
+  assert.equal(await auth.verifyPassword({ password_salt: null, password_hash: null }, PASSWORD), false)
+
+  // The cost parameters and salt travel inside the hash, so a row whose column was
+  // cleared still verifies.
+  assert.equal(await auth.verifyPassword({ password_salt: null, password_hash: scryptHash }, PASSWORD), true)
+
+  assert.equal(auth.needsPasswordUpgrade({ password_hash: legacyHash }), true)
+  assert.equal(auth.needsPasswordUpgrade({ password_hash: null }), false)
+})
+
+test("Auth: register stores a scrypt hash", async () => {
+  const calls = []
+  const db = {
+    cors: () => {},
+    json: (res, status, data) => {
+      res.status(status).json(data)
+      return res
+    },
+    readBody: async (req) => req.body ?? {},
+    query: async (sql, params) => {
+      calls.push({ sql, params })
+      return /select id, email/i.test(sql)
+        ? [{ id: "usr_new", email: "new.member@example.com", name: "New", role: "user", subscription_tier: "standard", pro_status: "none", unlocked_tools: [] }]
+        : []
+    },
+  }
+  const handler = loadHandler("server/auth/register.ts", {
+    "../_lib/db.ts": db,
+    "../_lib/auth.ts": loadAuth(),
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { email: "new.member@example.com", password: PASSWORD } })
+
+  await handler(req, res)
+
+  assert.equal(res.statusCode, 201)
+  const insert = calls.find((c) => /insert into users/i.test(c.sql))
+  assert.ok(insert, "the account must be created")
+  assert.match(insert.params[4], /^scrypt\$/)
+})
+
+/** The pre-scrypt credential format the live accounts still carry. */
+function legacyHash(password) {
+  return require("node:crypto").createHash("sha256").update(`salt_legacy:${password}`).digest("hex")
+}
+
+function loginStubs({ legacy }) {
+  const calls = []
+  const user = {
+    id: "usr_old",
+    email: "member@example.com",
+    name: "Member",
+    role: "user",
+    subscription_tier: "standard",
+    pro_status: "none",
+    unlocked_tools: [],
+    must_reset_password: false,
+    password_salt: "salt_legacy",
+    password_hash: legacy ? legacyHash(PASSWORD) : null,
+  }
+
+  const auth = {
+    findUserByEmail: async () => user,
+    isLocked: () => false,
+    verifyPassword: async (u, pw) => pw === PASSWORD,
+    clearFailedAttempts: async () => {},
+    createSession: async () => ({ token: "tok", expiresAt: new Date("2026-12-31T00:00:00.000Z") }),
+    registerFailedAttempt: async () => {},
+    needsPasswordUpgrade: (u) => legacy,
+    upgradePasswordHash: async (id, pw) => {
+      calls.push({ id, pw })
+    },
+  }
+  const db = {
+    cors: () => {},
+    json: (res, status, data) => {
+      res.status(status).json(data)
+      return res
+    },
+    readBody: async (req) => req.body ?? {},
+    query: async () => [],
+  }
+  return { auth, calls, db, user }
+}
+
+test("Auth: a legacy sign-in is upgraded to scrypt after the session is issued", async () => {
+  const s = loginStubs({ legacy: true })
+  const handler = loadHandler("server/auth/login.ts", {
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { email: "member@example.com", password: PASSWORD } })
+
+  await handler(req, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.equal(res._getData().token, "tok")
+  assert.deepEqual(s.calls, [{ id: "usr_old", pw: PASSWORD }])
+})
+
+test("Auth: an upgrade failure never turns a valid password into a rejected sign-in", async () => {
+  const s = loginStubs({ legacy: true })
+  s.auth.upgradePasswordHash = async () => {
+    throw new Error("database is unreachable")
+  }
+  const handler = loadHandler("server/auth/login.ts", {
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { email: "member@example.com", password: PASSWORD } })
+
+  await handler(req, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.equal(res._getData().token, "tok")
+})
+
+test("Auth: an already-scrypt account is not re-hashed on every sign-in", async () => {
+  const s = loginStubs({ legacy: false })
+  const handler = loadHandler("server/auth/login.ts", {
+    "../_lib/db.ts": s.db,
+    "../_lib/auth.ts": s.auth,
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { email: "member@example.com", password: PASSWORD } })
+
+  await handler(req, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(s.calls, [])
+})

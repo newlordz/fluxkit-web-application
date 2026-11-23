@@ -1,10 +1,18 @@
 import type { IncomingMessage } from "node:http"
 import crypto from "node:crypto"
+import { promisify } from "node:util"
 import { query } from "./db.ts"
 
 const SESSION_DAYS = 30
 const MAX_FAILED_ATTEMPTS = 5
 const LOCK_MINUTES = 15
+// The options overload is dropped by promisify, so the signature is restated.
+const scrypt = promisify(crypto.scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options: crypto.ScryptOptions,
+) => Promise<Buffer>
 
 export interface AuthUser {
   id: string
@@ -17,19 +25,47 @@ export interface AuthUser {
   must_reset_password: boolean
 }
 
-// Matches the client's existing sha256(`${salt}:${password}`) so migrated
-// password hashes keep working without a reset.
+// Legacy format, kept so accounts migrated before scrypt can still sign in and be
+// upgraded in place: sha256(`${salt}:${password}`).
 export function hashPassword(password: string, salt: string): string {
   return crypto.createHash("sha256").update(`${salt}:${password}`).digest("hex")
 }
+
+const SCRYPT = "scrypt"
+const SCRYPT_COST = 16384
+const SCRYPT_BLOCK = 8
+const SCRYPT_PARALLEL = 1
+const SCRYPT_KEYLEN = 64
 
 export function generateSalt(): string {
   return `salt_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`
 }
 
+/** Self-describing so the cost parameters can be raised later without a migration. */
+export async function hashPasswordScrypt(password: string, salt: string): Promise<string> {
+  const key = await scrypt(password, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_COST,
+    r: SCRYPT_BLOCK,
+    p: SCRYPT_PARALLEL,
+    maxmem: 128 * 1024 * 1024,
+  })
+  return `${SCRYPT}$${SCRYPT_COST}$${SCRYPT_BLOCK}$${SCRYPT_PARALLEL}$${Buffer.from(salt, "utf8").toString("base64")}$${key.toString("hex")}`
+}
+
 function timingSafeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"))
+}
+
+async function scryptMatch(stored: string, password: string): Promise<boolean> {
+  const [, n, r, p, saltB64, digest] = stored.split("$")
+  const key = await scrypt(password, Buffer.from(saltB64, "base64"), digest.length / 2, {
+    N: Number(n),
+    r: Number(r),
+    p: Number(p),
+    maxmem: 128 * 1024 * 1024,
+  })
+  return timingSafeEqualHex(key.toString("hex"), digest)
 }
 
 export async function findUserByEmail(email: string): Promise<AuthUser & { password_salt: string | null; password_hash: string | null; locked_until: string | null; failed_attempts: number } | null> {
@@ -46,8 +82,27 @@ export async function verifyPassword(
   user: { password_salt: string | null; password_hash: string | null },
   password: string,
 ): Promise<boolean> {
-  if (!user.password_salt || !user.password_hash) return false
+  if (!user.password_hash) return false
+  if (user.password_hash.startsWith(`${SCRYPT}$`)) return scryptMatch(user.password_hash, password)
+  if (!user.password_salt) return false
   return timingSafeEqualHex(hashPassword(password, user.password_salt), user.password_hash)
+}
+
+/** True while a stored credential is still the single-round sha256 format. */
+export function needsPasswordUpgrade(user: { password_hash: string | null }): boolean {
+  return !!user.password_hash && !user.password_hash.startsWith(`${SCRYPT}$`)
+}
+
+/**
+ * Re-stores a verified legacy credential as scrypt. The plaintext is only available
+ * at sign-in, so the upgrade is opportunistic rather than a batch migration.
+ */
+export async function upgradePasswordHash(userId: string, password: string): Promise<void> {
+  const salt = generateSalt()
+  await query(
+    `update users set password_salt = $2, password_hash = $3, updated_at = now() where id = $1`,
+    [userId, salt, await hashPasswordScrypt(password, salt)],
+  )
 }
 
 export async function registerFailedAttempt(userId: string): Promise<void> {
@@ -119,7 +174,11 @@ export async function activeResetCodeCount(email: string): Promise<number> {
   return Number(rows[0]?.count || 0)
 }
 
-/** Stores a hashed one-time code and returns the digits to hand out. */
+/**
+ * Stores a hashed one-time code and returns the digits to hand out. sha256 is
+ * deliberate here: the code is six digits, expires in minutes, and is attempt-capped,
+ * so a slower KDF would not add protection a leaked table could not already defeat.
+ */
 export async function createResetCode(email: string): Promise<string> {
   const code = String(crypto.randomInt(100000, 1000000))
   const salt = generateSalt()
@@ -143,7 +202,7 @@ export async function applyNewPassword(
        set password_salt = $2, password_hash = $3, must_reset_password = false,
            failed_attempts = 0, locked_until = null, updated_at = now()
      where id = $1`,
-    [userId, salt, hashPassword(newPassword, salt)],
+    [userId, salt, await hashPasswordScrypt(newPassword, salt)],
   )
   // Sessions must not outlive the credential they were issued with.
   await query(`update sessions set revoked_at = now() where user_id = $1 and revoked_at is null`, [userId])
