@@ -389,7 +389,11 @@ test("Suite 2: OCR Text Recognition — Boundaries & Memory Harness", async (t) 
     assert.strictEqual(typeof result.text, "string")
     assert.strictEqual(result.sourceType, "image-raster")
     assert.strictEqual(result.lines.length, 0)
-    assert.ok(result.confidence >= 0.8)
+    assert.strictEqual(
+      result.confidence,
+      null,
+      "an unreadable scan yielded nothing, so no confidence may be claimed",
+    )
   })
 
   await t.test("2.3 scanOCR: Digital PDF fast-path multi-page text extraction", async () => {
@@ -412,7 +416,7 @@ test("Suite 2: OCR Text Recognition — Boundaries & Memory Harness", async (t) 
     assert.ok(ocrResult.text.includes("Acme Global Corporation"))
     assert.ok(ocrResult.text.includes("Payment Due Within 30 Days"))
     assert.ok(ocrResult.text.includes("Total Amount Due: $12,450.00 USD"))
-    assert.ok(ocrResult.confidence >= 0.85)
+    assert.strictEqual(ocrResult.confidence, null)
     assert.ok(ocrResult.wordCount > 10)
     assert.ok(ocrResult.characterCount > 50)
   })

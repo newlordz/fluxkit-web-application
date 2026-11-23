@@ -6221,10 +6221,14 @@ export default function AdminPanel({
                 <strong>Hosting Dashboard (Permanent Zero-Maintenance):</strong>{" "}
                 On serverless hosts (Vercel, Netlify), you can set your keys in
                 your project's <strong>Environment Variables</strong> (e.g.{" "}
-                <code style={{ color: "#ba9aee" }}>VITE_ADOBE_CLIENT_ID</code>,{" "}
-                <code style={{ color: "#ba9aee" }}>VITE_GROQ_API_KEY</code>,{" "}
-                <code style={{ color: "#ba9aee" }}>VITE_OCRSPACE_API_KEY</code>
-                ). They are immediately active across all devices.
+                <code style={{ color: "#ba9aee" }}>ADOBE_CLIENT_ID</code>,{" "}
+                <code style={{ color: "#ba9aee" }}>GROQ_API_KEY</code>,{" "}
+                <code style={{ color: "#ba9aee" }}>OCRSPACE_API_KEY</code>
+                ). They are immediately active across all devices. Never use a{" "}
+                <code style={{ color: "#ba9aee" }}>VITE_</code> prefix for a
+                secret: Vite ships every <code style={{ color: "#ba9aee" }}>VITE_
+                </code> variable it finds to the browser, and only the server
+                needs these keys.
                 <br />• <strong>Instant Transfer:</strong> Click{" "}
                 <strong>Export Keys (JSON)</strong> on one laptop and{" "}
                 <strong>Import Keys</strong> on another to instantly clone your

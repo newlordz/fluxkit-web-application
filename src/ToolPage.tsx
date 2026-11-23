@@ -2478,7 +2478,9 @@ export default function ToolPage({
         setPipelineStep(null)
 
         notify.success(
-          `OCR complete: ${ocr.wordCount} words recognized (${Math.round(ocr.confidence * 100)}% confidence).`,
+          ocr.confidence === null
+            ? `OCR complete: ${ocr.wordCount} words recognized.`
+            : `OCR complete: ${ocr.wordCount} words recognized (${Math.round(ocr.confidence * 100)}% confidence).`,
         )
 
         onComplete(`${baseName}-ocr.txt`)
@@ -10171,8 +10173,9 @@ export default function ToolPage({
                       fontWeight: 600,
                     }}
                   >
-                    {Math.round((ocrResult?.confidence ?? 0.95) * 100)}%
-                    Confidence · {ocrResult?.sourceType || "optical scan"}
+                    {ocrResult?.confidence == null
+                      ? ocrResult?.sourceType || "optical scan"
+                      : `${Math.round(ocrResult.confidence * 100)}% Confidence · ${ocrResult.sourceType || "optical scan"}`}
                   </span>
                   <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                     {ocrResult?.wordCount ??

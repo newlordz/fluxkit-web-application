@@ -527,9 +527,10 @@ test("Challenger Suite 2: Client-Side OCR Scanner Engine Verification", async (t
     assert.ok(result.text.includes("Accounting Report Q4 - Page 2"))
     assert.ok(result.text.includes("Transaction Ref: FLUX-1000"))
     assert.ok(result.text.includes("Status: Confirmed"))
-    assert.ok(
-      result.confidence >= 0.9,
-      `Confidence should be >= 0.9, got ${result.confidence}`,
+    assert.strictEqual(
+      result.confidence,
+      null,
+      "embedded PDF text is extracted rather than recognised, so no score may be claimed",
     )
     assert.ok(result.wordCount > 10, "Word count should be > 10")
     assert.ok(result.characterCount > 50, "Char count should be > 50")

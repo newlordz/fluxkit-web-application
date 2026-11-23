@@ -799,10 +799,7 @@ export async function compressPDF(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pdfBase64,
-          compressionLevel,
-          clientId: activeApi.apiKey,
-          clientSecret: activeApi.clientSecret,
-        }),
+          compressionLevel,        }),
       })
 
       if (response.ok) {
@@ -884,9 +881,7 @@ export async function compressPDF(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pdfBase64,
-          compressionLevel,
-          publicKey: iloveApi.apiKey,
-        }),
+          compressionLevel,        }),
       })
 
       if (response.ok) {
@@ -2217,10 +2212,7 @@ export async function pdfToWord(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pdfBase64,
-            targetFormat: "docx",
-            clientId: activeApi.apiKey,
-            clientSecret: activeApi.clientSecret,
-          }),
+            targetFormat: "docx",          }),
         })
 
         if (response.ok) {
@@ -2285,10 +2277,7 @@ export async function pdfToWord(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pdfBase64,
-            fileName: `${baseName}.pdf`,
-            publicKey: iloveApi.apiKey,
-            secretKey: iloveApi.clientSecret,
-          }),
+            fileName: `${baseName}.pdf`,          }),
         })
 
         if (response.ok) {
@@ -2604,10 +2593,7 @@ export async function pdfToPPT(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pdfBase64,
-            targetFormat: "pptx",
-            clientId: activeApi.apiKey,
-            clientSecret: activeApi.clientSecret,
-          }),
+            targetFormat: "pptx",          }),
         })
 
         if (response.ok) {
@@ -2670,10 +2656,7 @@ export async function pdfToPPT(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileBase64: pdfBase64,
-            fileName: `${baseName}.pdf`,
-            publicKey: iloveApi.apiKey,
-            secretKey: iloveApi.clientSecret,
-          }),
+            fileName: `${baseName}.pdf`,          }),
         })
 
         if (response.ok) {
@@ -3009,10 +2992,7 @@ export async function pdfToExcel(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pdfBase64,
-            targetFormat: "xlsx",
-            clientId: activeApi.apiKey,
-            clientSecret: activeApi.clientSecret,
-          }),
+            targetFormat: "xlsx",          }),
         })
 
         if (response.ok) {
@@ -4034,10 +4014,7 @@ export async function pptToPDF(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileBase64: pptxBase64,
-            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,
-            clientId: activeApi.apiKey,
-            clientSecret: activeApi.clientSecret,
-          }),
+            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,          }),
         })
 
         if (response.ok) {
@@ -4097,10 +4074,7 @@ export async function pptToPDF(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileBase64: pptxBase64,
-            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,
-            publicKey: iloveApi.apiKey,
-            secretKey: iloveApi.clientSecret,
-          }),
+            fileName: name.endsWith(".pptx") ? name : `${baseName}.pptx`,          }),
         })
 
         if (response.ok) {
@@ -5981,7 +5955,8 @@ export async function extractZipArchive(
 
 export interface OCRLine {
   text: string
-  confidence: number
+  /** Measured recognition score, or null when the engine reports no confidence data. */
+  confidence: number | null
   boundingBox?: {
     x: number
     y: number
@@ -5992,7 +5967,8 @@ export interface OCRLine {
 
 export interface OCRResult {
   text: string
-  confidence: number
+  /** Average of the per-line scores, or null when no line carried a real measurement. */
+  confidence: number | null
   lines: OCRLine[]
   pageCount: number
   language: string
@@ -6416,14 +6392,11 @@ export async function scanOCR(
       for (const line of page.lines) {
         const trimmed = line.trim()
         if (trimmed.length > 0) {
-          const alphaNum = (trimmed.match(/[a-zA-Z0-9]/g) || []).length
-          const conf = Math.min(
-            0.99,
-            Math.max(0.85, 0.95 + (alphaNum / trimmed.length) * 0.04),
-          )
+          // Embedded text is exact, not scored: pdf.js reports no recognition confidence,
+          // so this path carries null rather than a number the UI would present as quality.
           ocrLines.push({
             text: trimmed,
-            confidence: Math.round(conf * 100) / 100,
+            confidence: null,
           })
           totalWords += trimmed.split(/\s+/).filter(Boolean).length
           totalChars += trimmed.length
@@ -6433,11 +6406,9 @@ export async function scanOCR(
 
     if (ocrLines.length > 0) {
       const fullText = ocrLines.map((l) => l.text).join("\n")
-      const avgConf =
-        ocrLines.reduce((acc, l) => acc + l.confidence, 0) / ocrLines.length
       return {
         text: fullText,
-        confidence: Math.round(avgConf * 100) / 100,
+        confidence: null,
         lines: ocrLines,
         pageCount: pages.length || 1,
         language: options.language || "en",
@@ -6469,9 +6440,7 @@ export async function scanOCR(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           base64Image,
-          language: options.language || "eng",
-          apiKey: ocrApi.apiKey,
-        }),
+          language: options.language || "eng",        }),
       })
 
       if (ocrRes.ok) {
@@ -6482,14 +6451,16 @@ export async function scanOCR(
           const rawLines = text
             .split("\n")
             .filter((l: string) => l.trim().length > 0)
+          // api/ocr-space.ts requests the plain text result (isOverlayRequired=false),
+          // so OCR.space returns no per-word scores to report here.
           const lines: OCRLine[] = rawLines.map((l: string) => ({
             text: l.trim(),
-            confidence: 0.95,
+            confidence: null,
           }))
 
           return {
             text,
-            confidence: 0.95,
+            confidence: null,
             lines,
             pageCount: data.results?.length || 1,
             language: options.language || "eng",
@@ -6709,7 +6680,7 @@ export async function scanOCR(
         const avgLineConf =
           glyphCount > 0
             ? Math.round((lineConfSum / glyphCount) * 100) / 100
-            : 0.9
+            : null
         recognizedLines.push({
           text: trimmedLine,
           confidence: avgLineConf,
@@ -6722,12 +6693,17 @@ export async function scanOCR(
 
     if (recognizedLines.length > 0) {
       const fullText = recognizedLines.map((l) => l.text).join("\n")
-      const avgConf =
-        recognizedLines.reduce((acc, l) => acc + l.confidence, 0) /
-        recognizedLines.length
+      const scores = recognizedLines.flatMap((l) =>
+        l.confidence === null ? [] : [l.confidence],
+      )
       return {
         text: fullText,
-        confidence: Math.round(avgConf * 100) / 100,
+        confidence:
+          scores.length > 0
+            ? Math.round(
+                (scores.reduce((acc, c) => acc + c, 0) / scores.length) * 100,
+              ) / 100
+            : null,
         lines: recognizedLines,
         pageCount: 1,
         language: options.language || "en",
@@ -6738,10 +6714,11 @@ export async function scanOCR(
     }
   }
 
-  // Graceful fallback for non-renderable/empty scans
+  // Graceful fallback for non-renderable/empty scans: nothing was read, so there is
+  // no score to report. A number here would read as quality on an empty result.
   return {
     text: "",
-    confidence: 0.85,
+    confidence: null,
     lines: [],
     pageCount: 1,
     language: options.language || "en",

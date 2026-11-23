@@ -61,22 +61,6 @@ export interface ApiHealthResult {
 
 const STORAGE_KEY = "masterfilepro_cloud_apis_config_v2"
 
-const getEnv = (key: string): string => {
-  try {
-    const meta = new Function("return import.meta")()
-
-    if (meta?.env?.[key]) return meta.env[key]
-  } catch {}
-
-  try {
-    if (typeof process !== "undefined" && process?.env && process.env[key]) {
-      return process.env[key] || ""
-    }
-  } catch {}
-
-  return ""
-}
-
 const b64 = (s: string) => {
   try {
     if (typeof atob !== "undefined") return atob(s)
@@ -114,7 +98,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     apiKey: "",
 
-    clientSecret: getEnv("VITE_ADOBE_CLIENT_SECRET") || "",
+    clientSecret: "",
 
     endpoint: "https://pdf-services.adobe.io",
 
@@ -147,9 +131,9 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://developer.ilovepdf.com/",
 
-    apiKey: getEnv("VITE_ILOVEPDF_PUBLIC_KEY") || "",
+    apiKey: "",
 
-    clientSecret: getEnv("VITE_ILOVEPDF_SECRET_KEY") || "",
+    clientSecret: "",
 
     endpoint: "https://api.ilovepdf.com",
 
@@ -182,7 +166,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://cloudconvert.com/dashboard/api/v2/keys",
 
-    apiKey: getEnv("VITE_CLOUDCONVERT_API_KEY"),
+    apiKey: "",
 
     endpoint: "https://api.cloudconvert.com/v2",
 
@@ -213,7 +197,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://www.convertapi.com/a",
 
-    apiKey: getEnv("VITE_CONVERTAPI_SECRET") || getEnv("VITE_CONVERTAPI_KEY"),
+    apiKey: "",
 
     endpoint: "https://v2.convertapi.com",
 
@@ -306,7 +290,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://tinypng.com/developers",
 
-    apiKey: getEnv("VITE_TINIFY_API_KEY") || getEnv("VITE_TINIFY_KEY") || "",
+    apiKey: "",
 
     endpoint: "https://api.tinify.com/shrink",
 
@@ -339,8 +323,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://console.groq.com/keys",
 
-    apiKey:
-      getEnv("VITE_GROQ_API_KEY") || getEnv("VITE_GROQ_WHISPER_KEY") || "",
+    apiKey: "",
 
     endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
 
@@ -373,7 +356,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://aistudio.google.com/app/apikey",
 
-    apiKey: getEnv("VITE_GOOGLE_AI_KEY") || getEnv("VITE_GEMINI_API_KEY") || "",
+    apiKey: "",
 
     endpoint: "https://generativelanguage.googleapis.com/v1beta",
 
@@ -404,7 +387,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     dashboardUrl: "https://mymemory.translated.net/doc/keygen.php",
 
-    apiKey: getEnv("VITE_MYMEMORY_KEY"),
+    apiKey: "",
 
     endpoint: "https://api.mymemory.translated.net/get",
 
@@ -698,15 +681,7 @@ export async function testApiHealth(
 
   try {
     if (api.provider === "adobe") {
-      const q = new URLSearchParams()
-
-      if (api.apiKey) q.set("clientId", api.apiKey)
-
-      if (api.clientSecret) q.set("clientSecret", api.clientSecret)
-
-      const qs = q.toString() ? `?${q.toString()}` : ""
-
-      const res = await fetch(`/api/adobe-pdf/status${qs}`)
+      const res = await fetch("/api/adobe-pdf/status")
 
       const latencyMs = Math.round(performance.now() - start)
 
@@ -740,15 +715,7 @@ export async function testApiHealth(
     }
 
     if (api.provider === "ilovepdf") {
-      const q = new URLSearchParams()
-
-      if (api.apiKey) q.set("publicKey", api.apiKey)
-
-      if (api.clientSecret) q.set("secretKey", api.clientSecret)
-
-      const qs = q.toString() ? `?${q.toString()}` : ""
-
-      const res = await fetch(`/api/ilovepdf/status${qs}`)
+      const res = await fetch("/api/ilovepdf/status")
 
       const latencyMs = Math.round(performance.now() - start)
 
@@ -782,13 +749,7 @@ export async function testApiHealth(
     }
 
     if (api.provider === "ocrspace") {
-      const q = new URLSearchParams()
-
-      if (api.apiKey) q.set("apiKey", api.apiKey)
-
-      const qs = q.toString() ? `?${q.toString()}` : ""
-
-      const res = await fetch(`/api/ocr-space/status${qs}`)
+      const res = await fetch("/api/ocr-space/status")
 
       const latencyMs = Math.round(performance.now() - start)
 
@@ -842,8 +803,6 @@ export async function testApiHealth(
 
         body: JSON.stringify({
           endpoint: api.endpoint,
-
-          apiKey: api.apiKey,
 
           provider: api.provider,
         }),

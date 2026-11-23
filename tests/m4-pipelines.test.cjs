@@ -298,7 +298,11 @@ test("Suite 2: Client-Side OCR Text Recognition Engine", async (t) => {
     const ocr = await services.scanOCR(pdfBytes, { language: "en" })
 
     assert.strictEqual(ocr.sourceType, "pdf-digital")
-    assert.ok(ocr.confidence >= 0.95, "Digital PDF text must have >= 95% confidence")
+    assert.strictEqual(
+      ocr.confidence,
+      null,
+      "embedded PDF text is extracted, not recognised, so no score is reported",
+    )
     assert.strictEqual(ocr.pageCount, 2)
     assert.ok(ocr.text.includes("Annual Financial Report 2026"))
     assert.ok(ocr.text.includes("Invoice #9821"))

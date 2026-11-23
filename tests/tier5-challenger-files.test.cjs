@@ -816,7 +816,7 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
     assert.strictEqual(pdfOcr.sourceType, "pdf-digital")
     assert.ok(pdfOcr.text.includes("Invoice Number: INV-98214"))
     assert.ok(pdfOcr.wordCount > 0)
-    assert.ok(pdfOcr.confidence >= 0.85)
+    assert.strictEqual(pdfOcr.confidence, null)
 
     // 2. Optical raster scan on synthetic 24-bpp BMP
     const bmpBytes24 = services.createSyntheticTestImage("MASTERFILEPRO TEST")
