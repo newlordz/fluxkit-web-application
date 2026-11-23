@@ -12,29 +12,77 @@ export type ApiRequest = IncomingMessage & { query?: Record<string, string>; bod
 // short-lived connections, so the pool stays tiny and queries are parameterised.
 let pool: Pool | null = null
 
-export function getPool(): Pool {
-  if (!pool) {
-    const connectionString = process.env.SUPABASE_DB_URL
-    if (!connectionString) {
-      throw new Error("SUPABASE_DB_URL is not set (Vercel project environment variable)")
-    }
-    pool = new Pool({
-      connectionString,
-      ssl: { rejectUnauthorized: false },
-      max: 2,
-      idleTimeoutMillis: 8000,
-      connectionTimeoutMillis: 10000,
-    })
+function createPool(): Pool {
+  const connectionString = process.env.SUPABASE_DB_URL
+  if (!connectionString) {
+    throw new Error("SUPABASE_DB_URL is not set (Vercel project environment variable)")
   }
+  const fresh = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    max: 2,
+    idleTimeoutMillis: 8000,
+    connectionTimeoutMillis: 5000,
+  })
+  // Supavisor closes idle connections without warning. An 'error' event with no
+  // listener is thrown by the emitter and fails the whole invocation, rather
+  // than the one query that happened to pick up the dead client.
+  fresh.on("error", () => {
+    // pg removes the client that errored; the next acquire opens a fresh one.
+  })
+  return fresh
+}
+
+export function getPool(): Pool {
+  if (!pool) pool = createPool()
   return pool
 }
 
+// The pooler can hand back a socket it has already closed, so the first failure
+// of a request is retried against a rebuilt pool instead of reaching the user.
+function isStaleConnection(err: unknown): boolean {
+  const message = String((err as any)?.message || "")
+  return /connection terminated|server closed the connection unexpectedly|ECONNRESET|ETIMEDOUT|ssl connection has been closed|cannot execute a request during a aborted transaction/i.test(
+    message,
+  )
+}
+
+function discardPool() {
+  const dead = pool
+  pool = null
+  // Deliberately not awaited: end() waits for outstanding checkouts, and the
+  // retry must not stall behind the connection that just failed.
+  dead?.end().catch(() => {})
+}
+
+async function withStaleRetry<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    if (!isStaleConnection(err)) throw err
+    discardPool()
+    // Measured against the live pooler through a socket cut mid-query: an
+    // immediate reconnect, and one 250 ms later, both fail again with the same
+    // stale error; 600 ms gets a working connection. Paid only on that path.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    return run()
+  }
+}
+
 export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<T[]> {
-  const res = await getPool().query(text, params)
-  return res.rows as T[]
+  return withStaleRetry(async () => {
+    const res = await getPool().query(text, params)
+    return res.rows as T[]
+  })
 }
 
 export async function transact<T>(fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>): Promise<T> {
+  return withStaleRetry(() => runTransaction(fn))
+}
+
+async function runTransaction<T>(
+  fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>,
+): Promise<T> {
   const client = await getPool().connect()
   try {
     await client.query("begin")
