@@ -7234,6 +7234,54 @@ export async function excelToPDF(
 
 // ----------------------------------------------------------------------------
 
+function canvasToJpegBlob(
+  canvas: HTMLCanvasElement,
+
+  quality: number,
+): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Canvas JPEG export failed."))),
+
+      "image/jpeg",
+
+      quality,
+    )
+  })
+}
+
+async function openRasterDocument(bytes: Uint8Array): Promise<any> {
+  if (
+    typeof document === "undefined" ||
+    typeof document.createElement !== "function"
+  ) {
+    return null
+  }
+
+  const engine = await getPdfEngine()
+
+  const pdfjs = engine ? await engine.getPdfJsLibrary() : null
+
+  if (!pdfjs) return null
+
+  try {
+    // pdf.js transfers this buffer into its worker, so hand it a private copy.
+    const task = pdfjs.getDocument({
+      data: new Uint8Array(bytes).slice(),
+
+      isEvalSupported: false,
+
+      useWorkerFetch: false,
+    })
+
+    return await task.promise
+  } catch (err) {
+    console.warn("pdf.js document open failed:", err)
+
+    return null
+  }
+}
+
 export async function pdfToJPG(
   fileOrBytes: File | Uint8Array | ArrayBuffer,
 
@@ -7297,6 +7345,13 @@ export async function pdfToJPG(
     jpegQuality = 0.7
   }
 
+  // pdf.js is the only engine here that can paint a page with its real layout,
+  // fonts, images and vector graphics, so open it once and reuse it per page.
+  const rasterDoc = await openRasterDocument(bytes)
+
+  let textFallbackPages: Awaited<ReturnType<typeof extractPDFPages>> | null =
+    null
+
   const renderPageToJpegBlob = async (pageIdx: number): Promise<Blob> => {
     const page = doc.getPage(pageIdx)
 
@@ -7310,6 +7365,43 @@ export async function pdfToJPG(
     ) {
       const maxDimension = 4096
 
+      if (rasterDoc) {
+        try {
+          const rasterPage = await rasterDoc.getPage(pageIdx + 1)
+
+          const unit = rasterPage.getViewport({ scale: 1 })
+
+          const rasterScale = Math.max(
+            0.1,
+
+            Math.min(scale, maxDimension / Math.max(unit.width, unit.height, 1)),
+          )
+
+          const viewport = rasterPage.getViewport({ scale: rasterScale })
+
+          const canvas = document.createElement("canvas")
+
+          canvas.width = Math.max(1, Math.floor(viewport.width))
+
+          canvas.height = Math.max(1, Math.floor(viewport.height))
+
+          const ctx = canvas.getContext("2d", { alpha: false })
+
+          if (ctx) {
+            ctx.fillStyle = "#ffffff"
+
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+            await rasterPage.render({ canvasContext: ctx, viewport }).promise
+
+            return await canvasToJpegBlob(canvas, jpegQuality)
+          }
+        } catch (renderErr) {
+          console.warn("pdf.js page rasterization failed:", renderErr)
+        }
+      }
+
+      // Last resort: paint the extracted words so the JPG is still readable.
       const maxScale = Math.min(
         scale,
 
@@ -7341,9 +7433,11 @@ export async function pdfToJPG(
 
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-        const extracted = await extractPDFPages(bytes)
+        if (!textFallbackPages) {
+          textFallbackPages = await extractPDFPages(bytes)
+        }
 
-        const pData = extracted[pageIdx]
+        const pData = textFallbackPages[pageIdx]
 
         if (pData && pData.lines.length > 0) {
           ctx.fillStyle = "#0f172a"
@@ -7361,60 +7455,59 @@ export async function pdfToJPG(
           }
         }
 
-        return new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (b) =>
-              b ? resolve(b) : reject(new Error("Canvas JPEG export failed.")),
-
-            "image/jpeg",
-
-            jpegQuality,
-          )
-        })
+        return await canvasToJpegBlob(canvas, jpegQuality)
       }
     }
 
     return createValidTestJfifBlob(Math.round(width), Math.round(height))
   }
 
-  if (targetPages.length === 1) {
-    ensureNotCancelled(options.signal)
+  try {
+    if (targetPages.length === 1) {
+      ensureNotCancelled(options.signal)
 
-    const blob = await renderPageToJpegBlob(targetPages[0] - 1)
+      const blob = await renderPageToJpegBlob(targetPages[0] - 1)
+
+      return {
+        name: `${baseName}-page-${targetPages[0]}.jpg`,
+
+        blob,
+      }
+    }
+
+    const zipEntries: {
+      name: string
+
+      data: Uint8Array
+    }[] = []
+
+    for (const pNum of targetPages) {
+      ensureNotCancelled(options.signal)
+
+      const blob = await renderPageToJpegBlob(pNum - 1)
+
+      const ab = await blob.arrayBuffer()
+
+      zipEntries.push({
+        name: `page-${pNum}.jpg`,
+
+        data: new Uint8Array(ab),
+      })
+    }
+
+    const zipBytes = buildZipArchive(zipEntries)
 
     return {
-      name: `${baseName}-page-${targetPages[0]}.jpg`,
+      name: `${baseName}-images.zip`,
 
-      blob,
+      blob: new Blob([zipBytes as any], { type: "application/zip" }),
     }
-  }
-
-  const zipEntries: {
-    name: string
-
-    data: Uint8Array
-  }[] = []
-
-  for (const pNum of targetPages) {
-    ensureNotCancelled(options.signal)
-
-    const blob = await renderPageToJpegBlob(pNum - 1)
-
-    const ab = await blob.arrayBuffer()
-
-    zipEntries.push({
-      name: `page-${pNum}.jpg`,
-
-      data: new Uint8Array(ab),
-    })
-  }
-
-  const zipBytes = buildZipArchive(zipEntries)
-
-  return {
-    name: `${baseName}-images.zip`,
-
-    blob: new Blob([zipBytes as any], { type: "application/zip" }),
+  } finally {
+    try {
+      await rasterDoc?.destroy?.()
+    } catch {
+      // the worker is already gone
+    }
   }
 }
 
