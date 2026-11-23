@@ -131,6 +131,7 @@ import {
   type EmailPurpose,
   type EmailTone,
   type JobStatus,
+  JOB_CANCELLED,
   type OutputResult,
   type MergePDFProgress,
   type ExtractedZipFile,
@@ -848,8 +849,14 @@ export default function ToolPage({
   )
 
   const fileDragIndexRef = useRef<number | null>(null)
-  const [fileDragSourceIndex, setFileDragSourceIndex] = useState<number | null>(null)
-  const [fileDragOverIndex, setFileDragOverIndex] = useState<number | null>(null)
+  const jobControllerRef = useRef<AbortController | null>(null)
+  const [jobCancellable, setJobCancellable] = useState(false)
+  const [fileDragSourceIndex, setFileDragSourceIndex] = useState<number | null>(
+    null,
+  )
+  const [fileDragOverIndex, setFileDragOverIndex] = useState<number | null>(
+    null,
+  )
 
   // Drag & Drop Feedback State
 
@@ -2003,6 +2010,14 @@ export default function ToolPage({
 
     setStatus("processing")
 
+    const controller = new AbortController()
+
+    jobControllerRef.current = controller
+
+    const { signal } = controller
+
+    setJobCancellable(true)
+
     let out: any = undefined
 
     const setResult = (res: OutputResult | undefined) => {
@@ -2104,7 +2119,7 @@ export default function ToolPage({
 
         try {
           const [mergedRes] = await Promise.all([
-            mergePDFs(files, (p) => setMergeProgress(p)),
+            mergePDFs(files, (p) => setMergeProgress(p), signal),
 
             new Promise((resolve) => setTimeout(resolve, 800)),
           ])
@@ -2142,13 +2157,13 @@ export default function ToolPage({
       } else if (tool.id === "split-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to split.")
 
-        setResult(await splitPDF(files[0], extra))
+        setResult(await splitPDF(files[0], extra, signal))
       } else if (tool.id === "compress") {
         if (files.length < 1) throw new Error("Select a PDF to compress.")
 
         const level = optionA as "standard" | "high" | "extreme" || "standard"
 
-        setResult(await compressPDF(files[0], { level }))
+        setResult(await compressPDF(files[0], { level, signal }))
       } else if (tool.id === "edit-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to annotate.")
 
@@ -2241,7 +2256,7 @@ export default function ToolPage({
 
         const layout = optionB as "standard" | "clean" | "compact" || "standard"
 
-        setResult(await pdfToWord(files[0], { format, layout }))
+        setResult(await pdfToWord(files[0], { format, layout, signal }))
       } else if (tool.id === "pdf-to-ppt") {
         if (files.length < 1)
           throw new Error("Select a PDF to convert to PowerPoint.")
@@ -2255,7 +2270,9 @@ export default function ToolPage({
         const layout =
           extra as "auto" | "editable-text" | "high-fidelity" || "auto"
 
-        setResult(await pdfToPPT(files[0], { aspectRatio, theme, layout }))
+        setResult(
+          await pdfToPPT(files[0], { aspectRatio, theme, layout, signal }),
+        )
       } else if (tool.id === "pdf-to-excel") {
         if (files.length < 1)
           throw new Error("Select a PDF to extract into Excel.")
@@ -2264,7 +2281,7 @@ export default function ToolPage({
 
         const strategy = optionB as "auto" | "whitespace" | "lines" || "auto"
 
-        setResult(await pdfToExcel(files[0], { format, strategy }))
+        setResult(await pdfToExcel(files[0], { format, strategy, signal }))
       } else if (tool.id === "word-to-pdf") {
         if (files.length < 1 && !value.trim()) {
           throw new Error(
@@ -2302,6 +2319,7 @@ export default function ToolPage({
             slidesPerPage,
 
             title,
+            signal,
           }),
         )
       } else if (tool.id === "excel-to-pdf") {
@@ -2339,6 +2357,8 @@ export default function ToolPage({
             pageSelection,
 
             pageNumber: pageNum,
+
+            signal,
           }),
         )
       } else if (tool.id === "jpg-to-pdf") {
@@ -2461,6 +2481,8 @@ export default function ToolPage({
           invertColors: ocrInvert,
 
           cleanBackground: ocrClean,
+
+          signal,
         })
 
         setOcrResult(ocr)
@@ -2872,6 +2894,8 @@ export default function ToolPage({
 
           compressLevel,
 
+          signal,
+
           onProgress: (evt) => {
             const stepNum = evt.stage === "converting" ? 1 : 2
 
@@ -2910,6 +2934,8 @@ export default function ToolPage({
           compressLevel,
 
           stripMetadata: stripMeta,
+
+          signal,
 
           onProgress: (evt) => {
             const stepNum = evt.stage === "merging" ? 1 : 2
@@ -2956,6 +2982,8 @@ export default function ToolPage({
           pageRange: extra,
 
           compressLevel,
+
+          signal,
 
           onProgress: (evt) => {
             const total =
@@ -3092,6 +3120,19 @@ export default function ToolPage({
 
       notify(`${tool.name} completed. Your result is ready.`, "success")
     } catch (err) {
+      if (
+        signal.aborted ||
+        (err instanceof Error && err.message === JOB_CANCELLED)
+      ) {
+        setMergeProgress(null)
+
+        setStatus("idle")
+
+        notify(`${tool.name} cancelled.`, "info")
+
+        return
+      }
+
       setStatus("failed")
 
       setError(
@@ -3099,6 +3140,10 @@ export default function ToolPage({
           ? err.message
           : "Something went wrong. Please try again.",
       )
+    } finally {
+      jobControllerRef.current = null
+
+      setJobCancellable(false)
     }
   }
 
@@ -4257,7 +4302,8 @@ export default function ToolPage({
                     value={brushColor}
                     onChange={(e) => {
                       setBrushColor(e.target.value)
-                      if (activeShapeTool === "eraser") setActiveShapeTool("pen")
+                      if (activeShapeTool === "eraser")
+                        setActiveShapeTool("pen")
                     }}
                     style={{
                       position: "absolute",
@@ -4886,7 +4932,10 @@ export default function ToolPage({
                 <div>
                   <span style={{ color: "var(--muted)" }}>Active Filter: </span>
                   <strong
-                    style={{ color: "var(--info-ink)", textTransform: "uppercase" }}
+                    style={{
+                      color: "var(--info-ink)",
+                      textTransform: "uppercase",
+                    }}
                   >
                     {docCategory}
                   </strong>
@@ -5298,7 +5347,10 @@ export default function ToolPage({
                       <button
                         type="button"
                         className="text-button"
-                        style={{ marginTop: "12px", color: "var(--accent-text)" }}
+                        style={{
+                          marginTop: "12px",
+                          color: "var(--accent-text)",
+                        }}
                         onClick={() => {
                           setDocSearch("")
 
@@ -7198,7 +7250,13 @@ export default function ToolPage({
                       const isOver = fileDragOverIndex === i
                       return (
                         <div
-                          className={`file-row file-row-animated ${isSource ? "opacity-40" : ""} ${isOver ? "border-teal-500 shadow-md ring-2 ring-teal-500/20" : ""}`}
+                          className={`file-row file-row-animated ${
+                            isSource ? "opacity-40" : ""
+                          } ${
+                            isOver
+                              ? "border-teal-500 shadow-md ring-2 ring-teal-500/20"
+                              : ""
+                          }`}
                           key={`${file.name}-${file.size}-${file.lastModified || i}`}
                           draggable={files.length > 1}
                           onDragStart={(e) => {
@@ -7223,7 +7281,11 @@ export default function ToolPage({
                             }
                           }}
                           onDragLeave={(e) => {
-                            if (e.currentTarget && e.currentTarget.contains(e.relatedTarget as Node)) return
+                            if (
+                              e.currentTarget &&
+                              e.currentTarget.contains(e.relatedTarget as Node)
+                            )
+                              return
                             if (fileDragOverIndex === i) {
                               setFileDragOverIndex(null)
                             }
@@ -7260,94 +7322,98 @@ export default function ToolPage({
                             cursor: files.length > 1 ? "grab" : "default",
                           }}
                         >
-                        {files.length > 1 && (
-                          <span
-                            title="Grab and move to reorder file"
-                            style={{
-                              color: "var(--muted)",
+                          {files.length > 1 && (
+                            <span
+                              title="Grab and move to reorder file"
+                              style={{
+                                color: "var(--muted)",
 
-                              display: "inline-flex",
+                                display: "inline-flex",
 
-                              alignItems: "center",
+                                alignItems: "center",
 
-                              cursor: "grab",
+                                cursor: "grab",
+                              }}
+                            >
+                              <GripVertical
+                                size={15}
+                                style={{ pointerEvents: "none" }}
+                              />
+                            </span>
+                          )}
+                          <FileText size={18} />
+                          <span>
+                            {file.name}
+                            <small>{(file.size / 1024).toFixed(1)} KB</small>
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Preview ${file.name}`}
+                            title={`Preview ${file.name}`}
+                            onClick={() => setShowPreviewModal(true)}
+                          >
+                            <Eye size={15} />
+                          </button>
+                          {files.length > 1 && (
+                            <>
+                              <button
+                                aria-label={`Move ${file.name} up`}
+                                type="button"
+                                disabled={i === 0}
+                                onClick={() =>
+                                  setFiles((f) => {
+                                    const copy = [...f]
+                                    ;[copy[i - 1], copy[i]] = [
+                                      copy[i],
+
+                                      copy[i - 1],
+                                    ]
+
+                                    return copy
+                                  })
+                                }
+                              >
+                                <ArrowUp size={15} />
+                              </button>
+                              <button
+                                aria-label={`Move ${file.name} down`}
+                                type="button"
+                                disabled={i === files.length - 1}
+                                onClick={() =>
+                                  setFiles((f) => {
+                                    const copy = [...f]
+                                    ;[copy[i + 1], copy[i]] = [
+                                      copy[i],
+
+                                      copy[i + 1],
+                                    ]
+
+                                    return copy
+                                  })
+                                }
+                              >
+                                <ArrowDown size={15} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            aria-label={`Remove ${file.name}`}
+                            type="button"
+                            onClick={() => {
+                              setFiles((f) => f.filter((_, n) => n !== i))
+
+                              setResultState(undefined)
+
+                              setStatus("idle")
+
+                              notify("File removed.")
                             }}
                           >
-                            <GripVertical size={15} style={{ pointerEvents: "none" }} />
-                          </span>
-                        )}
-                        <FileText size={18} />
-                        <span>
-                          {file.name}
-                          <small>{(file.size / 1024).toFixed(1)} KB</small>
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Preview ${file.name}`}
-                          title={`Preview ${file.name}`}
-                          onClick={() => setShowPreviewModal(true)}
-                        >
-                          <Eye size={15} />
-                        </button>
-                        {files.length > 1 && (
-                          <>
-                            <button
-                              aria-label={`Move ${file.name} up`}
-                              type="button"
-                              disabled={i === 0}
-                              onClick={() =>
-                                setFiles((f) => {
-                                  const copy = [...f]
-                                  ;[copy[i - 1], copy[i]] = [
-                                    copy[i],
-
-                                    copy[i - 1],
-                                  ]
-
-                                  return copy
-                                })
-                              }
-                            >
-                              <ArrowUp size={15} />
-                            </button>
-                            <button
-                              aria-label={`Move ${file.name} down`}
-                              type="button"
-                              disabled={i === files.length - 1}
-                              onClick={() =>
-                                setFiles((f) => {
-                                  const copy = [...f]
-                                  ;[copy[i + 1], copy[i]] = [
-                                    copy[i],
-
-                                    copy[i + 1],
-                                  ]
-
-                                  return copy
-                                })
-                              }
-                            >
-                              <ArrowDown size={15} />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          aria-label={`Remove ${file.name}`}
-                          type="button"
-                          onClick={() => {
-                            setFiles((f) => f.filter((_, n) => n !== i))
-
-                            setResultState(undefined)
-
-                            setStatus("idle")
-
-                            notify("File removed.")
-                          }}
-                        >
-                          <X size={15} />
-                        </button>
-                      </div>
-                    )})}
+                            <X size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
@@ -7601,9 +7667,7 @@ export default function ToolPage({
                             alignItems: "center",
                           }}
                         >
-                          <span
-                            style={{ fontSize: "11px", color: "#475569" }}
-                          >
+                          <span style={{ fontSize: "11px", color: "#475569" }}>
                             Ink:
                           </span>
                           {["#0f172a", "#1d4ed8", "#4338ca"].map((c) => (
@@ -9123,6 +9187,17 @@ export default function ToolPage({
                                                                                     : `Run ${tool.name}`}
                 </button>
 
+                {status === "processing" && jobCancellable && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => jobControllerRef.current?.abort()}
+                    style={{ marginTop: "10px", width: "100%" }}
+                  >
+                    <X size={15} /> Cancel this job
+                  </button>
+                )}
+
                 {tool.id === "qr" && (
                   <button
                     type="button"
@@ -9753,10 +9828,17 @@ export default function ToolPage({
                           fontSize: "11px",
                         }}
                       >
-                        <span style={{ color: "var(--ok-ink)", fontWeight: 600 }}>
+                        <span
+                          style={{ color: "var(--ok-ink)", fontWeight: 600 }}
+                        >
                           +{aiCompareResult.stats.additions} Additions
                         </span>
-                        <span style={{ color: "var(--danger-ink)", fontWeight: 600 }}>
+                        <span
+                          style={{
+                            color: "var(--danger-ink)",
+                            fontWeight: 600,
+                          }}
+                        >
                           -{aiCompareResult.stats.deletions} Deletions
                         </span>
                         <span style={{ color: "var(--muted)" }}>
@@ -10618,7 +10700,10 @@ export default function ToolPage({
                       }}
                     >
                       <strong
-                        style={{ fontSize: "12px", color: "var(--accent-text)" }}
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--accent-text)",
+                        }}
                       >
                         Merged {result.pageCount ?? 0} Pages from{" "}
                         {result.breakdown.length} Documents
@@ -11092,7 +11177,10 @@ export default function ToolPage({
                       gap: "6px",
                     }}
                   >
-                    <Smartphone size={14} style={{ color: "var(--accent-text)" }} />{" "}
+                    <Smartphone
+                      size={14}
+                      style={{ color: "var(--accent-text)" }}
+                    />{" "}
                     Scanner Mobile Live Preview
                   </span>
                   <span
