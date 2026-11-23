@@ -73,7 +73,7 @@ export default function MergeLoadingModal({
             {isDone ? (
               <Check
                 size={28}
-                style={{ color: "#10b981", animation: "mlmPulse 0.5s ease" }}
+                style={{ color: "var(--ok-ink)", animation: "mlmPulse 0.5s ease" }}
               />
             ) : (
               <Layers size={28} />
@@ -125,7 +125,7 @@ export default function MergeLoadingModal({
         {/* Dynamic active file indicator */}
         <div className="mlm-file-status">
           {isDone ? (
-            <Check size={14} style={{ color: "#10b981" }} />
+            <Check size={14} style={{ color: "var(--ok-ink)" }} />
           ) : (
             <Loader2 size={14} className="spin" />
           )}

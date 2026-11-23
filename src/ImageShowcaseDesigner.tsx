@@ -479,6 +479,7 @@ export default function ImageShowcaseDesigner({
                 invites)
               </p>
               <input
+                aria-label="Image file to upload"
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
@@ -516,6 +517,7 @@ export default function ImageShowcaseDesigner({
               Title / Headline *
             </label>
             <input
+              aria-label="Title / Headline"
               type="text"
               placeholder="e.g. Summer Weekend Specials, Save The Date"
               value={title}
@@ -530,6 +532,7 @@ export default function ImageShowcaseDesigner({
               Description / Instructions (Optional)
             </label>
             <textarea
+              aria-label="Description / Instructions (Optional)"
               placeholder="e.g. Show this screen at the cashier for 15% off your order!"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -544,6 +547,7 @@ export default function ImageShowcaseDesigner({
               Header Badge Tag (Optional)
             </label>
             <input
+              aria-label="Header Badge Tag (Optional)"
               type="text"
               placeholder="e.g. SPECIAL OFFER, OFFICIAL MENU, VIP"
               value={badgeText}
@@ -629,6 +633,7 @@ export default function ImageShowcaseDesigner({
           {ctaEnabled && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pl-6 pt-1">
               <input
+                aria-label="Add a Link Button"
                 type="text"
                 placeholder="Button Label (e.g. Order Online)"
                 value={ctaLabel}
@@ -636,6 +641,7 @@ export default function ImageShowcaseDesigner({
                 className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)]"
               />
               <input
+                aria-label="Link button URL"
                 type="url"
                 placeholder="Website URL (https://...)"
                 value={ctaUrl}

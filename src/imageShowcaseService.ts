@@ -37,7 +37,7 @@ export interface ImageShowcaseData {
   createdAt: string
 }
 
-const STORAGE_PREFIX = "fluxkit-showcase-"
+const STORAGE_PREFIX = "masterfilepro-showcase-"
 
 const inMemoryCache = new Map<string, ImageShowcaseData>()
 
@@ -247,7 +247,7 @@ export async function saveShowcase(
   const origin =
     typeof window !== "undefined" && window.location.origin
       ? window.location.origin
-      : "https://fluxfix.de5.net"
+      : "https://masterfilepro.com"
 
   const url = `${origin}/#showcase?id=${data.id}`
 

@@ -1,7 +1,7 @@
-# FluxKit Test Infrastructure Documentation
+# Masterfilepro Test Infrastructure Documentation
 
 ## 1. Overview
-The FluxKit test infrastructure provides dependency-free, headless end-to-end (E2E) and integration verification for the entire web application. Built natively on Node.js's built-in test runner (`node:test`) and assertion library (`node:assert/strict`), the test suite validates all 37 tools, routing logic, client-side PDF/QR engines, workspace services, and user authentication without requiring external server dependencies or heavyweight headless browsers.
+The Masterfilepro test infrastructure provides dependency-free, headless end-to-end (E2E) and integration verification for the entire web application. Built natively on Node.js's built-in test runner (`node:test`) and assertion library (`node:assert/strict`), the test suite validates all 37 tools, routing logic, client-side PDF/QR engines, workspace services, and user authentication without requiring external server dependencies or heavyweight headless browsers.
 
 ---
 

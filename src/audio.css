@@ -1,5 +1,5 @@
 .audio-connection { display: flex; align-items: flex-start; gap: 12px; padding: 18px 21px; margin-bottom: 24px; }
-.audio-connection > svg { flex-shrink: 0; color: var(--accent); margin-top: 2px; }
+.audio-connection > svg { flex-shrink: 0; color: var(--accent-text); margin-top: 2px; }
 .audio-connection strong { font-size: 12px; font-weight: 550; }
 .audio-connection p { color: var(--muted); font-size: 11px; line-height: 1.8; margin-top: 5px; }
 .audio-connection .text-button { margin-left: auto; white-space: nowrap; }
@@ -32,7 +32,7 @@
 .audio-result-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .audio-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 6px; padding: 11px 14px; font-size: 11px; }
 .audio-secondary:hover { background: var(--surface-hover); }
-.audio-notice { color: var(--accent); font-size: 11px; line-height: 1.8; margin-top: 15px; }
+.audio-notice { color: var(--accent-text); font-size: 11px; line-height: 1.8; margin-top: 15px; }
 .audio-storage-note { display: flex; align-items: flex-start; gap: 8px; border-top: 1px solid var(--border); padding-top: 18px; margin-top: 20px; }
 .audio-storage-note svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
 .audio-storage-note p { font-size: 9px; line-height: 1.9; color: var(--muted); }

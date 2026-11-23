@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FLUXKIT OVERVIEW — STATE OF THE ART UTILITY SUITE STYLING
+   MASTERFILEPRO OVERVIEW — STATE OF THE ART UTILITY SUITE STYLING
    ========================================================================== */
 
 /* --- CSS Variables & Theme Foundations --- */
@@ -117,7 +117,7 @@
 :root[data-theme='light'] .hero-kicker-pill {
   background: rgba(255, 255, 255, 0.85);
   border-color: #e2e8f0;
-  color: #00A899;
+  color: var(--accent-text);
   box-shadow: 0 2px 8px rgba(0, 201, 183, 0.08);
 }
 
@@ -152,7 +152,7 @@
 }
 
 .hero-gradient-text {
-  background: linear-gradient(135deg, #06204D 0%, #00A899 50%, #00C9B7 100%);
+  background: linear-gradient(135deg, #06204D 0%, #0f766e 50%, #0d9488 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -209,7 +209,7 @@
 }
 
 .value-pill svg {
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
 }
 
@@ -399,7 +399,7 @@
   display: grid;
   place-items: center;
   background: rgba(129, 140, 248, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid rgba(129, 140, 248, 0.25);
   transition: transform 0.25s ease;
 }
@@ -507,12 +507,12 @@
 
 :root[data-theme='light'] .category-tab-btn.is-active {
   background: #00A899;
-  color: #ffffff;
+  color: var(--accent-ink);
 }
 
 :root[data-theme='dark'] .category-tab-btn.is-active {
   background: #00C9B7;
-  color: #ffffff;
+  color: var(--accent-ink);
 }
 
 .tab-count-badge {
@@ -524,7 +524,7 @@
 
 :root[data-theme='light'] .category-tab-btn:not(.is-active) .tab-count-badge {
   background: #f1f5f9;
-  color: #64748b;
+  color: var(--muted);
 }
 
 :root[data-theme='dark'] .category-tab-btn:not(.is-active) .tab-count-badge {
@@ -855,6 +855,28 @@
   font-weight: 650;
 }
 
+/* The bright members of each accent family are picked for dark surfaces; on
+   white they land at 2.0-2.9:1, so the light theme uses the deeper member. */
+:root[data-theme='light'] .card-pro-pill {
+  color: #0f766e !important;
+}
+
+:root[data-theme='light'] .card-free-pill {
+  color: #047857 !important;
+}
+
+:root[data-theme='light'] .card-badge-pill {
+  background: #f1f5f9;
+}
+
+:root[data-theme='light'] .card-bottom-price {
+  color: var(--accent-text);
+}
+
+:root[data-theme='light'] .card-fav-btn:hover {
+  color: #b45309;
+}
+
 .card-bottom-price {
   color: #00c9b7;
   font-weight: 700;
@@ -969,7 +991,7 @@
 }
 
 .overview-card:hover .card-bottom-action {
-  color: var(--accent);
+  color: var(--accent-text);
   transform: translateX(2px);
 }
 
@@ -1061,7 +1083,7 @@
   place-items: center;
   flex-shrink: 0;
   background: rgba(129, 140, 248, 0.1);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .trust-card strong {
@@ -1097,7 +1119,7 @@
   place-items: center;
   margin: 0 auto 16px;
   background: rgba(129, 140, 248, 0.1);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .overview-empty-search h3 {
@@ -1422,7 +1444,7 @@
 .file-badge-change-btn {
   font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -1619,7 +1641,7 @@
   justify-content: space-between;
   font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   padding-top: 10px;
   border-top: 1px dashed var(--border);
 }

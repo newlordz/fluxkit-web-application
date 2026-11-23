@@ -87,7 +87,7 @@
 .visitor-tab.active {
   background: rgba(0, 201, 183, 0.12);
   border-color: rgba(0, 201, 183, 0.35);
-  color: #00C9B7;
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -490,7 +490,7 @@
 .cr80-photo-placeholder span {
   font-size: 9px;
   font-weight: 700;
-  color: #94A3B8;
+  color: #475569;
 }
 
 .cr80-visitor-name {
@@ -530,7 +530,7 @@
 .cr80-meta-cell small {
   font-size: 8.5px;
   font-weight: 700;
-  color: #94A3B8;
+  color: #475569;
   letter-spacing: 0.04em;
 }
 
@@ -580,7 +580,7 @@
 .cr80-wifi-tag {
   font-size: 9px;
   font-weight: 700;
-  color: #008a7d;
+  color: #0f766e;
   background: rgba(0, 201, 183, 0.15);
   padding: 2px 6px;
   border-radius: 4px;
@@ -907,7 +907,7 @@
 
 .cutout-guide {
   font-size: 9px;
-  color: #94A3B8;
+  color: #475569;
   margin-bottom: 4px;
   font-style: italic;
 }

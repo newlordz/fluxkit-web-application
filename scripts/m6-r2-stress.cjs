@@ -368,7 +368,7 @@ test("M6-R2 Stress 2.2: Session storage null, empty, corrupted, and primitive sa
   const s = load("services")
 
   // Scenario A: sessionStorage holds string "null"
-  storage.set("fluxkit-session-docs", "null")
+  storage.set("masterfilepro-session-docs", "null")
   assert.doesNotThrow(() => {
     const list = s.getSessionDocuments()
     assert.ok(Array.isArray(list))
@@ -376,7 +376,7 @@ test("M6-R2 Stress 2.2: Session storage null, empty, corrupted, and primitive sa
   })
 
   // Scenario B: sessionStorage holds empty array "[]"
-  storage.set("fluxkit-session-docs", "[]")
+  storage.set("masterfilepro-session-docs", "[]")
   assert.doesNotThrow(() => {
     const list = s.getSessionDocuments()
     assert.ok(Array.isArray(list))
@@ -384,7 +384,7 @@ test("M6-R2 Stress 2.2: Session storage null, empty, corrupted, and primitive sa
   })
 
   // Scenario C: sessionStorage holds malformed JSON "{truncated-data..."
-  storage.set("fluxkit-session-docs", "{malformed JSON syntax!@#")
+  storage.set("masterfilepro-session-docs", "{malformed JSON syntax!@#")
   assert.doesNotThrow(() => {
     const list = s.getSessionDocuments()
     assert.ok(Array.isArray(list))
@@ -392,7 +392,7 @@ test("M6-R2 Stress 2.2: Session storage null, empty, corrupted, and primitive sa
   })
 
   // Scenario D: sessionStorage holds primitive number or boolean
-  storage.set("fluxkit-session-docs", "12345")
+  storage.set("masterfilepro-session-docs", "12345")
   assert.doesNotThrow(() => {
     const list = s.getSessionDocuments()
     assert.ok(Array.isArray(list))

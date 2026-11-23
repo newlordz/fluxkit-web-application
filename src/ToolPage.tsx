@@ -2249,8 +2249,8 @@ export default function ToolPage({
         const aspectRatio = optionA as "16:9" | "4:3" || "16:9"
 
         const theme =
-          optionB as "fluxkit-dark" | "minimal-white" | "corporate-blue" ||
-          "fluxkit-dark"
+          optionB as "masterfilepro-dark" | "minimal-white" | "corporate-blue" ||
+          "masterfilepro-dark"
 
         const layout =
           extra as "auto" | "editable-text" | "high-fidelity" || "auto"
@@ -3342,7 +3342,7 @@ export default function ToolPage({
                   letterSpacing: "0.04em",
                   textTransform: "uppercase",
                   background: "rgba(16,185,129,0.15)",
-                  color: "#10b981",
+                  color: "var(--ok-ink)",
                   border: "1px solid rgba(16,185,129,0.35)",
                   display: "inline-flex",
                   alignItems: "center",
@@ -3522,7 +3522,7 @@ export default function ToolPage({
 
                       background: "#ef444422",
 
-                      color: "#f87171",
+                      color: "var(--danger-ink)",
 
                       border: "1px solid #ef444455",
 
@@ -3620,6 +3620,7 @@ export default function ToolPage({
                   <div className="font-semibold text-sm text-indigo-200">
                     You (Host) · HD 1080p Virtual Feed
                   </div>
+                  {/* the simulated video tile stays dark in both themes */}
                   <small style={{ color: "#94a3b8", marginTop: 2 }}>
                     Masterfilepro Virtual Studio Feed · Simulated 30fps
                   </small>
@@ -3675,7 +3676,7 @@ export default function ToolPage({
 
                     border: "1px solid rgba(16, 185, 129, 0.5)",
 
-                    color: "#10b981",
+                    color: "var(--ok-ink)",
 
                     padding: "3px 8px",
 
@@ -3807,6 +3808,7 @@ export default function ToolPage({
               <label>
                 Meeting Room Key
                 <input
+                  aria-label="Room name"
                   value={meetingRoomKey}
                   onChange={(e) => setMeetingRoomKey(e.target.value)}
                   placeholder="Enter room name"
@@ -3917,11 +3919,16 @@ export default function ToolPage({
                         border: "1px solid var(--border)",
                       }}
                     >
-                      <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <div
+                        className="flex justify-between text-xs mb-1"
+                        style={{ color: "var(--muted)" }}
+                      >
                         <strong
                           style={{
                             color:
-                              msg.sender === "You" ? "#a5b4fc" : "var(--text)",
+                              msg.sender === "You"
+                                ? "var(--info-ink)"
+                                : "var(--text)",
                           }}
                         >
                           {msg.sender}
@@ -3945,6 +3952,7 @@ export default function ToolPage({
 
                 <div className="flex gap-2 mt-auto">
                   <input
+                    aria-label="Chat message"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -4281,6 +4289,7 @@ export default function ToolPage({
               >
                 <span>Size:</span>
                 <input
+                  aria-label="Size"
                   type="range"
                   min={1}
                   max={32}
@@ -4717,7 +4726,7 @@ export default function ToolPage({
                       boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
                     }}
                   >
-                    <Database size={22} style={{ color: "#10b981" }} />
+                    <Database size={22} style={{ color: "var(--ok-ink)" }} />
                   </div>
                   <div>
                     <h3
@@ -4750,7 +4759,7 @@ export default function ToolPage({
 
                           background: "rgba(16, 185, 129, 0.15)",
 
-                          color: "#10b981",
+                          color: "var(--ok-ink)",
 
                           fontWeight: 650,
 
@@ -4875,7 +4884,7 @@ export default function ToolPage({
                 <div>
                   <span style={{ color: "var(--muted)" }}>Active Filter: </span>
                   <strong
-                    style={{ color: "#a5b4fc", textTransform: "uppercase" }}
+                    style={{ color: "var(--info-ink)", textTransform: "uppercase" }}
                   >
                     {docCategory}
                   </strong>
@@ -4892,7 +4901,7 @@ export default function ToolPage({
 
                       gap: "6px",
 
-                      color: "#34d399",
+                      color: "var(--ok-ink)",
 
                       fontWeight: 600,
                     }}
@@ -4979,7 +4988,7 @@ export default function ToolPage({
 
                       fontSize: "12.5px",
 
-                      color: "#f87171",
+                      color: "var(--danger-ink)",
                     }}
                     onClick={() => setShowClearConfirm(true)}
                   >
@@ -5025,6 +5034,7 @@ export default function ToolPage({
               >
                 <Search size={16} color="var(--muted)" />
                 <input
+                  aria-label="Search documents"
                   value={docSearch}
                   onChange={(e) => setDocSearch(e.target.value)}
                   placeholder="Search documents by name or tool source..."
@@ -5161,7 +5171,7 @@ export default function ToolPage({
 
                           opacity: 0.6,
 
-                          color: "var(--accent)",
+                          color: "var(--accent-text)",
                         }}
                       />
                       <h3
@@ -5286,7 +5296,7 @@ export default function ToolPage({
                       <button
                         type="button"
                         className="text-button"
-                        style={{ marginTop: "12px", color: "var(--accent)" }}
+                        style={{ marginTop: "12px", color: "var(--accent-text)" }}
                         onClick={() => {
                           setDocSearch("")
 
@@ -5390,7 +5400,7 @@ export default function ToolPage({
 
                                       background: "rgba(245, 158, 11, 0.15)",
 
-                                      color: "#f59e0b",
+                                      color: "var(--warn-ink)",
 
                                       border:
                                         "1px solid rgba(245, 158, 11, 0.3)",
@@ -5427,7 +5437,7 @@ export default function ToolPage({
 
                                   background: "rgba(99, 102, 241, 0.15)",
 
-                                  color: "#a5b4fc",
+                                  color: "var(--info-ink)",
 
                                   textTransform: "uppercase",
 
@@ -5509,7 +5519,7 @@ export default function ToolPage({
 
                                     fontSize: "12.5px",
 
-                                    color: "#f87171",
+                                    color: "var(--danger-ink)",
                                   }}
                                   onClick={() => setDeleteConfirmDoc(doc)}
                                   title="Delete Document"
@@ -5606,7 +5616,7 @@ export default function ToolPage({
 
                                 background: "rgba(245, 158, 11, 0.15)",
 
-                                color: "#f59e0b",
+                                color: "var(--warn-ink)",
 
                                 border: "1px solid rgba(245, 158, 11, 0.3)",
 
@@ -5629,7 +5639,7 @@ export default function ToolPage({
 
                             background: "rgba(99, 102, 241, 0.2)",
 
-                            color: "#a5b4fc",
+                            color: "var(--info-ink)",
 
                             textTransform: "uppercase",
 
@@ -5717,7 +5727,7 @@ export default function ToolPage({
 
                               padding: "4px 6px",
 
-                              color: "#f87171",
+                              color: "var(--danger-ink)",
                             }}
                             onClick={() => setDeleteConfirmDoc(doc)}
                             title="Delete Document"
@@ -5909,7 +5919,7 @@ export default function ToolPage({
                     <button
                       type="button"
                       className="text-button"
-                      style={{ color: "#f87171" }}
+                      style={{ color: "var(--danger-ink)" }}
                       onClick={() => setDeleteConfirmDoc(previewDoc)}
                     >
                       <Trash2 size={14} /> Delete from Database
@@ -6017,7 +6027,7 @@ export default function ToolPage({
 
                         justifyContent: "center",
 
-                        color: "#ef4444",
+                        color: "var(--danger-ink)",
                       }}
                     >
                       <Trash2 size={20} />
@@ -6175,7 +6185,7 @@ export default function ToolPage({
 
                         justifyContent: "center",
 
-                        color: "#ef4444",
+                        color: "var(--danger-ink)",
                       }}
                     >
                       <Trash2 size={20} />
@@ -6442,7 +6452,7 @@ export default function ToolPage({
 
                       fontWeight: 500,
 
-                      color: "var(--primary, #3b82f6)",
+                      color: "var(--info-ink)",
 
                       margin: 0,
                     }}
@@ -6454,6 +6464,7 @@ export default function ToolPage({
                         : "Load text from file (.txt, .md, .pdf)"}
                     </span>
                     <input
+                      aria-label="Text file or PDF to load"
                       type="file"
                       accept=".txt,.text,.md,.csv,.pdf,application/pdf"
                       onChange={handleDocumentUpload}
@@ -6909,6 +6920,7 @@ export default function ToolPage({
                     <label>
                       Comparison Text (Version B)
                       <textarea
+                        aria-label="Ignore Whitespace Differences"
                         rows={5}
                         placeholder="Paste second version of text to compare…"
                         value={extra}
@@ -7563,6 +7575,8 @@ export default function ToolPage({
                         background: "#ffffff",
 
                         padding: "8px",
+
+                        color: "#334155",
                       }}
                     >
                       <div
@@ -7586,7 +7600,7 @@ export default function ToolPage({
                           }}
                         >
                           <span
-                            style={{ fontSize: "11px", color: "var(--muted)" }}
+                            style={{ fontSize: "11px", color: "#475569" }}
                           >
                             Ink:
                           </span>
@@ -7623,7 +7637,11 @@ export default function ToolPage({
                         <button
                           type="button"
                           className="text-button"
-                          style={{ fontSize: "11px", padding: "2px 8px" }}
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            color: "#475569",
+                          }}
                           onClick={() => {
                             const canvas = sigCanvasRef.current
 
@@ -7790,6 +7808,7 @@ export default function ToolPage({
                       <label style={{ marginTop: "12px" }}>
                         Document Password
                         <input
+                          aria-label="Password to unlock"
                           type="password"
                           value={extra}
                           onChange={(e) => setExtra(e.target.value)}
@@ -7820,6 +7839,7 @@ export default function ToolPage({
                         <label>
                           Confirm Password
                           <input
+                            aria-label="Repeat password"
                             type="password"
                             value={optionB}
                             onChange={(e) => setOptionB(e.target.value)}
@@ -7909,10 +7929,10 @@ export default function ToolPage({
                     <label>
                       Slide Theme
                       <select
-                        value={optionB || "fluxkit-dark"}
+                        value={optionB || "masterfilepro-dark"}
                         onChange={(e) => setOptionB(e.target.value)}
                       >
-                        <option value="fluxkit-dark">
+                        <option value="masterfilepro-dark">
                           Masterfilepro Dark (#0b0f19)
                         </option>
                         <option value="minimal-white">
@@ -8559,14 +8579,14 @@ export default function ToolPage({
                         style={{
                           alignSelf: "flex-start",
                           fontSize: "11.5px",
-                          color: "var(--accent)",
+                          color: "var(--accent-text)",
                         }}
                         onClick={() => {
                           setValue(
                             [
-                              `ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~`,
+                              `ISA*00*          *00*          *ZZ*MASTERFILEPRO  *ZZ*ACMEPARTNER    *260101*1200*U*00401*000000001*0*P*>~`,
 
-                              `GS*PO*FLUXKIT*ACME*20260101*1200*1*X*004010~`,
+                              `GS*PO*MASTERFILEPRO*ACME*20260101*1200*1*X*004010~`,
 
                               `ST*850*0001~`,
 
@@ -8678,7 +8698,7 @@ export default function ToolPage({
                         style={{
                           alignSelf: "flex-start",
                           fontSize: "11.5px",
-                          color: "var(--accent)",
+                          color: "var(--accent-text)",
                         }}
                         onClick={() => {
                           setValue(
@@ -8785,7 +8805,7 @@ export default function ToolPage({
                         style={{
                           alignSelf: "flex-start",
                           fontSize: "11.5px",
-                          color: "var(--accent)",
+                          color: "var(--accent-text)",
                         }}
                         onClick={() => {
                           setValue(
@@ -9126,7 +9146,7 @@ export default function ToolPage({
 
                       borderRadius: "8px",
 
-                      color: "var(--accent)",
+                      color: "var(--accent-text)",
 
                       background: "var(--surface-hover)",
                     }}
@@ -9211,7 +9231,7 @@ export default function ToolPage({
 
                           background: "rgba(16, 185, 129, 0.15)",
 
-                          color: "#10b981",
+                          color: "var(--ok-ink)",
 
                           fontWeight: 600,
                         }}
@@ -9539,7 +9559,7 @@ export default function ToolPage({
                             background:
                               "var(--badge-bg, rgba(59, 130, 246, 0.15))",
 
-                            color: "var(--primary, #3b82f6)",
+                            color: "var(--info-ink)",
 
                             fontWeight: 500,
                           }}
@@ -9590,7 +9610,7 @@ export default function ToolPage({
 
                           letterSpacing: "0.5px",
 
-                          color: "var(--primary, #3b82f6)",
+                          color: "var(--info-ink)",
                         }}
                       >
                         Direct Answer • Confidence:{" "}
@@ -9731,10 +9751,10 @@ export default function ToolPage({
                           fontSize: "11px",
                         }}
                       >
-                        <span style={{ color: "#10b981", fontWeight: 600 }}>
+                        <span style={{ color: "var(--ok-ink)", fontWeight: 600 }}>
                           +{aiCompareResult.stats.additions} Additions
                         </span>
-                        <span style={{ color: "#ef4444", fontWeight: 600 }}>
+                        <span style={{ color: "var(--danger-ink)", fontWeight: 600 }}>
                           -{aiCompareResult.stats.deletions} Deletions
                         </span>
                         <span style={{ color: "var(--muted)" }}>
@@ -10144,7 +10164,7 @@ export default function ToolPage({
 
                       border: "1px solid rgba(16, 185, 129, 0.3)",
 
-                      color: "#10b981",
+                      color: "var(--ok-ink)",
 
                       fontSize: "12px",
 
@@ -10162,6 +10182,7 @@ export default function ToolPage({
                   </span>
                 </div>
                 <textarea
+                  aria-label="Recognized text"
                   rows={10}
                   style={{
                     width: "100%",
@@ -10477,10 +10498,10 @@ export default function ToolPage({
                         marginBottom: "4px",
                       }}
                     >
-                      <strong style={{ color: "#10b981" }}>
+                      <strong style={{ color: "var(--ok-ink)" }}>
                         Pipeline Complete
                       </strong>
-                      <span style={{ fontWeight: 700, color: "#10b981" }}>
+                      <span style={{ fontWeight: 700, color: "var(--ok-ink)" }}>
                         Saved {pipelineMetrics.savedPercentage}%
                       </span>
                     </div>
@@ -10594,7 +10615,7 @@ export default function ToolPage({
                       }}
                     >
                       <strong
-                        style={{ fontSize: "12px", color: "var(--accent)" }}
+                        style={{ fontSize: "12px", color: "var(--accent-text)" }}
                       >
                         Merged {result.pageCount ?? 0} Pages from{" "}
                         {result.breakdown.length} Documents
@@ -10697,7 +10718,7 @@ export default function ToolPage({
 
                                 background: "rgba(99, 102, 241, 0.1)",
 
-                                color: "var(--primary)",
+                                color: "var(--info-ink)",
                               }}
                             >
                               {result.pageCount} Page
@@ -10822,7 +10843,7 @@ export default function ToolPage({
                         >
                           <FileText
                             size={16}
-                            style={{ color: "var(--accent)" }}
+                            style={{ color: "var(--accent-text)" }}
                           />
                           <span style={{ fontWeight: 600, fontSize: "13px" }}>
                             {tool.id === "edi-convert"
@@ -10960,7 +10981,7 @@ export default function ToolPage({
                     >
                       <FileArchive
                         size={16}
-                        style={{ color: "var(--accent)" }}
+                        style={{ color: "var(--accent-text)" }}
                       />
                       {isZipping
                         ? "Packaging ZIP..."
@@ -11068,7 +11089,7 @@ export default function ToolPage({
                       gap: "6px",
                     }}
                   >
-                    <Smartphone size={14} style={{ color: "var(--accent)" }} />{" "}
+                    <Smartphone size={14} style={{ color: "var(--accent-text)" }} />{" "}
                     Scanner Mobile Live Preview
                   </span>
                   <span

@@ -60,6 +60,7 @@ import {
   getCurrentUser,
   signOut,
   onAuthStateChanged,
+  reconcileSessionWithServer,
   type UserAccount,
 } from "./authService"
 
@@ -102,10 +103,6 @@ import ImageShowcaseViewer from "./ImageShowcaseViewer"
 import VisitorPassStudio from "./VisitorPassStudio"
 
 import { GoogleIcon } from "./GoogleAuth"
-
-import { syncCloudApisWithServer } from "./apiPoolService"
-
-import { syncGatewaysWithServer } from "./paymentIntegrationService"
 
 function stored(key: string, fallback: string) {
   try {
@@ -203,7 +200,7 @@ function ToolCard({
                     whiteSpace: "nowrap",
                     flexShrink: 0,
                     background: "rgba(16,185,129,0.18)",
-                    color: "#10b981",
+                    color: "var(--ok-ink)",
                     border: "1px solid rgba(16,185,129,0.35)",
                     display: "inline-flex",
                     alignItems: "center",
@@ -316,17 +313,21 @@ export default function App() {
   )
 
   const [page, setPage] = useState(() => {
+    const fromHash = location.hash.slice(1)
+
+    if (fromHash) return fromHash
+
     const initialUser = getCurrentUser()
 
     if (initialUser?.role === "admin" || initialUser?.role === "sub-admin") {
       return "admin"
     }
 
-    return location.hash.slice(1) || "overview"
+    return "overview"
   })
 
   const [theme, setTheme] = useState(() => {
-    const v2 = stored("fluxkit-theme-v2", "")
+    const v2 = stored("masterfilepro-theme-v2", "")
 
     if (v2) return v2
 
@@ -334,7 +335,7 @@ export default function App() {
   })
 
   const [collapsed, setCollapsed] = useState(
-    () => stored("fluxkit-sidebar", "false") === "true",
+    () => stored("masterfilepro-sidebar", "false") === "true",
   )
 
   const [mobile, setMobile] = useState(false)
@@ -349,9 +350,15 @@ export default function App() {
 
   const [notifications, setNotifications] = useState(false)
 
-  const [profile, setProfile] = useState(() => stored("fluxkit-name", "Jamie"))
+  const [profile, setProfile] = useState(() => stored("masterfilepro-name", "Jamie"))
 
   const [saved, setSaved] = useState(false)
+
+  // The avatar letter is visible text, so speech-input users need it in the
+  // accessible name as well (WCAG 2.5.3).
+  const avatarInitial = currentUser
+    ? (currentUser.name || "U").slice(0, 1).toUpperCase()
+    : `${profile.slice(0, 1).toUpperCase()}D`
 
   const [activeCurrency, setActiveCurrencyState] =
     useState<SupportedCurrency>(getActiveCurrency)
@@ -386,8 +393,28 @@ export default function App() {
     text: string
   } | null>(null)
 
+  // The cached account only renders the shell; the server decides who keeps it.
+  // Every boot-time read waits for that answer, otherwise an expired session
+  // gets one last privileged request and a signed-out visitor sees a flash of
+  // admin data.
   useEffect(() => {
-    initializeDatabaseSync().then((status) => {
+    let cancelled = false
+
+    void reconcileSessionWithServer().then(async (state) => {
+      if (cancelled) return
+
+      if (state === "signed-out") {
+        notify("Your session expired. Please sign in again.", "info")
+      }
+
+      // Both read the admin record, so they run together and share one request.
+      const [status] = await Promise.all([
+        initializeDatabaseSync(),
+        syncToolTiersFromDatabase().catch(() => null),
+      ])
+
+      if (cancelled) return
+
       setDbStatusState(status)
 
       const cfg = getAdminConfig()
@@ -397,14 +424,10 @@ export default function App() {
       setAdminEditName(cfg.name)
 
       setAdminEditEmail(cfg.email)
+
+      void syncLiveExchangeRate().catch(() => null)
+      void syncUsersWithServer().catch(() => null)
     })
-
-    syncCloudApisWithServer().catch(() => null)
-
-    syncGatewaysWithServer().catch(() => null)
-    syncLiveExchangeRate().catch(() => null)
-    syncToolTiersFromDatabase().catch(() => null)
-    syncUsersWithServer().catch(() => null)
 
     const handleFocus = () => {
       syncUsersWithServer().catch(() => null)
@@ -412,19 +435,20 @@ export default function App() {
     }
     window.addEventListener("focus", handleFocus)
     return () => {
+      cancelled = true
       window.removeEventListener("focus", handleFocus)
     }
-  }, [])
+  }, [notify])
 
   useEffect(() => {
     const handleCurr = (e: any) => {
       if (e.detail) setActiveCurrencyState(e.detail)
     }
 
-    window.addEventListener("fluxkit-currency-changed", handleCurr)
+    window.addEventListener("masterfilepro-currency-changed", handleCurr)
 
     return () =>
-      window.removeEventListener("fluxkit-currency-changed", handleCurr)
+      window.removeEventListener("masterfilepro-currency-changed", handleCurr)
   }, [])
 
   useEffect(() => {
@@ -472,13 +496,13 @@ export default function App() {
 
     document.title = `${brand.name} — High-Performance File & Document Toolkit`
 
-    persist("fluxkit-theme", theme)
+    persist("masterfilepro-theme", theme)
 
-    persist("fluxkit-theme-v2", theme)
+    persist("masterfilepro-theme-v2", theme)
   }, [theme])
 
   useEffect(() => {
-    persist("fluxkit-sidebar", String(collapsed))
+    persist("masterfilepro-sidebar", String(collapsed))
   }, [collapsed])
 
   useEffect(() => {
@@ -795,10 +819,10 @@ export default function App() {
           } else {
             const redirect =
               typeof sessionStorage !== "undefined"
-                ? sessionStorage.getItem("fluxkit-post-auth-redirect")
+                ? sessionStorage.getItem("masterfilepro-post-auth-redirect")
                 : null
             if (redirect) {
-              sessionStorage.removeItem("fluxkit-post-auth-redirect")
+              sessionStorage.removeItem("masterfilepro-post-auth-redirect")
               navigate(redirect)
             } else {
               navigate("overview")
@@ -958,11 +982,20 @@ export default function App() {
               <button
                 title={collapsed ? n.name : undefined}
                 key={n.id}
+                aria-label={
+                  n.id === "all"
+                    ? `${n.name} ${tools.length}`
+                    : n.id === "ai"
+                      ? `${n.name} NEW`
+                      : n.name
+                }
                 className={page === n.id ? "active" : ""}
                 onClick={() => navigate(n.id)}
               >
+                {/* The trailing space keeps textContent ("All tools 41") aligned with
+                    the aria-label; without it axe reports label-content-name-mismatch. */}
                 <n.icon size={18} />
-                <span>{n.name}</span>
+                <span>{n.name}</span>{" "}
                 {n.id === "all" && <small>{tools.length}</small>}
                 {n.id === "ai" && <span className="new-label">NEW</span>}
               </button>
@@ -975,6 +1008,7 @@ export default function App() {
             ].map((n) => (
               <button
                 key={n.id}
+                aria-label={n.name}
                 className={page === n.id ? "active" : ""}
                 onClick={() => navigate(n.id)}
               >
@@ -989,6 +1023,7 @@ export default function App() {
               .map((p) => (
                 <button
                   key={p.slug}
+                  aria-label={p.navTitle || p.title}
                   className={page === p.slug ? "active" : ""}
                   onClick={() => navigate(p.slug)}
                 >
@@ -1014,11 +1049,19 @@ export default function App() {
                 Explore the toolkit <ArrowUpRight size={15} />
               </button>
             </div>
-            <button className="bottom-nav" onClick={() => navigate("settings")}>
+            <button
+              className="bottom-nav"
+              aria-label="Settings"
+              onClick={() => navigate("settings")}
+            >
               <Settings size={18} />
               <span>Settings</span>
             </button>
-            <button className="bottom-nav" onClick={() => navigate("help")}>
+            <button
+              className="bottom-nav"
+              aria-label="Help & resources"
+              onClick={() => navigate("help")}
+            >
               <HelpCircle size={18} />
               <span>Help & resources</span>
               <ArrowUpRight size={14} />
@@ -1047,7 +1090,7 @@ export default function App() {
                 }
               >
                 {isAdmin ||
-                currentUser?.name?.includes("FluxKit") ||
+                currentUser?.name?.includes("Masterfilepro") ||
                 currentUser?.name?.includes("Masterfilepro")
                   ? "M"
                   : currentUser
@@ -1056,11 +1099,11 @@ export default function App() {
               </span>
               <span>
                 {isAdmin ||
-                currentUser?.name?.includes("FluxKit") ||
+                currentUser?.name?.includes("Masterfilepro") ||
                 currentUser?.name?.includes("Masterfilepro") ||
                 currentUser?.name?.includes("Masterfile Pro")
                   ? currentUser?.name &&
-                    !currentUser.name.includes("FluxKit") &&
+                    !currentUser.name.includes("Masterfilepro") &&
                     !currentUser.name.includes("Masterfilepro")
                     ? currentUser.name
                     : "Masterfile Pro Administrator"
@@ -1200,7 +1243,7 @@ export default function App() {
                   background:
                     activeCurrency === "USD" ? "var(--accent)" : "transparent",
 
-                  color: activeCurrency === "USD" ? "#fff" : "var(--muted)",
+                  color: activeCurrency === "USD" ? "var(--accent-ink)" : "var(--muted)",
 
                   cursor: "pointer",
 
@@ -1235,7 +1278,7 @@ export default function App() {
                   background:
                     activeCurrency === "GHS" ? "var(--accent)" : "transparent",
 
-                  color: activeCurrency === "GHS" ? "#fff" : "var(--muted)",
+                  color: activeCurrency === "GHS" ? "var(--accent-ink)" : "var(--muted)",
 
                   cursor: "pointer",
 
@@ -1280,22 +1323,16 @@ export default function App() {
             <div className="popover-wrap">
               <button
                 className="avatar top-avatar"
-                aria-label="Account menu"
+                aria-label={`Account menu, ${avatarInitial}`}
                 aria-expanded={menu}
                 onClick={() => setMenu(!menu)}
               >
-                {currentUser
-                  ? (currentUser.name || "U").slice(0, 1).toUpperCase()
-                  : `${profile.slice(0, 1).toUpperCase()}D`}
+                {avatarInitial}
               </button>
               {menu && (
                 <div className="popover popover-user">
                   <div className="popover-user-header">
-                    <span className="avatar">
-                      {currentUser
-                        ? (currentUser.name || "U").slice(0, 1).toUpperCase()
-                        : `${profile.slice(0, 1).toUpperCase()}D`}
-                    </span>
+                    <span className="avatar">{avatarInitial}</span>
                     <div className="popover-user-meta">
                       <strong>
                         {currentUser
@@ -1695,7 +1732,7 @@ export default function App() {
 
                             background: "rgba(16, 185, 129, 0.12)",
 
-                            color: "#10b981",
+                            color: "var(--ok-ink)",
 
                             border: "1px solid rgba(16, 185, 129, 0.3)",
                           }}
@@ -1816,6 +1853,7 @@ export default function App() {
                               Administrator Display Name
                             </label>
                             <input
+                              aria-label="Administrator Display Name"
                               required
                               type="text"
                               value={adminEditName}
@@ -1853,6 +1891,7 @@ export default function App() {
                               Administrator Email Address
                             </label>
                             <input
+                              aria-label="Administrator Email Address"
                               required
                               type="email"
                               value={adminEditEmail}
@@ -1901,6 +1940,7 @@ export default function App() {
                               New Password (optional)
                             </label>
                             <input
+                              aria-label="New Password (optional)"
                               type={adminShowPass ? "text" : "password"}
                               value={adminNewPassword}
                               onChange={(e) =>
@@ -1939,6 +1979,7 @@ export default function App() {
                               Confirm New Password
                             </label>
                             <input
+                              aria-label="Re type new password"
                               type={adminShowPass ? "text" : "password"}
                               value={adminConfirmPassword}
                               onChange={(e) =>
@@ -2120,7 +2161,7 @@ export default function App() {
 
                             background: "rgba(16, 185, 129, 0.15)",
 
-                            color: "#10b981",
+                            color: "var(--ok-ink)",
 
                             fontWeight: 600,
                           }}
@@ -2183,7 +2224,7 @@ export default function App() {
                   onSubmit={(e) => {
                     e.preventDefault()
 
-                    persist("fluxkit-name", profile.trim() || "Jamie")
+                    persist("masterfilepro-name", profile.trim() || "Jamie")
 
                     setSaved(true)
 
@@ -2194,6 +2235,7 @@ export default function App() {
                   <label>
                     First name
                     <input
+                      aria-label="Personal profile"
                       required
                       maxLength={40}
                       value={profile}

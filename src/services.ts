@@ -35,13 +35,13 @@ async function getPdfEngine(): Promise<any> {
 }
 
 async function getApiPool(): Promise<any> {
-  if (typeof window !== "undefined" && (window as any).__fluxkitApiPool) {
-    return (window as any).__fluxkitApiPool
+  if (typeof window !== "undefined" && (window as any).__masterfileproApiPool) {
+    return (window as any).__masterfileproApiPool
   }
   try {
     const mod = await import("./apiPoolService")
     if (typeof window !== "undefined" && mod) {
-      ;(window as any).__fluxkitApiPool = mod
+      ;(window as any).__masterfileproApiPool = mod
     }
     return mod
   } catch {
@@ -53,9 +53,9 @@ function getNextAvailableApi(category: string): any {
   try {
     if (
       typeof window !== "undefined" &&
-      (window as any).__fluxkitApiPool?.getNextAvailableApi
+      (window as any).__masterfileproApiPool?.getNextAvailableApi
     ) {
-      return (window as any).__fluxkitApiPool.getNextAvailableApi(category)
+      return (window as any).__masterfileproApiPool.getNextAvailableApi(category)
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pool =
@@ -70,9 +70,9 @@ function recordApiOutcome(apiId: string, outcome: any): void {
   try {
     if (
       typeof window !== "undefined" &&
-      (window as any).__fluxkitApiPool?.recordApiOutcome
+      (window as any).__masterfileproApiPool?.recordApiOutcome
     ) {
-      ;(window as any).__fluxkitApiPool.recordApiOutcome(apiId, outcome)
+      ;(window as any).__masterfileproApiPool.recordApiOutcome(apiId, outcome)
       return
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -145,7 +145,7 @@ export interface PDFToWordOptions {
 
 export interface PDFToPPTOptions {
   aspectRatio?: "16:9" | "4:3"
-  theme?: "fluxkit-dark" | "minimal-white" | "corporate-blue"
+  theme?: "masterfilepro-dark" | "minimal-white" | "corporate-blue"
   layout?: "auto" | "editable-text" | "high-fidelity"
 }
 
@@ -444,7 +444,7 @@ export async function textToPDF(
     write(line)
   }
   return {
-    name: "fluxkit-document.pdf",
+    name: "masterfilepro-document.pdf",
     blob: new Blob([new Uint8Array(await pdf.save())], {
       type: "application/pdf",
     }),
@@ -957,8 +957,8 @@ export async function compressPDF(
     pdf.setAuthor("")
     pdf.setSubject("")
     pdf.setKeywords([])
-    pdf.setProducer("FluxKit PDF Optimizer")
-    pdf.setCreator("FluxKit")
+    pdf.setProducer("Masterfilepro PDF Optimizer")
+    pdf.setCreator("Masterfilepro")
 
     // Find and recompress all embedded images directly in the PDF document
     const indirectObjects = pdf.context.enumerateIndirectObjects()
@@ -1355,6 +1355,12 @@ export async function signPDF(
   }
 }
 
+const PROTECTED_MARKER = "Masterfilepro-Protected:"
+
+// Documents secured before the FluxKit rename carry the old subject marker and
+// must still unlock with the password their owner set.
+const LEGACY_PROTECTED_MARKERS = ["FluxKit-Protected:"]
+
 export async function securePDF(
   file: File,
   options: PDFSecurityOptions,
@@ -1369,9 +1375,9 @@ export async function securePDF(
       throw new Error("Security password must be at least 4 characters.")
     }
     const hash = await computeSha256(options.password)
-    pdf.setSubject(`FluxKit-Protected:${hash}`)
+    pdf.setSubject(`${PROTECTED_MARKER}${hash}`)
     pdf.setKeywords([
-      "fluxkit:secured=true",
+      "masterfilepro:secured=true",
       `preventPrinting=${!!options.permissions?.preventPrinting}`,
       `preventCopying=${!!options.permissions?.preventCopying}`,
       `preventModification=${!!options.permissions?.preventModification}`,
@@ -1414,8 +1420,11 @@ export async function securePDF(
 
   if (options.action === "unlock") {
     const subject = pdf.getSubject() || ""
-    if (subject.startsWith("FluxKit-Protected:")) {
-      const expectedHash = subject.replace("FluxKit-Protected:", "").trim()
+    const marker = [PROTECTED_MARKER, ...LEGACY_PROTECTED_MARKERS].find((m) =>
+      subject.startsWith(m),
+    )
+    if (marker) {
+      const expectedHash = subject.slice(marker.length).trim()
       const enteredHash = await computeSha256(options.password || "")
       if (enteredHash !== expectedHash) {
         throw new Error("Incorrect password. Unable to unlock document.")
@@ -2713,7 +2722,7 @@ export async function pdfToPPT(
   const cx = is43 ? 9144000 : 12192000
   const cy = 6858000
 
-  const theme = options.theme || "fluxkit-dark"
+  const theme = options.theme || "masterfilepro-dark"
   let bgVal = "0B0F19"
   let textVal = "F8FAFC"
   let accentVal = "6366F1"
@@ -11309,11 +11318,11 @@ export function formatByteSize(bytes: number): string {
 // Client-Side Persistent Database (IndexedDB)
 // ----------------------------------------------------------------------------
 
-const DB_NAME = "FluxKitDocumentsDB"
+const DB_NAME = "MasterfileproDocumentsDB"
 const DB_VERSION = 1
 const DOC_STORE = "documents"
 const META_STORE = "metadata"
-const INITIALIZED_KEY = "fluxkit_db_initialized"
+const INITIALIZED_KEY = "masterfilepro_db_initialized"
 
 export interface DatabaseStats {
   count: number
@@ -11638,7 +11647,7 @@ if (typeof window !== "undefined" && isDatabaseSupported()) {
       } else {
         const hasInit =
           typeof localStorage !== "undefined" &&
-          localStorage.getItem("fluxkit_db_initialized") === "true"
+          localStorage.getItem("masterfilepro_db_initialized") === "true"
         if (!hasInit) {
           const samples = getSampleDocuments()
           inMemoryDocs = samples
@@ -11656,7 +11665,7 @@ export function getSessionDocuments(): SessionDocument[] {
   let list: SessionDocument[] = []
   if (typeof sessionStorage !== "undefined") {
     try {
-      const stored = sessionStorage.getItem("fluxkit-session-docs")
+      const stored = sessionStorage.getItem("masterfilepro-session-docs")
       if (stored) {
         const parsed = JSON.parse(stored)
         if (Array.isArray(parsed)) {
@@ -11677,7 +11686,7 @@ export function getSessionDocuments(): SessionDocument[] {
   const isBrowser = typeof window !== "undefined"
   const isInitialized =
     typeof localStorage !== "undefined" &&
-    localStorage.getItem("fluxkit_db_initialized") === "true"
+    localStorage.getItem("masterfilepro_db_initialized") === "true"
 
   if (!list.length) {
     // In Node test environment or uninitialized browser, populate starter samples
@@ -11707,7 +11716,7 @@ function saveToStorage(docs: SessionDocument[]) {
         return rest
       })
       sessionStorage.setItem(
-        "fluxkit-session-docs",
+        "masterfilepro-session-docs",
         JSON.stringify(serializable),
       )
     } catch {}
@@ -11758,7 +11767,7 @@ export function saveSessionDocument(
   }
   if (typeof localStorage !== "undefined") {
     try {
-      localStorage.setItem("fluxkit_db_initialized", "true")
+      localStorage.setItem("masterfilepro_db_initialized", "true")
     } catch {}
   }
 
@@ -11788,7 +11797,7 @@ export function deleteSessionDocument(idOrName: string): boolean {
 
     if (typeof localStorage !== "undefined") {
       try {
-        localStorage.setItem("fluxkit_db_initialized", "true")
+        localStorage.setItem("masterfilepro_db_initialized", "true")
       } catch {}
     }
 
@@ -11802,12 +11811,12 @@ export function clearSessionDocuments(): void {
   inMemoryDocs = []
   if (typeof sessionStorage !== "undefined") {
     try {
-      sessionStorage.removeItem("fluxkit-session-docs")
+      sessionStorage.removeItem("masterfilepro-session-docs")
     } catch {}
   }
   if (typeof localStorage !== "undefined") {
     try {
-      localStorage.removeItem("fluxkit_db_initialized")
+      localStorage.removeItem("masterfilepro_db_initialized")
     } catch {}
   }
 

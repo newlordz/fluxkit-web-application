@@ -92,7 +92,7 @@ function createDOMEnv(hash = "overview") {
   const moduleCache = new Map()
   const storage = new Map([
     [
-      "fluxkit-current-user",
+      "masterfilepro-current-user",
       JSON.stringify({
         id: "usr_admin_default",
         name: "Masterfilepro Administrator",
@@ -249,7 +249,7 @@ function createSampleWavFile() {
 
 async function runComprehensiveAudit() {
   console.log("=================================================================")
-  console.log("   MASTERFILEPRO / FLUXKIT 41 TOOLS COMPREHENSIVE AUDIT SUITE    ")
+  console.log("   MASTERFILEPRO / MASTERFILEPRO 41 TOOLS COMPREHENSIVE AUDIT SUITE    ")
   console.log("=================================================================\n")
 
   const { load: configLoader } = createDOMEnv("overview")

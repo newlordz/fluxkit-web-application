@@ -1439,7 +1439,7 @@ export default function DocumentPreviewModal({
     e.dataTransfer.effectAllowed = "move"
     try {
       e.dataTransfer.setData("text/plain", `${i}`)
-      e.dataTransfer.setData("application/x-fluxkit-file", `${i}`)
+      e.dataTransfer.setData("application/x-masterfilepro-file", `${i}`)
     } catch {
       // ignore
     }
@@ -1483,7 +1483,7 @@ export default function DocumentPreviewModal({
     let source = dragIndexRef.current
     if (source === null) {
       const text =
-        e.dataTransfer.getData("application/x-fluxkit-file") ||
+        e.dataTransfer.getData("application/x-masterfilepro-file") ||
         e.dataTransfer.getData("text/plain")
       if (text) {
         const parsed = parseInt(text, 10)
@@ -1534,7 +1534,7 @@ export default function DocumentPreviewModal({
     e.dataTransfer.effectAllowed = "move"
     try {
       e.dataTransfer.setData("text/plain", `${i}`)
-      e.dataTransfer.setData("application/x-fluxkit-page", `${i}`)
+      e.dataTransfer.setData("application/x-masterfilepro-page", `${i}`)
     } catch {
       // ignore
     }
@@ -1571,7 +1571,7 @@ export default function DocumentPreviewModal({
     let source = pageDragIndexRef.current
     if (source === null) {
       const text =
-        e.dataTransfer.getData("application/x-fluxkit-page") ||
+        e.dataTransfer.getData("application/x-masterfilepro-page") ||
         e.dataTransfer.getData("text/plain")
       if (text) {
         const parsed = parseInt(text, 10)

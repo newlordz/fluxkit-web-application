@@ -1,0 +1,71 @@
+# Masterfilepro
+
+> A browser-based file and document toolkit. 38 tools for PDF, image, spreadsheet, audio, QR and AI text work run locally in the page; files stay on your device unless a tool says it calls a cloud API.
+
+## Workspace
+
+- [Overview](https://masterfilepro.com/#overview): Dashboard with quick tools, recent activity and popular tools.
+- [All tools](https://masterfilepro.com/#all): The full searchable tool directory.
+- [My documents](https://masterfilepro.com/#documents): Files saved in this browser, stored in IndexedDB.
+- [Activity](https://masterfilepro.com/#activity): Local history of what you have run.
+- [Settings](https://masterfilepro.com/#settings): Theme, workspace preferences and account options.
+- [Help](https://masterfilepro.com/#help): Guides, shortcuts and support.
+
+## File tools
+
+- [Merge PDF](https://masterfilepro.com/#merge-pdf): Combine PDFs in the order you want with the easiest PDF merger available.
+- [Split PDF](https://masterfilepro.com/#split-pdf): Separate one page or a whole set for easy conversion into independent PDF files.
+- [PDF to Word](https://masterfilepro.com/#pdf-to-word): Easily convert your PDF files into easy to edit DOC and DOCX documents with high accuracy.
+- [PDF to PowerPoint](https://masterfilepro.com/#pdf-to-ppt): Turn your PDF files into easy to edit PPT and PPTX slideshows in seconds.
+- [PDF to Excel](https://masterfilepro.com/#pdf-to-excel): Pull data straight from PDFs into Excel spreadsheets in a few short seconds.
+- [Word to PDF](https://masterfilepro.com/#word-to-pdf): Make DOC and DOCX files easy to read by converting them to clean PDF documents.
+- [PowerPoint to PDF](https://masterfilepro.com/#ppt-to-pdf): Make PPT and PPTX slideshows easy to view and present by converting them to PDF.
+- [Excel to PDF](https://masterfilepro.com/#excel-to-pdf): Make EXCEL spreadsheets easy to read and print by converting them to PDF.
+- [Edit PDF](https://masterfilepro.com/#edit-pdf): Add text, images, shapes or freehand annotations to a PDF document.
+- [PDF to JPG](https://masterfilepro.com/#pdf-to-jpg): Convert each PDF page into a JPG or extract all images contained in a PDF.
+- [JPG to PDF](https://masterfilepro.com/#jpg-to-pdf): Convert JPG images to PDF in seconds. Easily adjust orientation and margins.
+- [Sign PDF](https://masterfilepro.com/#sign-pdf): Sign yourself or request electronic signatures from collaborators in seconds.
+- [Watermark](https://masterfilepro.com/#watermark): Stamp an image or text over your PDF in seconds. Choose typography and position.
+- [Rotate PDF](https://masterfilepro.com/#rotate-pdf): Rotate your PDFs the way you need them. You can even rotate multiple PDFs at once!
+- [Text to PDF](https://masterfilepro.com/#text-pdf): Turn your notes, thoughts, and words into a polished, downloadable PDF document.
+- [OCR Scanner](https://masterfilepro.com/#ocr): Make scanned text editable and searchable with smart character recognition.
+- [ZIP and Unzip](https://masterfilepro.com/#zip): Package multiple files or open archives safely directly in your browser.
+- [Convert Formats](https://masterfilepro.com/#convert): The right format for your next step across documents, images, and audio.
+- [CSV Studio & Converter](https://masterfilepro.com/#csv-convert): Convert CSV and TSV spreadsheets to Excel (XLSX), JSON, PDF, XML, SQL, or custom delimiters with live table preview.
+- [Batch File Converter (.bat)](https://masterfilepro.com/#batch-convert): Transpile Windows Batch (.bat / .cmd) scripts into PowerShell (.ps1), Bash (.sh), or Python (.py), or generate automation scripts.
+- [Convert & Compress](https://masterfilepro.com/#convert-compress): Change formats and save space in one smooth, unified workflow.
+- [Merge & Compress](https://masterfilepro.com/#merge-compress): Combine documents in a smaller, email-ready package.
+- [Split & Compress](https://masterfilepro.com/#split-compress): Extract selected pages and reduce file size in one action.
+
+## QR tools
+
+- [QR Code Studio](https://masterfilepro.com/#qr): Connect the physical and digital. Generate custom QR codes and mobile image showcases with designer landing pages.
+
+## Audio tools
+
+- [Audio to Text](https://masterfilepro.com/#audio-text): Turn voice recordings into editable, downloadable text with smart transcription.
+
+## AI text tools
+
+- [Summarize Document](https://masterfilepro.com/#summarize): Get to the point fast, extracting key takeaways without missing details.
+- [Rewrite Content](https://masterfilepro.com/#rewrite): A fresh perspective on your writing in professional, persuasive, or creative tones.
+- [Translate Text](https://masterfilepro.com/#translate): Break down barriers and find the right words in 50+ languages.
+- [Ask Document AI](https://masterfilepro.com/#ask): Chat with your files and find precise answers with citations.
+- [Extract Keywords](https://masterfilepro.com/#keywords): Discover core ideas, topics, and high-frequency concepts in documents.
+- [Analyze Sentiment](https://masterfilepro.com/#sentiment): Understand the emotional tone, polarity, and intent behind any text.
+- [Compare Texts](https://masterfilepro.com/#compare): Spot differences, additions, and edits between two versions instantly.
+- [Generate an Email](https://masterfilepro.com/#email): Draft compelling outreach, replies, and follow-ups with AI.
+
+## Workspace
+
+- [My Documents](https://masterfilepro.com/#documents): A clean, private home for your processed files and finished work.
+- [Activity Feed](https://masterfilepro.com/#activity): Real-time session tracker of every file processed and completed.
+- [Video Meetings](https://masterfilepro.com/#meetings): A quick, private space to connect, share files, and collaborate.
+- [Whiteboards](https://masterfilepro.com/#whiteboards): Give your next big visual plan room to breathe on an infinite canvas.
+- [Visitor Pass & Badges](https://masterfilepro.com/#visitor-pass): Generate branded visitor ID cards, adhesive badges, and digital mobile passes with scannable QR security.
+
+## Notes
+
+- Every tool is reachable at https://masterfilepro.com/#<tool-id>; the id in each link above is the route.
+- Processing is client-side by default. Cloud-backed tools (Adobe, iLovePDF, Google) are labelled in the tool card and require an API key configured by the workspace owner.
+- No content is paywalled; sign-up saves documents and activity to this browser only.

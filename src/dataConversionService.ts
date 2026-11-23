@@ -662,7 +662,7 @@ export function convertEDIToReadableReport(ediText: string): string {
     "================================================================================",
   )
 
-  lines.push(`FLUXKIT EDI BUSINESS DOCUMENT REPORT (${parsed.standard})`)
+  lines.push(`MASTERFILEPRO EDI BUSINESS DOCUMENT REPORT (${parsed.standard})`)
 
   lines.push(
     "================================================================================",
@@ -878,9 +878,9 @@ export function convertDataToEDIX12(
   // Synthesize sample EDI 850 PO template if empty
 
   return [
-    `ISA*00*          *00*          *ZZ*FLUXKITSENDER  *ZZ*RECEIVERPARTNER*260101*1200*U*00401*000000001*0*P*>~`,
+    `ISA*00*          *00*          *ZZ*MASTERFILEPRO  *ZZ*RECEIVERPARTNER*260101*1200*U*00401*000000001*0*P*>~`,
 
-    `GS*PO*FLUXKIT*RECEIVER*20260101*1200*1*X*004010~`,
+    `GS*PO*MASTERFILEPRO*RECEIVER*20260101*1200*1*X*004010~`,
 
     `ST*850*0001~`,
 

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FLUXKIT LIGHT THEME (White Canvas + Vibrant Multi-Accent Calibration)
+   MASTERFILEPRO LIGHT THEME (White Canvas + Vibrant Multi-Accent Calibration)
    Designed in accordance with /taste-skill, /design-taste-frontend, and
    WCAG AA accessibility guidelines.
    ========================================================================== */
@@ -20,6 +20,12 @@
   --text: #06204D;
   --text-secondary: #1e3a5f;
   --accent: #00A899;
+  --accent-ink: #06204D;
+  --accent-text: #0f766e;
+  --info-ink: #3730a3;
+  --ok-ink: #047857;
+  --danger-ink: #b91c1c;
+  --warn-ink: #92400e;
   --accent-hover: #06204D;
   --accent-rgb: 0, 168, 153;
   --sidebar: #ffffff;
@@ -108,7 +114,7 @@
 
 :root[data-theme='light'] .brand-mark {
   display: inline-block;
-  color: var(--accent);
+  color: var(--accent-text);
   background: linear-gradient(135deg, #06204D 0%, #00A896 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -170,6 +176,16 @@
   border-color: #f1f5f9;
 }
 
+/* #10b981 and #3b82f6 read fine on the dark canvas; on the tinted light pills
+   they land under 4.5:1, so the light theme uses the deeper member of each family. */
+:root[data-theme='light'] .status-select-btn.active-in {
+  color: var(--ok-ink);
+}
+
+:root[data-theme='light'] .status-select-btn.active-exp {
+  color: #1d4ed8;
+}
+
 :root[data-theme='light'] .workspace-switch {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -191,7 +207,7 @@
 }
 
 :root[data-theme='light'] .nav-label {
-  color: #94a3b8;
+  color: var(--muted);
   font-weight: 700;
   letter-spacing: 1.2px;
 }
@@ -221,14 +237,22 @@
 :root[data-theme='light'] nav button small {
   background: #ffffff;
   border-color: #e2e8f0;
-  color: #64748b;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .new-label {
   background: #f0fdfa;
   border: 1px solid #99f6e4;
-  color: #00C9B7;
+  color: var(--accent-text);
   font-weight: 700;
+}
+
+:root[data-theme='light'] .activity-empty button {
+  color: var(--muted);
+}
+
+:root[data-theme='light'] .activity-empty button:hover {
+  color: var(--text);
 }
 
 :root[data-theme='light'] .nav-divider {
@@ -252,7 +276,7 @@
 }
 
 :root[data-theme='light'] .flow-card p {
-  color: #64748b;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .flow-card button {
@@ -265,7 +289,7 @@
 }
 
 :root[data-theme='light'] .bottom-nav {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
 }
 
@@ -329,13 +353,13 @@
 }
 
 :root[data-theme='light'] .breadcrumb-slash {
-  color: #cbd5e1;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .top-search {
   background: #f8fafc;
   border: 1px solid var(--border);
-  color: #64748b;
+  color: var(--muted);
   border-radius: 8px;
   padding: 6px 12px;
   transition: all .15s ease;
@@ -350,7 +374,7 @@
 :root[data-theme='light'] kbd {
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -359,7 +383,7 @@
 }
 
 :root[data-theme='light'] .icon-button {
-  color: #64748b;
+  color: var(--muted);
   border: 1px solid transparent;
   transition: all .15s ease;
 }
@@ -396,16 +420,16 @@
 }
 
 :root[data-theme='light'] .welcome h1 span {
-  color: #64748b;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .welcome p {
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
 }
 
 :root[data-theme='light'] .eyebrow {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 700;
   font-size: 11px;
   letter-spacing: 1.5px;
@@ -478,7 +502,7 @@
 }
 
 :root[data-theme='light'] .hero-search input::placeholder {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .hero-search svg {
@@ -486,14 +510,22 @@
 }
 
 :root[data-theme='light'] .search-hints {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
 }
 
 :root[data-theme='light'] .search-hints > span {
-  color: #94a3b8;
+  color: var(--muted);
   font-weight: 700;
   letter-spacing: 1px;
+}
+
+:root[data-theme='light'] .search-hints button {
+  color: var(--muted);
+}
+
+:root[data-theme='light'] .search-hints button:hover {
+  color: var(--text);
 }
 
 /* Interactive Category Hint Pills */
@@ -725,7 +757,7 @@
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
   transition: all .15s ease;
@@ -806,7 +838,7 @@
 }
 
 :root[data-theme='light'] .tool-card p {
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
   margin-bottom: 18px;
@@ -815,12 +847,12 @@
 :root[data-theme='light'] .tool-card-bottom {
   border-top: 1px solid #f1f5f9;
   padding: 12px 0 0;
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
 }
 
 :root[data-theme='light'] .tool-card-category {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
   font-size: 12px;
 }
@@ -912,7 +944,7 @@
 
 :root[data-theme='light'] .badge-soon {
   background: #f8fafc;
-  color: #64748b;
+  color: var(--muted);
   border: 1px solid #e2e8f0;
   padding: 4px 10px;
   border-radius: 7px;
@@ -1017,7 +1049,8 @@
 
 :root[data-theme='light'] .primary {
   background: #00A899;
-  color: #ffffff;
+  /* White on this teal is 2.9:1; the brand navy clears AA at body sizes. */
+  color: var(--brand-navy);
   border-radius: 8px;
   font-weight: 600;
   padding: 12px 20px;
@@ -1060,13 +1093,13 @@
 }
 
 :root[data-theme='light'] .dropzone span {
-  color: #00A899;
+  color: var(--accent-text);
   font-size: 13.5px;
   font-weight: 600;
 }
 
 :root[data-theme='light'] .dropzone small {
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -1159,12 +1192,12 @@
 }
 
 :root[data-theme='light'] .text-button {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
 }
 
 :root[data-theme='light'] .text-button:hover {
-  color: #00A899;
+  color: var(--accent-text);
 }
 
 :root[data-theme='light'] .directory-search {
@@ -1193,7 +1226,7 @@
 }
 
 :root[data-theme='light'] footer {
-  color: #94a3b8;
+  color: var(--muted);
   border-top: 1px solid #f1f5f9;
   padding-top: 24px;
 }
@@ -1218,7 +1251,7 @@
 
 :root[data-theme='light'] .empty-icon {
   background: #f1f5f9;
-  color: #64748b;
+  color: var(--muted);
   border: 1px solid #e2e8f0;
 }
 
@@ -1271,7 +1304,7 @@
 }
 
 :root[data-theme='light'] .auth-story-footer {
-  color: #64748b;
+  color: var(--muted);
   border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
@@ -1305,7 +1338,7 @@
 }
 
 :root[data-theme='light'] .auth-float span {
-  color: #64748b;
+  color: var(--muted);
   font-weight: 700;
 }
 
@@ -1413,18 +1446,6 @@
   font-weight: 750 !important;
 }
 
-/* Global Light-Theme Safety Guards for High Contrast on Green/Teal */
-:root[data-theme='light'] [style*="color: #00E5D2"],
-:root[data-theme='light'] [style*="color:#00E5D2"],
-:root[data-theme='light'] [style*="color: rgb(0, 229, 210)"] {
-  color: #065f46 !important;
-}
-
-:root[data-theme='light'] a[style*="color: #00C9B7"],
-:root[data-theme='light'] a[style*="color:#00C9B7"] {
-  color: #065f46 !important;
-}
-
 /* ============================================================================
    ADMIN NAVIGATION TABS (LIGHT THEME CALIBRATION)
    ============================================================================ */
@@ -1450,7 +1471,7 @@
 }
 
 :root[data-theme='light'] .admin-nav-tab {
-  color: #64748b;
+  color: var(--muted);
 }
 
 :root[data-theme='light'] .admin-nav-tab:hover {
@@ -1614,7 +1635,7 @@
 }
 
 :root[data-theme='light'] .paywall-subtitle {
-  color: #64748b !important;
+  color: var(--muted) !important;
 }
 
 :root[data-theme='light'] .paywall-billing-pill-track {
@@ -1623,7 +1644,7 @@
 }
 
 :root[data-theme='light'] .paywall-billing-tab {
-  color: #64748b !important;
+  color: var(--muted) !important;
 }
 
 :root[data-theme='light'] .paywall-billing-tab.active {

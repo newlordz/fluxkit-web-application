@@ -1,8 +1,10 @@
 /**
- * FluxKit Payment & API Integration Service
+ * Masterfilepro Payment & API Integration Service
  * Manages payment gateways (Paystack, Stripe, Flutterwave, Custom API Webhooks)
  * and secure credential configuration for the Admin Console.
  */
+
+import { authHeaders } from "./sessionService"
 
 export type PaymentProvider = "paystack" | "stripe" | "flutterwave" | "custom"
 
@@ -36,9 +38,9 @@ export interface PaymentGatewayConfig {
   notes?: string
 }
 
-const STORAGE_KEY = "fluxkit-payment-gateways"
+const STORAGE_KEY = "masterfilepro-payment-gateways"
 
-const ACTIVE_GATEWAY_KEY = "fluxkit-active-gateway"
+const ACTIVE_GATEWAY_KEY = "masterfilepro-active-gateway"
 
 const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
   {
@@ -53,11 +55,11 @@ const DEFAULT_GATEWAYS: PaymentGatewayConfig[] = [
 
     mode: "test",
 
-    publicKey: "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e",
+    publicKey: "",
 
-    secretKey: "sk_test_96b831d571847ca59855678b5f671de0ad8a0632",
+    secretKey: "",
 
-    webhookSecret: "whsec_paystack_test_hook",
+    webhookSecret: "",
 
     currency: "GHS",
 
@@ -218,7 +220,7 @@ export function saveGateway(config: PaymentGatewayConfig): void {
     fetch("/api/db/gateways", {
       method: "POST",
 
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
 
       body: JSON.stringify({ gateways: updated }),
     }).catch(() => null)
@@ -229,7 +231,7 @@ export async function syncGatewaysWithServer(): Promise<PaymentGatewayConfig[]> 
   if (typeof fetch === "undefined") return getAllGateways()
 
   try {
-    const res = await fetch("/api/db/gateways")
+    const res = await fetch("/api/db/gateways", { headers: authHeaders() })
 
     if (res.ok) {
       const data = await res.json()
@@ -279,7 +281,7 @@ export function setActiveGateway(id: PaymentProvider): void {
 
 export async function testGatewayConnection(
   id: PaymentProvider,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean ; message: string }> {
   const gateway = getGateway(id)
 
   if (!gateway) {

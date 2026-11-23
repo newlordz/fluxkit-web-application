@@ -14,7 +14,7 @@ export interface CustomPage {
   updatedAt: string
 }
 
-const CUSTOM_PAGES_KEY = "fluxkit-custom-pages"
+const CUSTOM_PAGES_KEY = "masterfilepro-custom-pages"
 
 const RESERVED_SLUGS = new Set([
   "admin",
@@ -66,7 +66,7 @@ export function saveCustomPages(pages: CustomPage[]): void {
     try {
       storage.setItem(CUSTOM_PAGES_KEY, JSON.stringify(pages))
       window.dispatchEvent(
-        new CustomEvent("fluxkit-pages-changed", { detail: pages }),
+        new CustomEvent("masterfilepro-pages-changed", { detail: pages }),
       )
     } catch {}
   }

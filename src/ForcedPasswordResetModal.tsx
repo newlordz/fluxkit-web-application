@@ -146,7 +146,7 @@ export default function ForcedPasswordResetModal({
               borderRadius: "8px",
               background: "rgba(239, 68, 68, 0.15)",
               border: "1px solid rgba(239, 68, 68, 0.35)",
-              color: "#f87171",
+              color: "var(--danger-ink)",
               fontSize: "12.5px",
               marginBottom: "16px",
               display: "flex",
@@ -193,6 +193,7 @@ export default function ForcedPasswordResetModal({
             </div>
             <div style={{ position: "relative" }}>
               <input
+                aria-label="New password"
                 type={showPassword ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -276,6 +277,7 @@ export default function ForcedPasswordResetModal({
             </label>
             <div style={{ position: "relative" }}>
               <input
+                aria-label="Confirm new password"
                 type={showPassword ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -314,7 +316,7 @@ export default function ForcedPasswordResetModal({
               <div
                 style={{
                   fontSize: "11px",
-                  color: "#10b981",
+                  color: "var(--ok-ink)",
                   marginTop: "3px",
                   display: "flex",
                   alignItems: "center",

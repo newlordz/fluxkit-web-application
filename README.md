@@ -1,4 +1,4 @@
-# FluxKit
+# Masterfilepro
 
 A responsive React 19 + Vite 8 + TypeScript workspace, styled with Tailwind CSS v4 and local design tokens.
 
@@ -71,7 +71,7 @@ The frontend is complete as an integration surface, **not a connected transcript
 
 ### Capabilities (required before uploading)
 
-`GET {VITE_API_BASE_URL}/transcription/capabilities` must return the following shape, populated from the actual provider configuration. This is a contract example, **not a list of formats or languages currently supported by FluxKit**:
+`GET {VITE_API_BASE_URL}/transcription/capabilities` must return the following shape, populated from the actual provider configuration. This is a contract example, **not a list of formats or languages currently supported by Masterfilepro**:
 
 ```json
 {

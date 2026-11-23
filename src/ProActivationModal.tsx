@@ -90,10 +90,10 @@ export default function ProActivationModal({
       if (e.detail) setActiveCurrencyLocal(e.detail)
     }
 
-    window.addEventListener("fluxkit-currency-changed", onCurrChange)
+    window.addEventListener("masterfilepro-currency-changed", onCurrChange)
 
     return () =>
-      window.removeEventListener("fluxkit-currency-changed", onCurrChange)
+      window.removeEventListener("masterfilepro-currency-changed", onCurrChange)
   }, [])
 
   const isPending = currentUser?.proStatus === "pending"
@@ -127,7 +127,7 @@ export default function ProActivationModal({
 
   const handleRequireAuth = (actionName: string) => {
     if (typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem("fluxkit-post-auth-redirect", tool.id)
+      sessionStorage.setItem("masterfilepro-post-auth-redirect", tool.id)
     }
     setErrorMessage(
       `Please create an account or sign in first so your ${actionName} is permanently bound to your account.`,
@@ -326,7 +326,7 @@ export default function ProActivationModal({
   const handleRequestApproval = () => {
     if (!currentUser) {
       if (typeof sessionStorage !== "undefined") {
-        sessionStorage.setItem("fluxkit-post-auth-redirect", tool.id)
+        sessionStorage.setItem("masterfilepro-post-auth-redirect", tool.id)
       }
       if (onNavigate) onNavigate("sign-in")
 
@@ -441,7 +441,7 @@ export default function ProActivationModal({
 
             textAlign: "center",
 
-            color: "#10b981",
+            color: "var(--ok-ink)",
 
             marginBottom: "24px",
           }}
@@ -472,7 +472,7 @@ export default function ProActivationModal({
 
                 borderRadius: "8px",
 
-                color: "#ef4444",
+                color: "var(--danger-ink)",
 
                 fontSize: "12px",
 
@@ -568,7 +568,7 @@ export default function ProActivationModal({
                   onClick={() => {
                     if (typeof sessionStorage !== "undefined") {
                       sessionStorage.setItem(
-                        "fluxkit-post-auth-redirect",
+                        "masterfilepro-post-auth-redirect",
                         tool.id,
                       )
                     }
@@ -591,7 +591,7 @@ export default function ProActivationModal({
                   onClick={() => {
                     if (typeof sessionStorage !== "undefined") {
                       sessionStorage.setItem(
-                        "fluxkit-post-auth-redirect",
+                        "masterfilepro-post-auth-redirect",
                         tool.id,
                       )
                     }
@@ -633,7 +633,7 @@ export default function ProActivationModal({
               <span
                 style={{
                   fontSize: "11px",
-                  color: "#10b981",
+                  color: "var(--ok-ink)",
                   fontWeight: 600,
                 }}
               >

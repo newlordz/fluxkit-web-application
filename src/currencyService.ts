@@ -1,5 +1,5 @@
 /**
- * FluxKit Currency & Backend Conversion Service
+ * Masterfilepro Currency & Backend Conversion Service
  * Manages currency selection (USD vs GHS / Ghanaian Cedi),
  * communicates with the backend conversion API (/api/currency and /api/convert),
  * and provides reactive updates across the entire application.
@@ -41,9 +41,9 @@ export interface BackendConversionResult {
   source: "backend" | "offline-fallback"
 }
 
-const ACTIVE_CURRENCY_KEY = "fluxkit-active-currency"
+const ACTIVE_CURRENCY_KEY = "masterfilepro-active-currency"
 
-const EXCHANGE_RATE_KEY = "fluxkit-usd-ghs-rate"
+const EXCHANGE_RATE_KEY = "masterfilepro-usd-ghs-rate"
 
 const DEFAULT_USD_TO_GHS_RATE = 15.5 // 1 USD = 15.50 Ghanaian Cedis (GH₵)
 
@@ -124,7 +124,7 @@ export function setActiveCurrency(currency: SupportedCurrency): void {
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(
-      new CustomEvent("fluxkit-currency-changed", { detail: currency }),
+      new CustomEvent("masterfilepro-currency-changed", { detail: currency }),
     )
   }
 }
@@ -170,7 +170,7 @@ export function setExchangeRate(rate: number): void {
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(
-      new CustomEvent("fluxkit-rate-changed", { detail: clean }),
+      new CustomEvent("masterfilepro-rate-changed", { detail: clean }),
     )
   }
 }

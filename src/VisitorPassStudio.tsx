@@ -41,6 +41,7 @@ import {
 import { useNotify } from "./Notifications"
 import { getCurrentUser, type UserAccount } from "./authService"
 import { getToolPaymentStatus } from "./adminService"
+import { fetchVisitorLog, pushVisitorLogChanges } from "./visitorService"
 
 export type BadgeFormat = "cr80" | "clip" | "mobile" | "a4"
 
@@ -120,7 +121,7 @@ const TIER_CONFIG: Record<AccessTier, {
 
     border: "#00C9B7",
 
-    text: "#008a7d",
+    text: "#0f766e",
   },
 
   vip: {
@@ -263,7 +264,9 @@ export default function VisitorPassStudio({
   const [ndaAccepted, setNdaAccepted] = useState(true)
 
   // Pass initial arrival status: Checked-In vs Expected (pre-registration)
-  const [passStatus, setPassStatus] = useState<"Checked-In" | "Expected">("Checked-In")
+  const [passStatus, setPassStatus] = useState<"Checked-In" | "Expected">(
+    "Checked-In",
+  )
 
   // QR Code preview
 
@@ -332,177 +335,221 @@ export default function VisitorPassStudio({
     notify("Visitor form cleared.", "info")
   }
 
-  // Load visitor log from localStorage on mount
+  // Load the shared facility log on mount, then keep localStorage as the offline copy
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("fluxkit_visitor_log")
-
-      if (stored) {
-        setVisitorLog(JSON.parse(stored))
-      } else {
-        // Seed default high-quality corporate records
-
-        const initialLog: VisitorRecord[] = [
-          {
-            id: "VP-8492",
-
-            fullName: "Dr. Sarah Jenkins",
-
-            organization: "Apex Quantum Technologies",
-
-            email: "sarah.jenkins@apexquantum.io",
-
-            phone: "+1 (555) 382-9014",
-
-            vehiclePlate: "7XYZ942",
-
-            hostName: "David Vance",
-
-            hostDepartment: "Strategic Architecture",
-
-            location: "Executive Boardroom C",
-
-            tier: "vip",
-
-            visitDate: new Date().toISOString().split("T")[0],
-
-            timeIn: "08:30",
-
-            timeOut: "17:30",
-
-            wifiGranted: true,
-
-            wifiSsid: "Masterfile-Guest",
-
-            wifiPassword: "Welcome@2026!",
-
-            ndaAccepted: true,
-
-            photoUrl: "",
-
-            status: "Checked-In",
-
-            createdAt: new Date().toISOString(),
-
-            securityToken: "SEC-90218A",
-          },
-
-          {
-            id: "VP-7319",
-
-            fullName: "Marcus Holloway",
-
-            organization: "Cisco Infrastructure Team",
-
-            email: "mholloway@contractor.net",
-
-            phone: "+1 (555) 831-2940",
-
-            vehiclePlate: "9KLM831",
-
-            hostName: "Elena Rostova",
-
-            hostDepartment: "Network & Security",
-
-            location: "Server Room B · Basement 1",
-
-            tier: "contractor",
-
-            visitDate: new Date().toISOString().split("T")[0],
-
-            timeIn: "09:00",
-
-            timeOut: "16:00",
-
-            wifiGranted: true,
-
-            wifiSsid: "Masterfile-Guest",
-
-            wifiPassword: "Welcome@2026!",
-
-            ndaAccepted: true,
-
-            photoUrl: "",
-
-            status: "Checked-In",
-
-            createdAt: new Date().toISOString(),
-
-            securityToken: "SEC-48194B",
-          },
-
-          {
-            id: "VP-6204",
-
-            fullName: "Chloe Zhang",
-
-            organization: "Independent Candidate",
-
-            email: "chloe.zhang@alumni.mit.edu",
-
-            phone: "+1 (555) 193-4820",
-
-            vehiclePlate: "",
-
-            hostName: "Julian Barnes",
-
-            hostDepartment: "People Operations",
-
-            location: "Interview Room 4",
-
-            tier: "interview",
-
-            visitDate: new Date().toISOString().split("T")[0],
-
-            timeIn: "11:00",
-
-            timeOut: "13:00",
-
-            wifiGranted: false,
-
-            wifiSsid: "",
-
-            wifiPassword: "",
-
-            ndaAccepted: true,
-
-            photoUrl: "",
-
-            status: "Expected",
-
-            createdAt: new Date().toISOString(),
-
-            securityToken: "SEC-37189C",
-          },
-        ]
-
-        setVisitorLog(initialLog)
-
-        localStorage.setItem("fluxkit_visitor_log", JSON.stringify(initialLog))
+    let cancelled = false
+
+    void (async () => {
+      const remote = await fetchVisitorLog()
+
+      if (!cancelled && remote.ok) {
+        // An empty answer from the server is still authoritative: it means the
+        // cache is holding records that were deleted or issued on another device.
+        setVisitorLog(remote.records)
+
+        try {
+          localStorage.setItem(
+            "masterfilepro_visitor_log",
+            JSON.stringify(remote.records),
+          )
+        } catch {
+          /* ignore */
+        }
+
+        return
       }
-    } catch {
-      // Local storage fallback
+
+      try {
+        const stored = localStorage.getItem("masterfilepro_visitor_log")
+
+        if (stored) {
+          setVisitorLog(JSON.parse(stored))
+        } else {
+          // Seed default high-quality corporate records
+
+          const initialLog: VisitorRecord[] = [
+            {
+              id: "VP-8492",
+
+              fullName: "Dr. Sarah Jenkins",
+
+              organization: "Apex Quantum Technologies",
+
+              email: "sarah.jenkins@apexquantum.io",
+
+              phone: "+1 (555) 382-9014",
+
+              vehiclePlate: "7XYZ942",
+
+              hostName: "David Vance",
+
+              hostDepartment: "Strategic Architecture",
+
+              location: "Executive Boardroom C",
+
+              tier: "vip",
+
+              visitDate: new Date().toISOString().split("T")[0],
+
+              timeIn: "08:30",
+
+              timeOut: "17:30",
+
+              wifiGranted: true,
+
+              wifiSsid: "Masterfile-Guest",
+
+              wifiPassword: "Welcome@2026!",
+
+              ndaAccepted: true,
+
+              photoUrl: "",
+
+              status: "Checked-In",
+
+              createdAt: new Date().toISOString(),
+
+              securityToken: "SEC-90218A",
+            },
+
+            {
+              id: "VP-7319",
+
+              fullName: "Marcus Holloway",
+
+              organization: "Cisco Infrastructure Team",
+
+              email: "mholloway@contractor.net",
+
+              phone: "+1 (555) 831-2940",
+
+              vehiclePlate: "9KLM831",
+
+              hostName: "Elena Rostova",
+
+              hostDepartment: "Network & Security",
+
+              location: "Server Room B · Basement 1",
+
+              tier: "contractor",
+
+              visitDate: new Date().toISOString().split("T")[0],
+
+              timeIn: "09:00",
+
+              timeOut: "16:00",
+
+              wifiGranted: true,
+
+              wifiSsid: "Masterfile-Guest",
+
+              wifiPassword: "Welcome@2026!",
+
+              ndaAccepted: true,
+
+              photoUrl: "",
+
+              status: "Checked-In",
+
+              createdAt: new Date().toISOString(),
+
+              securityToken: "SEC-48194B",
+            },
+
+            {
+              id: "VP-6204",
+
+              fullName: "Chloe Zhang",
+
+              organization: "Independent Candidate",
+
+              email: "chloe.zhang@alumni.mit.edu",
+
+              phone: "+1 (555) 193-4820",
+
+              vehiclePlate: "",
+
+              hostName: "Julian Barnes",
+
+              hostDepartment: "People Operations",
+
+              location: "Interview Room 4",
+
+              tier: "interview",
+
+              visitDate: new Date().toISOString().split("T")[0],
+
+              timeIn: "11:00",
+
+              timeOut: "13:00",
+
+              wifiGranted: false,
+
+              wifiSsid: "",
+
+              wifiPassword: "",
+
+              ndaAccepted: true,
+
+              photoUrl: "",
+
+              status: "Expected",
+
+              createdAt: new Date().toISOString(),
+
+              securityToken: "SEC-37189C",
+            },
+          ]
+
+          setVisitorLog(initialLog)
+
+          localStorage.setItem(
+            "masterfilepro_visitor_log",
+            JSON.stringify(initialLog),
+          )
+        }
+      } catch {
+        // Local storage fallback
+      }
+    })()
+
+    return () => {
+      cancelled = true
     }
   }, [])
+
+  const writeLocalLog = (records: VisitorRecord[]) => {
+    try {
+      localStorage.setItem("masterfilepro_visitor_log", JSON.stringify(records))
+    } catch {
+      /* ignore */
+    }
+  }
 
   // Save log whenever updated
 
   const persistLog = (updated: VisitorRecord[]) => {
+    const previous = visitorLog
+
     setVisitorLog(updated)
 
-    try {
-      localStorage.setItem("fluxkit_visitor_log", JSON.stringify(updated))
-    } catch {
-      /* ignore */
-    }
+    writeLocalLog(updated)
+
+    void pushVisitorLogChanges(previous, updated).then((synced) => {
+      if (!synced)
+        notify(
+          "Visitor log saved locally. It will sync when you are signed in.",
+          "info",
+        )
+    })
   }
 
   // Generate authentic QR code payload whenever details change
 
   useEffect(() => {
     const payload = JSON.stringify({
-      protocol: "FLUXPASS/1.0",
+      protocol: "MASTERFILEPASS/1.0",
 
       id: passId,
 
@@ -628,7 +675,10 @@ export default function VisitorPassStudio({
     if (finalStatus === "Checked-In") {
       notify(`Pass ${passId} issued and checked in on premises!`, "success")
     } else {
-      notify(`Pass ${passId} pre-registered as Expected for ${visitDate}.`, "success")
+      notify(
+        `Pass ${passId} pre-registered as Expected for ${visitDate}.`,
+        "success",
+      )
     }
 
     if (onComplete) onComplete()
@@ -668,13 +718,22 @@ export default function VisitorPassStudio({
     const now = new Date()
     const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
     const updated = visitorLog.map((r) =>
-      r.id === id ? { ...r, status: "Checked-In" as const, actualCheckIn: currentTime } : r,
+      r.id === id
+        ? { ...r, status: "Checked-In" as const, actualCheckIn: currentTime }
+        : r,
     )
     persistLog(updated)
     const target = visitorLog.find((r) => r.id === id)
-    notify(`Visitor ${target?.fullName || id} checked in at ${currentTime}.`, "success")
+    notify(
+      `Visitor ${target?.fullName || id} checked in at ${currentTime}.`,
+      "success",
+    )
     if (verifiedRecord?.id === id) {
-      setVerifiedRecord((prev) => (prev ? { ...prev, status: "Checked-In", actualCheckIn: currentTime } : null))
+      setVerifiedRecord((prev) =>
+        prev
+          ? { ...prev, status: "Checked-In", actualCheckIn: currentTime }
+          : null,
+      )
     }
   }
 
@@ -683,13 +742,22 @@ export default function VisitorPassStudio({
     const now = new Date()
     const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
     const updated = visitorLog.map((r) =>
-      r.id === id ? { ...r, status: "Checked-Out" as const, actualCheckOut: currentTime } : r,
+      r.id === id
+        ? { ...r, status: "Checked-Out" as const, actualCheckOut: currentTime }
+        : r,
     )
     persistLog(updated)
     const target = visitorLog.find((r) => r.id === id)
-    notify(`Visitor ${target?.fullName || id} checked out at ${currentTime}.`, "info")
+    notify(
+      `Visitor ${target?.fullName || id} checked out at ${currentTime}.`,
+      "info",
+    )
     if (verifiedRecord?.id === id) {
-      setVerifiedRecord((prev) => (prev ? { ...prev, status: "Checked-Out", actualCheckOut: currentTime } : null))
+      setVerifiedRecord((prev) =>
+        prev
+          ? { ...prev, status: "Checked-Out", actualCheckOut: currentTime }
+          : null,
+      )
     }
   }
 
@@ -708,12 +776,18 @@ export default function VisitorPassStudio({
 
   // Clear checked-out records
   const handleClearCheckedOut = () => {
-    const checkedOutCount = visitorLog.filter((r) => r.status === "Checked-Out").length
+    const checkedOutCount = visitorLog.filter(
+      (r) => r.status === "Checked-Out",
+    ).length
     if (checkedOutCount === 0) {
       notify("No checked-out records to clear.", "info")
       return
     }
-    if (window.confirm(`Remove ${checkedOutCount} completed/checked-out records from the log?`)) {
+    if (
+      window.confirm(
+        `Remove ${checkedOutCount} completed/checked-out records from the log?`,
+      )
+    ) {
       const updated = visitorLog.filter((r) => r.status !== "Checked-Out")
       persistLog(updated)
       notify(`Cleared ${checkedOutCount} completed records.`, "success")
@@ -1212,12 +1286,17 @@ export default function VisitorPassStudio({
     const match = visitorLog.find(
       (r) =>
         r.id.toUpperCase() === cleanIdUpper ||
-        (cleanTokenUpper && r.securityToken.toUpperCase() === cleanTokenUpper) ||
+        (cleanTokenUpper &&
+          r.securityToken.toUpperCase() === cleanTokenUpper) ||
         r.securityToken.toUpperCase() === cleanRawUpper ||
         (cleanNameUpper && r.fullName.toUpperCase().includes(cleanNameUpper)) ||
         r.fullName.toUpperCase().includes(cleanRawUpper) ||
         (r.vehiclePlate && r.vehiclePlate.toUpperCase() === cleanRawUpper) ||
-        (r.phone && r.phone.replace(/\D/g, "").length >= 4 && r.phone.replace(/\D/g, "").includes(cleanRawUpper.replace(/\D/g, ""))) ||
+        (r.phone &&
+          r.phone.replace(/\D/g, "").length >= 4 &&
+          r.phone
+            .replace(/\D/g, "")
+            .includes(cleanRawUpper.replace(/\D/g, ""))) ||
         (r.email && r.email.toUpperCase() === cleanRawUpper),
     )
 
@@ -1266,7 +1345,7 @@ export default function VisitorPassStudio({
           <div
             className="eyebrow"
             style={{
-              color: "#00C9B7",
+              color: "var(--accent-text)",
               marginTop: "4px",
               display: "flex",
               alignItems: "center",
@@ -1289,7 +1368,7 @@ export default function VisitorPassStudio({
                       letterSpacing: "0.04em",
                       textTransform: "uppercase",
                       background: "rgba(16,185,129,0.15)",
-                      color: "#10b981",
+                      color: "var(--ok-ink)",
                       border: "1px solid rgba(16,185,129,0.35)",
                       display: "inline-flex",
                       alignItems: "center",
@@ -1297,7 +1376,8 @@ export default function VisitorPassStudio({
                     }}
                   >
                     <CheckCircle2 size={12} /> Paid · Active{" "}
-                    {payStatus.plan ? payStatus.plan.toUpperCase() : "MONTHLY"} Pass
+                    {payStatus.plan ? payStatus.plan.toUpperCase() : "MONTHLY"}{" "}
+                    Pass
                     {payStatus.expiresAt && (
                       <span
                         style={{
@@ -1577,6 +1657,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-fullname">Full Name *</label>
                   <input
+                    aria-label="Full Name"
                     id="vis-fullname"
                     type="text"
                     value={fullName}
@@ -1587,6 +1668,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-org">Organization / Affiliation *</label>
                   <input
+                    aria-label="Organization / Affiliation"
                     id="vis-org"
                     type="text"
                     value={organization}
@@ -1600,6 +1682,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-email">Email Address</label>
                   <input
+                    aria-label="Email Address"
                     id="vis-email"
                     type="email"
                     value={email}
@@ -1610,6 +1693,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-phone">Mobile Phone</label>
                   <input
+                    aria-label="Mobile Phone"
                     id="vis-phone"
                     type="text"
                     value={phone}
@@ -1625,6 +1709,7 @@ export default function VisitorPassStudio({
                     Vehicle License Plate (Parking)
                   </label>
                   <input
+                    aria-label="Vehicle License Plate (Parking)"
                     id="vis-plate"
                     type="text"
                     value={vehiclePlate}
@@ -1636,6 +1721,7 @@ export default function VisitorPassStudio({
                   <label>Visitor Photo</label>
                   <div className="photo-upload-actions">
                     <input
+                      aria-label="Visitor Photo"
                       ref={fileInputRef}
                       type="file"
                       accept="image/*"
@@ -1672,6 +1758,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-host">Host Employee *</label>
                   <input
+                    aria-label="Host Employee"
                     id="vis-host"
                     type="text"
                     value={hostName}
@@ -1682,6 +1769,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-dept">Host Department</label>
                   <input
+                    aria-label="Host Department"
                     id="vis-dept"
                     type="text"
                     value={hostDepartment}
@@ -1695,6 +1783,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-loc">Facility Destination / Room</label>
                   <input
+                    aria-label="Facility Destination / Room"
                     id="vis-loc"
                     type="text"
                     value={meetingRoom}
@@ -1705,6 +1794,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-tier">Access Classification Tier</label>
                   <select
+                    aria-label="Access Classification Tier"
                     id="vis-tier"
                     value={accessTier}
                     onChange={(e) =>
@@ -1730,6 +1820,7 @@ export default function VisitorPassStudio({
                 <div className="form-group">
                   <label htmlFor="vis-date">Visit Date</label>
                   <input
+                    aria-label="Visit Date"
                     id="vis-date"
                     type="date"
                     value={visitDate}
@@ -1789,6 +1880,7 @@ export default function VisitorPassStudio({
               <div className="checkbox-row">
                 <label className="custom-checkbox">
                   <input
+                    aria-label="Wi Fi & Facility Protocols"
                     type="checkbox"
                     checked={wifiGranted}
                     onChange={(e) => setWifiGranted(e.target.checked)}
@@ -1802,6 +1894,7 @@ export default function VisitorPassStudio({
                   <div className="form-group">
                     <label>Guest Wi-Fi SSID</label>
                     <input
+                      aria-label="Guest Wi Fi SSID"
                       type="text"
                       value={wifiSsid}
                       onChange={(e) => setWifiSsid(e.target.value)}
@@ -1810,6 +1903,7 @@ export default function VisitorPassStudio({
                   <div className="form-group">
                     <label>Guest Password</label>
                     <input
+                      aria-label="Guest Password"
                       type="text"
                       value={wifiPassword}
                       onChange={(e) => setWifiPassword(e.target.value)}
@@ -1840,6 +1934,7 @@ export default function VisitorPassStudio({
               <div className="form-group">
                 <label htmlFor="vis-company">Organization Header</label>
                 <input
+                  aria-label="Organization Header"
                   id="vis-company"
                   type="text"
                   value={companyName}
@@ -1848,8 +1943,11 @@ export default function VisitorPassStudio({
               </div>
 
               <div className="form-group">
-                <label htmlFor="vis-facility-loc">Facility Campus / Building Location</label>
+                <label htmlFor="vis-facility-loc">
+                  Facility Campus / Building Location
+                </label>
                 <input
+                  aria-label="Facility Campus / Building Location"
                   id="vis-facility-loc"
                   type="text"
                   value={facilityLocation}
@@ -1922,9 +2020,9 @@ export default function VisitorPassStudio({
                     <div
                       className="cr80-tier-pill"
                       style={{
-                        background: tierMeta.bg,
+                        background: "#ffffff",
 
-                        color: tierMeta.color,
+                        color: tierMeta.text,
 
                         borderColor: tierMeta.border,
                       }}
@@ -1976,7 +2074,8 @@ export default function VisitorPassStudio({
                       </div>
                       <div className="cr80-meta-cell">
                         <small>EXPIRES</small>
-                        <strong style={{ color: "#ef4444" }}>{timeOut}</strong>
+                        {/* printed pass paper stays white in dark mode, so this ink is fixed */}
+                        <strong style={{ color: "#b91c1c" }}>{timeOut}</strong>
                       </div>
                     </div>
 
@@ -2112,7 +2211,7 @@ export default function VisitorPassStudio({
                       <div className="mobile-details-list">
                         <div className="mobile-detail-item">
                           <span>ACCESS TIER</span>
-                          <strong style={{ color: tierMeta.color }}>
+                          <strong style={{ color: tierMeta.text }}>
                             {tierMeta.label}
                           </strong>
                         </div>
@@ -2167,7 +2266,7 @@ export default function VisitorPassStudio({
                     </div>
 
                     <div className="mobile-pass-footer">
-                      <span>SECURE FLUXPASS PROTOCOL · #{passId}</span>
+                      <span>SECURE MASTERFILEPASS PROTOCOL · #{passId}</span>
                     </div>
                   </div>
                 </div>
@@ -2293,6 +2392,7 @@ export default function VisitorPassStudio({
             <div className="log-search-bar">
               <Search size={16} />
               <input
+                aria-label="Search visitor log"
                 type="text"
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
@@ -2307,6 +2407,7 @@ export default function VisitorPassStudio({
 
             <div className="log-filters">
               <select
+                aria-label="Filter by status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -2351,7 +2452,7 @@ export default function VisitorPassStudio({
             </div>
             <div className="log-stat-card" style={{ borderColor: "#10b981" }}>
               <small>CURRENTLY ON PREMISES</small>
-              <strong style={{ color: "#10b981" }}>
+              <strong style={{ color: "var(--ok-ink)" }}>
                 {visitorLog.filter((v) => v.status === "Checked-In").length}
               </strong>
             </div>
@@ -2453,7 +2554,9 @@ export default function VisitorPassStudio({
                             {record.status}
                           </span>
                         </td>
-                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <td
+                          style={{ textAlign: "right", whiteSpace: "nowrap" }}
+                        >
                           <div
                             style={{
                               display: "inline-flex",
@@ -2540,6 +2643,7 @@ export default function VisitorPassStudio({
             <form onSubmit={handleVerifyPass} className="verifier-form">
               <div className="verifier-input-group">
                 <input
+                  aria-label="Pass ID or token to verify"
                   type="text"
                   value={verifyInput}
                   onChange={(e) => setVerifyInput(e.target.value)}

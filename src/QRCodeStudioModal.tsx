@@ -812,6 +812,7 @@ export default function QRCodeStudioModal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby="qr-studio-title"
       style={{
         position: "fixed",
         inset: 0,
@@ -874,6 +875,7 @@ export default function QRCodeStudioModal({
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <h2
+                  id="qr-studio-title"
                   style={{
                     fontSize: "19px",
                     fontWeight: 800,
@@ -891,7 +893,7 @@ export default function QRCodeStudioModal({
                     padding: "2px 8px",
                     borderRadius: "9999px",
                     background: "rgba(99, 102, 241, 0.15)",
-                    color: "#a5b4fc",
+                    color: "var(--info-ink)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                   }}
@@ -1040,7 +1042,7 @@ export default function QRCodeStudioModal({
                     padding: "3px 9px",
                     borderRadius: "9999px",
                     background: "rgba(16, 185, 129, 0.12)",
-                    color: "#10b981",
+                    color: "var(--ok-ink)",
                     fontWeight: 600,
                   }}
                 >
@@ -1333,6 +1335,7 @@ export default function QRCodeStudioModal({
                       }}
                     >
                       <input
+                        aria-label="Foreground color"
                         type="color"
                         value={fgColor}
                         onChange={(e) => setFgColor(e.target.value)}
@@ -1347,6 +1350,7 @@ export default function QRCodeStudioModal({
                         }}
                       />
                       <input
+                        aria-label="Foreground color hex value"
                         type="text"
                         value={fgColor}
                         onChange={(e) => setFgColor(e.target.value)}
@@ -1427,6 +1431,7 @@ export default function QRCodeStudioModal({
                         }}
                       >
                         <input
+                          aria-label="End gradient color"
                           type="color"
                           value={fgColor2}
                           onChange={(e) => setFgColor2(e.target.value)}
@@ -1441,6 +1446,7 @@ export default function QRCodeStudioModal({
                           }}
                         />
                         <input
+                          aria-label="End gradient color hex value"
                           type="text"
                           value={fgColor2}
                           onChange={(e) => setFgColor2(e.target.value)}
@@ -1537,6 +1543,7 @@ export default function QRCodeStudioModal({
                           }}
                         >
                           <input
+                            aria-label="Background color"
                             type="color"
                             value={bgColor}
                             onChange={(e) => setBgColor(e.target.value)}
@@ -1551,6 +1558,7 @@ export default function QRCodeStudioModal({
                             }}
                           />
                           <input
+                            aria-label="Background color hex value"
                             type="text"
                             value={bgColor}
                             onChange={(e) => setBgColor(e.target.value)}
@@ -1642,6 +1650,7 @@ export default function QRCodeStudioModal({
                         }}
                       >
                         <input
+                          aria-label="Corner eyes accent color"
                           type="color"
                           value={eyeColor}
                           onChange={(e) => setEyeColor(e.target.value)}
@@ -1656,6 +1665,7 @@ export default function QRCodeStudioModal({
                           }}
                         />
                         <input
+                          aria-label="Corner eyes accent color hex value"
                           type="text"
                           value={eyeColor}
                           onChange={(e) => setEyeColor(e.target.value)}
@@ -1930,6 +1940,7 @@ export default function QRCodeStudioModal({
                       }}
                     >
                       <input
+                        aria-label="Add a logo to the QR code"
                         type="checkbox"
                         checked={hasLogo}
                         onChange={(e) => setHasLogo(e.target.checked)}
@@ -1986,6 +1997,7 @@ export default function QRCodeStudioModal({
                           }}
                         >
                           <input
+                            aria-label="Logo image file"
                             ref={fileInputRef}
                             type="file"
                             accept="image/*"
@@ -2015,7 +2027,7 @@ export default function QRCodeStudioModal({
                               className="text-button"
                               onClick={() => setUploadedLogo(null)}
                               style={{
-                                color: "#f87171",
+                                color: "var(--danger-ink)",
                                 fontSize: "12.5px",
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -2032,7 +2044,7 @@ export default function QRCodeStudioModal({
                             style={{
                               marginTop: "8px",
                               fontSize: "12px",
-                              color: "#10b981",
+                              color: "var(--ok-ink)",
                               display: "flex",
                               alignItems: "center",
                               gap: "6px",
@@ -2173,6 +2185,7 @@ export default function QRCodeStudioModal({
                             Logo Size ({logoSizePercent}%)
                           </label>
                           <input
+                            aria-label="Logo Size (%)"
                             type="range"
                             min={15}
                             max={28}
@@ -2297,6 +2310,7 @@ export default function QRCodeStudioModal({
                           Banner Text (Call to action)
                         </label>
                         <input
+                          aria-label="Banner Text (Call to action)"
                           type="text"
                           maxLength={32}
                           value={frameText}
@@ -2333,6 +2347,7 @@ export default function QRCodeStudioModal({
                             Banner Background Color
                           </label>
                           <input
+                            aria-label="Banner Background Color"
                             type="color"
                             value={frameColor}
                             onChange={(e) => setFrameColor(e.target.value)}
@@ -2360,6 +2375,7 @@ export default function QRCodeStudioModal({
                             Text Color
                           </label>
                           <input
+                            aria-label="Text Color"
                             type="color"
                             value={frameTextColor}
                             onChange={(e) => setFrameTextColor(e.target.value)}
@@ -2471,6 +2487,7 @@ export default function QRCodeStudioModal({
                       </label>
                     </div>
                     <input
+                      aria-label="Margin (quiet zone) in modules"
                       type="range"
                       min={1}
                       max={5}

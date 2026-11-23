@@ -68,7 +68,7 @@ export default function Overview({
   const [mounted, setMounted] = useState(false)
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem("fluxkit-favorites")
+      const saved = localStorage.getItem("masterfilepro-favorites")
       if (saved) return JSON.parse(saved)
     } catch {
       // Storage unavailable in private context
@@ -85,9 +85,9 @@ export default function Overview({
     const handleCurr = (e: any) => {
       if (e.detail) setActiveCurrency(e.detail)
     }
-    window.addEventListener("fluxkit-currency-changed", handleCurr)
+    window.addEventListener("masterfilepro-currency-changed", handleCurr)
     return () =>
-      window.removeEventListener("fluxkit-currency-changed", handleCurr)
+      window.removeEventListener("masterfilepro-currency-changed", handleCurr)
   }, [])
 
   // Track client mount for safe portal rendering
@@ -122,7 +122,7 @@ export default function Overview({
         ? prev.filter((id) => id !== toolId)
         : [...prev, toolId]
       try {
-        localStorage.setItem("fluxkit-favorites", JSON.stringify(updated))
+        localStorage.setItem("masterfilepro-favorites", JSON.stringify(updated))
       } catch {
         /* ignore */
       }

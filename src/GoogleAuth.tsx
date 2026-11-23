@@ -442,6 +442,7 @@ export default function GoogleAuth({
               </label>
               <div style={{ display: "flex", gap: "8px" }}>
                 <input
+                  aria-label="Google email address"
                   type="email"
                   placeholder="yourname@gmail.com"
                   value={customEmail}
@@ -520,6 +521,7 @@ export default function GoogleAuth({
                     popups.
                   </p>
                   <input
+                    aria-label="Google OAuth Web Client ID"
                     type="text"
                     placeholder="e.g. 123...apps.googleusercontent.com"
                     value={inputVal}

@@ -627,7 +627,7 @@ export default function AudioToText({
                   letterSpacing: "0.04em",
                   textTransform: "uppercase",
                   background: "rgba(16,185,129,0.15)",
-                  color: "#10b981",
+                  color: "var(--ok-ink)",
                   border: "1px solid rgba(16,185,129,0.35)",
                   display: "inline-flex",
                   alignItems: "center",
@@ -775,8 +775,11 @@ export default function AudioToText({
 
           {/* Live Microphone Recording Banner */}
           <div
-            className="p-3 mb-3 border rounded-lg bg-gray-50 flex items-center justify-between"
-            style={{ border: "1px solid var(--border, #e2e8f0)" }}
+            className="p-3 mb-3 border rounded-lg flex items-center justify-between"
+            style={{
+              border: "1px solid var(--border, #e2e8f0)",
+              background: "var(--surface)",
+            }}
           >
             <div className="flex items-center gap-2">
               <span

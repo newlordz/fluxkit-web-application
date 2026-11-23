@@ -146,7 +146,7 @@ export default function AdminPanel({
         >
           <ShieldAlert size={48} />
         </div>
-        <div className="eyebrow" style={{ color: "#ef4444" }}>
+        <div className="eyebrow" style={{ color: "var(--danger-ink)" }}>
           403 · RESTRICTED ACCESS
         </div>
         <h1 style={{ fontSize: "24px", margin: "10px 0" }}>Access Denied</h1>
@@ -265,9 +265,9 @@ export default function AdminPanel({
         setCloudApis(getCloudApis())
       }
     }
-    window.addEventListener("fluxkit-apis-updated", handleApisUpdated)
+    window.addEventListener("masterfilepro-apis-updated", handleApisUpdated)
     return () => {
-      window.removeEventListener("fluxkit-apis-updated", handleApisUpdated)
+      window.removeEventListener("masterfilepro-apis-updated", handleApisUpdated)
     }
   }, [])
 
@@ -378,11 +378,11 @@ export default function AdminPanel({
         setRateInput(e.detail.toString())
       }
     }
-    window.addEventListener("fluxkit-currency-changed", handleCurrChange)
-    window.addEventListener("fluxkit-rate-changed", handleRateChange)
+    window.addEventListener("masterfilepro-currency-changed", handleCurrChange)
+    window.addEventListener("masterfilepro-rate-changed", handleRateChange)
     return () => {
-      window.removeEventListener("fluxkit-currency-changed", handleCurrChange)
-      window.removeEventListener("fluxkit-rate-changed", handleRateChange)
+      window.removeEventListener("masterfilepro-currency-changed", handleCurrChange)
+      window.removeEventListener("masterfilepro-rate-changed", handleRateChange)
     }
   }, [])
 
@@ -415,13 +415,13 @@ export default function AdminPanel({
     }
 
     window.addEventListener("focus", handleFocus)
-    window.addEventListener("fluxkit-users-synced", handleSynced)
+    window.addEventListener("masterfilepro-users-synced", handleSynced)
 
     return () => {
       mounted = false
       clearInterval(interval)
       window.removeEventListener("focus", handleFocus)
-      window.removeEventListener("fluxkit-users-synced", handleSynced)
+      window.removeEventListener("masterfilepro-users-synced", handleSynced)
     }
   }, [])
 
@@ -486,12 +486,10 @@ export default function AdminPanel({
 
   // User Management: search, filters & edit user state
   const [userSearchQuery, setUserSearchQuery] = useState("")
-  const [userRoleFilter, setUserRoleFilter] = useState<
-    "all" | "admin" | "sub-admin" | "user"
-  >("all")
-  const [userStatusFilter, setUserStatusFilter] = useState<
-    "all" | "pro" | "pending" | "standard"
-  >("all")
+  const [userRoleFilter, setUserRoleFilter] =
+    useState<"all" | "admin" | "sub-admin" | "user">("all")
+  const [userStatusFilter, setUserStatusFilter] =
+    useState<"all" | "pro" | "pending" | "standard">("all")
   const [showEditUserModal, setShowEditUserModal] = useState(false)
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null)
   const [editUserForm, setEditUserForm] = useState<{
@@ -798,7 +796,9 @@ export default function AdminPanel({
 
   const handleApprovePro = (userId: string) => {
     if (isRootAdmin(userId)) {
-      showToast("Root administrator Pro status is permanently active and locked.")
+      showToast(
+        "Root administrator Pro status is permanently active and locked.",
+      )
       return
     }
     approveProSubscription(userId)
@@ -808,7 +808,9 @@ export default function AdminPanel({
 
   const handleRevokePro = (userId: string) => {
     if (isRootAdmin(userId)) {
-      showToast("Root administrator Pro status is permanently active and locked.")
+      showToast(
+        "Root administrator Pro status is permanently active and locked.",
+      )
       return
     }
     revokeProSubscription(userId)
@@ -821,7 +823,9 @@ export default function AdminPanel({
     currentRole: "admin" | "sub-admin" | "user",
   ) => {
     if (isRootAdmin(userId)) {
-      showToast("Root administrator account is locked and cannot have its role changed.")
+      showToast(
+        "Root administrator account is locked and cannot have its role changed.",
+      )
       return
     }
     const nextRole = currentRole === "admin" ? "user" : "admin"
@@ -839,7 +843,9 @@ export default function AdminPanel({
     newRole: "admin" | "sub-admin" | "user",
   ) => {
     if (isRootAdmin(userId)) {
-      showToast("Root administrator account is locked and cannot have its role changed.")
+      showToast(
+        "Root administrator account is locked and cannot have its role changed.",
+      )
       return
     }
     try {
@@ -890,7 +896,9 @@ export default function AdminPanel({
   const handleOpenChangePassword = (u: UserAccount) => {
     // Only allow root admin password modification via modal
     if (!isRootAdmin(u)) {
-      showToast("Administrators cannot view or set users' passwords directly. Use 'Require Reset' instead.")
+      showToast(
+        "Administrators cannot view or set users' passwords directly. Use 'Require Reset' instead.",
+      )
       return
     }
     setPasswordTargetUser(u)
@@ -901,11 +909,11 @@ export default function AdminPanel({
     setShowPasswordModal(true)
   }
 
-  const handleSavePassword = (e?: React.FormEvent) => {
+  const handleSavePassword = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!passwordTargetUser) return
-    if (!newPasswordValue || newPasswordValue.length < 8) {
-      setPasswordError("Password must be at least 8 characters long.")
+    if (!newPasswordValue || newPasswordValue.length < 12) {
+      setPasswordError("Password must be at least 12 characters long.")
       return
     }
     if (newPasswordValue !== confirmPasswordValue) {
@@ -913,7 +921,7 @@ export default function AdminPanel({
       return
     }
     try {
-      changeUserPassword(passwordTargetUser.id, newPasswordValue)
+      await changeUserPassword(passwordTargetUser.id, newPasswordValue)
       setShowPasswordModal(false)
       const targetName = passwordTargetUser.name
       setPasswordTargetUser(null)
@@ -923,11 +931,11 @@ export default function AdminPanel({
     }
   }
 
-  const handleCreateUser = (e?: React.FormEvent) => {
+  const handleCreateUser = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     setNewUserError("")
     try {
-      const created = createUserByAdmin(newUserForm)
+      const created = await createUserByAdmin(newUserForm)
       setUserList(getAllUsers())
       setShowAddUserModal(false)
       setNewUserForm({
@@ -970,8 +978,8 @@ export default function AdminPanel({
         if (newAccounts.some((n) => n.email.toLowerCase() === email)) continue
 
         const name = parts[1] || email.split("@")[0].replace(/[._-]/g, " ")
-        const role = (parts[2] as any) || importRole
-        const tier = (parts[3] as any) || importTier
+        const role = parts[2] as any || importRole
+        const tier = parts[3] as any || importTier
         const proStatus = tier === "pro" ? "active" : "none"
 
         newAccounts.push({
@@ -1024,7 +1032,7 @@ export default function AdminPanel({
     setShowEditUserModal(true)
   }
 
-  const handleSaveEditUser = (e?: React.FormEvent) => {
+  const handleSaveEditUser = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!editingUser) return
     setEditUserError("")
@@ -1032,7 +1040,7 @@ export default function AdminPanel({
     const isRoot = isRootAdmin(editingUser)
 
     try {
-      const updated = updateUserDetails(editingUser.id, {
+      const updated = await updateUserDetails(editingUser.id, {
         ...editUserForm,
         ...(isRoot
           ? {
@@ -1090,7 +1098,9 @@ export default function AdminPanel({
           `"${u.createdAt || ""}"`,
           `"${u.lastLoginAt || ""}"`,
         ])
-        content = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+        content = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+          "\n",
+        )
         mimeType = "text/csv;charset=utf-8;"
         filename = `masterfilepro-users-${new Date().toISOString().slice(0, 10)}.csv`
       }
@@ -1609,8 +1619,8 @@ export default function AdminPanel({
                     margin: "2px 0 0 0",
                   }}
                 >
-                  Exchange rates and pricing calculations are automatically handled
-                  via the backend conversion engine.
+                  Exchange rates and pricing calculations are automatically
+                  handled via the backend conversion engine.
                 </p>
               </div>
             </div>
@@ -1641,6 +1651,7 @@ export default function AdminPanel({
                 <span style={{ color: "var(--muted)" }}>1 USD =</span>
                 <div style={{ position: "relative", display: "inline-block" }}>
                   <input
+                    aria-label="Backend rate (cedis per US dollar)"
                     type="number"
                     step="0.05"
                     min="0.1"
@@ -1728,6 +1739,7 @@ export default function AdminPanel({
                 >
                   <span>$</span>
                   <input
+                    aria-label="Amount in US dollars"
                     type="number"
                     step="1"
                     value={calcUsd}
@@ -1756,6 +1768,7 @@ export default function AdminPanel({
                 >
                   <span>GH₵</span>
                   <input
+                    aria-label="Amount in Ghana cedis"
                     type="number"
                     step="1"
                     value={calcGhs}
@@ -1854,6 +1867,7 @@ export default function AdminPanel({
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <select
+                aria-label="Filter tools by category"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 style={{
@@ -1876,6 +1890,7 @@ export default function AdminPanel({
               </select>
               <div style={{ position: "relative", width: "220px" }}>
                 <input
+                  aria-label="Tools"
                   type="text"
                   placeholder="Filter tools..."
                   value={toolQuery}
@@ -2046,6 +2061,7 @@ export default function AdminPanel({
                             $
                           </span>
                           <input
+                            aria-label="Tool price (US dollars)"
                             type="number"
                             step="0.5"
                             min="0"
@@ -2103,6 +2119,7 @@ export default function AdminPanel({
                             GH₵
                           </span>
                           <input
+                            aria-label="Tool price (Ghana cedis)"
                             type="number"
                             step="5"
                             min="0"
@@ -2310,7 +2327,10 @@ export default function AdminPanel({
                 disabled={isRefreshingUsers}
                 title="Synchronize user directory with serverless cloud database"
               >
-                <RefreshCw size={14} className={isRefreshingUsers ? "spin" : ""} />
+                <RefreshCw
+                  size={14}
+                  className={isRefreshingUsers ? "spin" : ""}
+                />
                 {isRefreshingUsers ? "Syncing..." : "Sync Cloud"}
               </button>
               <button
@@ -2640,6 +2660,7 @@ export default function AdminPanel({
                 }}
               />
               <input
+                aria-label="Search users"
                 type="text"
                 placeholder="Search users by name, email, or ID…"
                 value={userSearchQuery}
@@ -2681,7 +2702,9 @@ export default function AdminPanel({
                 flexWrap: "wrap",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
                 <span
                   style={{
                     fontSize: "11px",
@@ -2692,6 +2715,7 @@ export default function AdminPanel({
                   Role:
                 </span>
                 <select
+                  aria-label="Role"
                   value={userRoleFilter}
                   onChange={(e) => setUserRoleFilter(e.target.value as any)}
                   style={{
@@ -2711,7 +2735,9 @@ export default function AdminPanel({
                 </select>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
                 <span
                   style={{
                     fontSize: "11px",
@@ -2722,6 +2748,7 @@ export default function AdminPanel({
                   Status:
                 </span>
                 <select
+                  aria-label="Status"
                   value={userStatusFilter}
                   onChange={(e) => setUserStatusFilter(e.target.value as any)}
                   style={{
@@ -2879,9 +2906,7 @@ export default function AdminPanel({
                   const filtered = userList.filter((u) => {
                     if (userSearchQuery.trim()) {
                       const q = userSearchQuery.trim().toLowerCase()
-                      const matchName = (u.name || "")
-                        .toLowerCase()
-                        .includes(q)
+                      const matchName = (u.name || "").toLowerCase().includes(q)
                       const matchEmail = (u.email || "")
                         .toLowerCase()
                         .includes(q)
@@ -2930,11 +2955,20 @@ export default function AdminPanel({
                             color: "var(--muted)",
                           }}
                         >
-                          <div style={{ marginBottom: "6px", fontWeight: 600, color: "var(--text)" }}>
+                          <div
+                            style={{
+                              marginBottom: "6px",
+                              fontWeight: 600,
+                              color: "var(--text)",
+                            }}
+                          >
                             No Registered Accounts Found
                           </div>
-                          <div style={{ fontSize: "12px", marginBottom: "12px" }}>
-                            Accounts created on any browser or device are synchronized with the cloud database.
+                          <div
+                            style={{ fontSize: "12px", marginBottom: "12px" }}
+                          >
+                            Accounts created on any browser or device are
+                            synchronized with the cloud database.
                           </div>
                           <button
                             type="button"
@@ -2950,8 +2984,13 @@ export default function AdminPanel({
                             onClick={handleRefreshUsers}
                             disabled={isRefreshingUsers}
                           >
-                            <RefreshCw size={13} className={isRefreshingUsers ? "spin" : ""} />
-                            {isRefreshingUsers ? "Syncing..." : "Sync Cloud Now"}
+                            <RefreshCw
+                              size={13}
+                              className={isRefreshingUsers ? "spin" : ""}
+                            />
+                            {isRefreshingUsers
+                              ? "Syncing..."
+                              : "Sync Cloud Now"}
                           </button>
                         </td>
                       </tr>
@@ -2971,16 +3010,29 @@ export default function AdminPanel({
                         >
                           {userStatusFilter === "pending" ? (
                             <div>
-                              <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: "4px" }}>
+                              <div
+                                style={{
+                                  fontWeight: 600,
+                                  color: "var(--text)",
+                                  marginBottom: "4px",
+                                }}
+                              >
                                 No Pending Pro Approvals
                               </div>
                               <div style={{ fontSize: "12px" }}>
-                                There are currently no registered users requesting free Pro approval.
+                                There are currently no registered users
+                                requesting free Pro approval.
                               </div>
                               <button
                                 type="button"
                                 className="text-button"
-                                style={{ marginTop: "10px", color: "var(--accent)", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
+                                style={{
+                                  marginTop: "10px",
+                                  color: "var(--accent)",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                }}
                                 onClick={() => setUserStatusFilter("all")}
                               >
                                 View all {userList.length} registered accounts →
@@ -2988,14 +3040,29 @@ export default function AdminPanel({
                             </div>
                           ) : (
                             <div>
-                              <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: "4px" }}>
+                              <div
+                                style={{
+                                  fontWeight: 600,
+                                  color: "var(--text)",
+                                  marginBottom: "4px",
+                                }}
+                              >
                                 No Matching Accounts
                               </div>
-                              <div style={{ fontSize: "12px" }}>No users match the currently applied search or filter criteria.</div>
+                              <div style={{ fontSize: "12px" }}>
+                                No users match the currently applied search or
+                                filter criteria.
+                              </div>
                               <button
                                 type="button"
                                 className="text-button"
-                                style={{ marginTop: "10px", color: "var(--accent)", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
+                                style={{
+                                  marginTop: "10px",
+                                  color: "var(--accent)",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                }}
                                 onClick={() => {
                                   setUserSearchQuery("")
                                   setUserRoleFilter("all")
@@ -3024,347 +3091,348 @@ export default function AdminPanel({
                       .toUpperCase()
 
                     return (
-                        <tr
-                          key={u.id}
-                          style={{ borderBottom: "1px solid var(--border)" }}
-                        >
-                          <td style={{ padding: "12px 16px" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "10px",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: "30px",
-                                  height: "30px",
-                                  borderRadius: "50%",
-                                  background: isRoot
-                                    ? "rgba(234, 179, 8, 0.2)"
-                                    : "rgba(0, 201, 183, 0.15)",
-                                  color: isRoot ? "#eab308" : "#00C9B7",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  fontWeight: 700,
-                                  fontSize: "11px",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {initials}
-                              </div>
-                              <div>
-                                <div
-                                  style={{
-                                    fontWeight: 600,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                  }}
-                                >
-                                  {u.name}
-                                  {isRoot && (
-                                    <span
-                                      style={{
-                                        fontSize: "10px",
-                                        padding: "1px 6px",
-                                        borderRadius: "10px",
-                                        background: "rgba(234, 179, 8, 0.2)",
-                                        color: "#eab308",
-                                        fontWeight: 700,
-                                        border:
-                                          "1px solid rgba(234, 179, 8, 0.4)",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "3px",
-                                      }}
-                                    >
-                                      <Lock size={10} /> Root
-                                    </span>
-                                  )}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "var(--muted)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                    marginTop: "2px",
-                                  }}
-                                >
-                                  <span>{u.email}</span>
-                                  <span>•</span>
-                                  <span style={{ opacity: 0.7 }}>{u.id}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            {isRoot ? (
-                              <span
-                                style={{
-                                  padding: "3px 8px",
-                                  borderRadius: "4px",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  background: "rgba(234,179,8,0.2)",
-                                  color: "#eab308",
-                                  border: "1px solid rgba(234,179,8,0.4)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "4px",
-                                }}
-                              >
-                                <Lock size={11} /> ROOT ADMIN
-                              </span>
-                            ) : (
-                              <select
-                                value={u.role || "user"}
-                                aria-label={`Change role for ${u.name}`}
-                                onChange={(e) =>
-                                  handleRoleChange(
-                                    u.id,
-                                    e.target
-                                      .value as "admin" | "sub-admin" | "user",
-                                  )
-                                }
-                                style={{
-                                  padding: "4px 8px",
-                                  fontSize: "11px",
-                                  borderRadius: "4px",
-                                  border: "1px solid var(--border)",
-                                  background:
-                                    u.role === "admin"
-                                      ? "rgba(234,179,8,0.15)"
-                                      : u.role === "sub-admin"
-                                        ? "rgba(0,201,183,0.15)"
-                                        : "var(--surface)",
-                                  color:
-                                    u.role === "admin"
-                                      ? "#eab308"
-                                      : u.role === "sub-admin"
-                                        ? "#00C9B7"
-                                        : "var(--text)",
-                                  fontWeight: 600,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <option value="user">User</option>
-                                <option value="sub-admin">Sub-Admin</option>
-                                <option value="admin">Admin</option>
-                              </select>
-                            )}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            {isRoot ? (
-                              <span
-                                style={{
-                                  padding: "3px 8px",
-                                  borderRadius: "4px",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  background: "rgba(16,185,129,0.2)",
-                                  color: "#10b981",
-                                  border: "1px solid rgba(16,185,129,0.4)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "4px",
-                                }}
-                              >
-                                <Lock size={11} /> PERMANENT PRO
-                              </span>
-                            ) : (
-                              <div
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    padding: "3px 8px",
-                                    borderRadius: "4px",
-                                    fontSize: "11px",
-                                    fontWeight: 600,
-                                    background: isProActive
-                                      ? "rgba(16,185,129,0.15)"
-                                      : isPending
-                                        ? "rgba(234,179,8,0.15)"
-                                        : "var(--surface)",
-                                    color: isProActive
-                                      ? "#10b981"
-                                      : isPending
-                                        ? "#eab308"
-                                        : "var(--muted)",
-                                  }}
-                                >
-                                  {isProActive
-                                    ? "ACTIVE PRO"
-                                    : isPending
-                                      ? "PENDING APPROVAL"
-                                      : "STANDARD"}
-                                </span>
-                                {u.requirePasswordReset && (
-                                  <span
-                                    style={{
-                                      padding: "2px 6px",
-                                      borderRadius: "4px",
-                                      fontSize: "10px",
-                                      fontWeight: 600,
-                                      background: "rgba(245, 158, 11, 0.15)",
-                                      color: "#f59e0b",
-                                      border: "1px solid rgba(245, 158, 11, 0.35)",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "3px",
-                                    }}
-                                    title="User will be prompted to choose a new password upon next sign-in"
-                                  >
-                                    <RotateCcw size={10} /> Reset Req
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td
+                      <tr
+                        key={u.id}
+                        style={{ borderBottom: "1px solid var(--border)" }}
+                      >
+                        <td style={{ padding: "12px 16px" }}>
+                          <div
                             style={{
-                              padding: "12px 16px",
-                              textAlign: "right",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
                             }}
                           >
                             <div
                               style={{
-                                display: "inline-flex",
-                                gap: "6px",
-                                alignItems: "center",
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "50%",
+                                background: isRoot
+                                  ? "rgba(234, 179, 8, 0.2)"
+                                  : "rgba(0, 201, 183, 0.15)",
+                                color: isRoot ? "#eab308" : "#00C9B7",
+                                display: "grid",
+                                placeItems: "center",
+                                fontWeight: 700,
+                                fontSize: "11px",
+                                flexShrink: 0,
                               }}
                             >
-                              {/* Edit User Button */}
+                              {initials}
+                            </div>
+                            <div>
+                              <div
+                                style={{
+                                  fontWeight: 600,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                }}
+                              >
+                                {u.name}
+                                {isRoot && (
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      padding: "1px 6px",
+                                      borderRadius: "10px",
+                                      background: "rgba(234, 179, 8, 0.2)",
+                                      color: "#eab308",
+                                      fontWeight: 700,
+                                      border:
+                                        "1px solid rgba(234, 179, 8, 0.4)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "3px",
+                                    }}
+                                  >
+                                    <Lock size={10} /> Root
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: "var(--muted)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  marginTop: "2px",
+                                }}
+                              >
+                                <span>{u.email}</span>
+                                <span>•</span>
+                                <span style={{ opacity: 0.7 }}>{u.id}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: "12px 16px" }}>
+                          {isRoot ? (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "rgba(234,179,8,0.2)",
+                                color: "#eab308",
+                                border: "1px solid rgba(234,179,8,0.4)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Lock size={11} /> ROOT ADMIN
+                            </span>
+                          ) : (
+                            <select
+                              value={u.role || "user"}
+                              aria-label={`Change role for ${u.name}`}
+                              onChange={(e) =>
+                                handleRoleChange(
+                                  u.id,
+                                  e.target
+                                    .value as "admin" | "sub-admin" | "user",
+                                )
+                              }
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "11px",
+                                borderRadius: "4px",
+                                border: "1px solid var(--border)",
+                                background:
+                                  u.role === "admin"
+                                    ? "rgba(234,179,8,0.15)"
+                                    : u.role === "sub-admin"
+                                      ? "rgba(0,201,183,0.15)"
+                                      : "var(--surface)",
+                                color:
+                                  u.role === "admin"
+                                    ? "#eab308"
+                                    : u.role === "sub-admin"
+                                      ? "#00C9B7"
+                                      : "var(--text)",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <option value="user">User</option>
+                              <option value="sub-admin">Sub-Admin</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 16px" }}>
+                          {isRoot ? (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "rgba(16,185,129,0.2)",
+                                color: "#10b981",
+                                border: "1px solid rgba(16,185,129,0.4)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Lock size={11} /> PERMANENT PRO
+                            </span>
+                          ) : (
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  background: isProActive
+                                    ? "rgba(16,185,129,0.15)"
+                                    : isPending
+                                      ? "rgba(234,179,8,0.15)"
+                                      : "var(--surface)",
+                                  color: isProActive
+                                    ? "#10b981"
+                                    : isPending
+                                      ? "#eab308"
+                                      : "var(--muted)",
+                                }}
+                              >
+                                {isProActive
+                                  ? "ACTIVE PRO"
+                                  : isPending
+                                    ? "PENDING APPROVAL"
+                                    : "STANDARD"}
+                              </span>
+                              {u.requirePasswordReset && (
+                                <span
+                                  style={{
+                                    padding: "2px 6px",
+                                    borderRadius: "4px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    background: "rgba(245, 158, 11, 0.15)",
+                                    color: "#f59e0b",
+                                    border:
+                                      "1px solid rgba(245, 158, 11, 0.35)",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                  title="User will be prompted to choose a new password upon next sign-in"
+                                >
+                                  <RotateCcw size={10} /> Reset Req
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "right",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              gap: "6px",
+                              alignItems: "center",
+                            }}
+                          >
+                            {/* Edit User Button */}
+                            <button
+                              className="secondary"
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "11px",
+                                borderRadius: "4px",
+                                border: "1px solid var(--border)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                              }}
+                              onClick={() => handleOpenEditUser(u)}
+                              title={`Edit profile details for ${u.name}`}
+                            >
+                              <Edit2 size={12} /> Edit
+                            </button>
+
+                            {/* Root Admin: ONLY Change Password */}
+                            {isRoot ? (
                               <button
                                 className="secondary"
                                 style={{
-                                  padding: "4px 8px",
+                                  padding: "4px 10px",
                                   fontSize: "11px",
                                   borderRadius: "4px",
-                                  border: "1px solid var(--border)",
+                                  border: "1px solid rgba(234,179,8,0.4)",
+                                  color: "#eab308",
                                   display: "inline-flex",
                                   alignItems: "center",
-                                  gap: "3px",
+                                  gap: "4px",
                                 }}
-                                onClick={() => handleOpenEditUser(u)}
-                                title={`Edit profile details for ${u.name}`}
+                                onClick={() => handleOpenChangePassword(u)}
+                                title="Change root administrator password"
                               >
-                                <Edit2 size={12} /> Edit
+                                <Key size={12} /> Change Password
                               </button>
-
-                              {/* Root Admin: ONLY Change Password */}
-                              {isRoot ? (
+                            ) : (
+                              <>
+                                {isProActive ? (
+                                  <button
+                                    className="secondary"
+                                    style={{
+                                      padding: "4px 8px",
+                                      fontSize: "11px",
+                                      borderRadius: "4px",
+                                      border: "1px solid var(--border)",
+                                    }}
+                                    onClick={() => handleRevokePro(u.id)}
+                                  >
+                                    Revoke Pro
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="primary"
+                                    style={{
+                                      padding: "4px 8px",
+                                      fontSize: "11px",
+                                      borderRadius: "4px",
+                                    }}
+                                    onClick={() => handleApprovePro(u.id)}
+                                  >
+                                    Approve Pro
+                                  </button>
+                                )}
                                 <button
                                   className="secondary"
                                   style={{
-                                    padding: "4px 10px",
+                                    padding: "4px 8px",
                                     fontSize: "11px",
                                     borderRadius: "4px",
-                                    border: "1px solid rgba(234,179,8,0.4)",
-                                    color: "#eab308",
+                                    border: u.requirePasswordReset
+                                      ? "1px solid rgba(245, 158, 11, 0.5)"
+                                      : "1px solid var(--border)",
                                     display: "inline-flex",
                                     alignItems: "center",
-                                    gap: "4px",
+                                    gap: "3px",
+                                    color: u.requirePasswordReset
+                                      ? "#f59e0b"
+                                      : "var(--text)",
+                                    background: u.requirePasswordReset
+                                      ? "rgba(245, 158, 11, 0.12)"
+                                      : undefined,
                                   }}
-                                  onClick={() => handleOpenChangePassword(u)}
-                                  title="Change root administrator password"
+                                  onClick={() =>
+                                    handleToggleRequirePasswordReset(u)
+                                  }
+                                  title={
+                                    u.requirePasswordReset
+                                      ? "Password reset is enforced on next login (click to cancel)"
+                                      : `Require ${u.name} to reset password on next login`
+                                  }
                                 >
-                                  <Key size={12} /> Change Password
+                                  <RotateCcw size={12} />{" "}
+                                  {u.requirePasswordReset
+                                    ? "Reset Required"
+                                    : "Require Reset"}
                                 </button>
-                              ) : (
-                                <>
-                                  {isProActive ? (
-                                    <button
-                                      className="secondary"
-                                      style={{
-                                        padding: "4px 8px",
-                                        fontSize: "11px",
-                                        borderRadius: "4px",
-                                        border: "1px solid var(--border)",
-                                      }}
-                                      onClick={() => handleRevokePro(u.id)}
-                                    >
-                                      Revoke Pro
-                                    </button>
-                                  ) : (
-                                    <button
-                                      className="primary"
-                                      style={{
-                                        padding: "4px 8px",
-                                        fontSize: "11px",
-                                        borderRadius: "4px",
-                                      }}
-                                      onClick={() => handleApprovePro(u.id)}
-                                    >
-                                      Approve Pro
-                                    </button>
-                                  )}
-                                  <button
-                                    className="secondary"
-                                    style={{
-                                      padding: "4px 8px",
-                                      fontSize: "11px",
-                                      borderRadius: "4px",
-                                      border: u.requirePasswordReset
-                                        ? "1px solid rgba(245, 158, 11, 0.5)"
-                                        : "1px solid var(--border)",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "3px",
-                                      color: u.requirePasswordReset
-                                        ? "#f59e0b"
-                                        : "var(--text)",
-                                      background: u.requirePasswordReset
-                                        ? "rgba(245, 158, 11, 0.12)"
-                                        : undefined,
-                                    }}
-                                    onClick={() => handleToggleRequirePasswordReset(u)}
-                                    title={
-                                      u.requirePasswordReset
-                                        ? "Password reset is enforced on next login (click to cancel)"
-                                        : `Require ${u.name} to reset password on next login`
-                                    }
-                                  >
-                                    <RotateCcw size={12} />{" "}
-                                    {u.requirePasswordReset
-                                      ? "Reset Required"
-                                      : "Require Reset"}
-                                  </button>
-                                  <button
-                                    className="secondary"
-                                    style={{
-                                      padding: "4px 8px",
-                                      fontSize: "11px",
-                                      borderRadius: "4px",
-                                      border: "1px solid rgba(239,68,68,0.3)",
-                                      color: "#ef4444",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "3px",
-                                    }}
-                                    onClick={() =>
-                                      handleDeleteUser(u.id, u.name)
-                                    }
-                                    title={`Delete ${u.name}`}
-                                  >
-                                    <Trash2 size={12} /> Delete
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
+                                <button
+                                  className="secondary"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: "11px",
+                                    borderRadius: "4px",
+                                    border: "1px solid rgba(239,68,68,0.3)",
+                                    color: "#ef4444",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                  onClick={() => handleDeleteUser(u.id, u.name)}
+                                  title={`Delete ${u.name}`}
+                                >
+                                  <Trash2 size={12} /> Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 })()}
               </tbody>
             </table>
@@ -3460,6 +3528,7 @@ export default function AdminPanel({
                       Full Name
                     </label>
                     <input
+                      aria-label="Full Name"
                       type="text"
                       required
                       placeholder="e.g. Alex Morgan"
@@ -3492,6 +3561,7 @@ export default function AdminPanel({
                       Email Address
                     </label>
                     <input
+                      aria-label="Email Address"
                       type="email"
                       required
                       placeholder="user@masterfilepro.com"
@@ -3527,6 +3597,7 @@ export default function AdminPanel({
                       Initial Password (min 8 chars)
                     </label>
                     <input
+                      aria-label="Password"
                       type="password"
                       required
                       minLength={8}
@@ -3572,6 +3643,7 @@ export default function AdminPanel({
                         Role
                       </label>
                       <select
+                        aria-label="Role"
                         value={newUserForm.role}
                         onChange={(e) =>
                           setNewUserForm({
@@ -3608,6 +3680,7 @@ export default function AdminPanel({
                         Subscription Tier
                       </label>
                       <select
+                        aria-label="Subscription Tier"
                         value={newUserForm.subscriptionTier}
                         onChange={(e) =>
                           setNewUserForm({
@@ -3707,7 +3780,8 @@ export default function AdminPanel({
                         margin: "4px 0 0",
                       }}
                     >
-                      Paste email addresses below to immediately register and approve them in the central cloud database.
+                      Paste email addresses below to immediately register and
+                      approve them in the central cloud database.
                     </p>
                   </div>
                   <button
@@ -3753,6 +3827,7 @@ export default function AdminPanel({
                     User List (One per line)
                   </label>
                   <textarea
+                    aria-label="User List (One per line)"
                     rows={6}
                     value={importText}
                     onChange={(e) => setImportText(e.target.value)}
@@ -3777,7 +3852,8 @@ export default function AdminPanel({
                       marginTop: "4px",
                     }}
                   >
-                    Format: <code>email</code> or <code>email, Full Name, role, tier</code>
+                    Format: <code>email</code> or{" "}
+                    <code>email, Full Name, role, tier</code>
                   </div>
                 </div>
 
@@ -3802,6 +3878,7 @@ export default function AdminPanel({
                       Default Tier
                     </label>
                     <select
+                      aria-label="Default Tier"
                       value={importTier}
                       onChange={(e) => setImportTier(e.target.value as any)}
                       style={{
@@ -3832,6 +3909,7 @@ export default function AdminPanel({
                       Default Role
                     </label>
                     <select
+                      aria-label="Default Role"
                       value={importRole}
                       onChange={(e) => setImportRole(e.target.value as any)}
                       style={{
@@ -3877,7 +3955,9 @@ export default function AdminPanel({
                     }}
                   >
                     <Upload size={14} />
-                    {isImporting ? "Importing to Cloud..." : "Import to Cloud Database"}
+                    {isImporting
+                      ? "Importing to Cloud..."
+                      : "Import to Cloud Database"}
                   </button>
                 </div>
               </div>
@@ -3930,7 +4010,8 @@ export default function AdminPanel({
                   >
                     {isRootAdmin(editingUser) ? (
                       <>
-                        <Lock size={18} color="#eab308" /> Edit Root Administrator
+                        <Lock size={18} color="#eab308" /> Edit Root
+                        Administrator
                       </>
                     ) : (
                       <>
@@ -3968,9 +4049,15 @@ export default function AdminPanel({
                       lineHeight: "1.45",
                     }}
                   >
-                    <Lock size={15} style={{ flexShrink: 0, marginTop: "2px" }} />
+                    <Lock
+                      size={15}
+                      style={{ flexShrink: 0, marginTop: "2px" }}
+                    />
                     <div>
-                      <strong>Root Administrator Account:</strong> Status, role, tier, and display name are permanently locked. The only attributes that can be changed are <strong>email</strong> and <strong>password</strong>.
+                      <strong>Root Administrator Account:</strong> Status, role,
+                      tier, and display name are permanently locked. The only
+                      attributes that can be changed are <strong>email</strong>{" "}
+                      and <strong>password</strong>.
                     </div>
                   </div>
                 )}
@@ -4006,12 +4093,21 @@ export default function AdminPanel({
                     >
                       <span>Full Name</span>
                       {isRootAdmin(editingUser) && (
-                        <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                        <span
+                          style={{
+                            color: "#eab308",
+                            fontSize: "11px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                          }}
+                        >
                           <Lock size={10} /> Locked
                         </span>
                       )}
                     </label>
                     <input
+                      aria-label="Name"
                       type="text"
                       required
                       value={editUserForm.name}
@@ -4025,12 +4121,16 @@ export default function AdminPanel({
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
+                        background: isRootAdmin(editingUser)
+                          ? "rgba(255,255,255,0.03)"
+                          : "var(--bg)",
                         border: "1px solid var(--border)",
                         borderRadius: "8px",
                         color: "var(--text)",
                         fontSize: "13px",
-                        cursor: isRootAdmin(editingUser) ? "not-allowed" : "text",
+                        cursor: isRootAdmin(editingUser)
+                          ? "not-allowed"
+                          : "text",
                         opacity: isRootAdmin(editingUser) ? 0.75 : 1,
                       }}
                     />
@@ -4050,12 +4150,19 @@ export default function AdminPanel({
                     >
                       <span>Email Address</span>
                       {isRootAdmin(editingUser) && (
-                        <span style={{ color: "#00C9B7", fontSize: "11px", fontWeight: 600 }}>
+                        <span
+                          style={{
+                            color: "#00C9B7",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                          }}
+                        >
                           Editable
                         </span>
                       )}
                     </label>
                     <input
+                      aria-label="Email"
                       type="email"
                       required
                       value={editUserForm.email}
@@ -4070,7 +4177,9 @@ export default function AdminPanel({
                         width: "100%",
                         padding: "8px 12px",
                         background: "var(--bg)",
-                        border: isRootAdmin(editingUser) ? "1px solid rgba(0, 201, 183, 0.45)" : "1px solid var(--border)",
+                        border: isRootAdmin(editingUser)
+                          ? "1px solid rgba(0, 201, 183, 0.45)"
+                          : "1px solid var(--border)",
                         borderRadius: "8px",
                         color: "var(--text)",
                         fontSize: "13px",
@@ -4102,13 +4211,24 @@ export default function AdminPanel({
                       >
                         <span>Role</span>
                         {isRootAdmin(editingUser) && (
-                          <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          <span
+                            style={{
+                              color: "#eab308",
+                              fontSize: "11px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px",
+                            }}
+                          >
                             <Lock size={10} /> Locked
                           </span>
                         )}
                       </label>
                       <select
-                        value={isRootAdmin(editingUser) ? "admin" : editUserForm.role}
+                        aria-label="Role"
+                        value={
+                          isRootAdmin(editingUser) ? "admin" : editUserForm.role
+                        }
                         disabled={isRootAdmin(editingUser)}
                         onChange={(e) =>
                           setEditUserForm({
@@ -4119,10 +4239,14 @@ export default function AdminPanel({
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
+                          background: isRootAdmin(editingUser)
+                            ? "rgba(255,255,255,0.03)"
+                            : "var(--bg)",
                           border: "1px solid var(--border)",
                           borderRadius: "8px",
-                          color: isRootAdmin(editingUser) ? "#eab308" : "var(--text)",
+                          color: isRootAdmin(editingUser)
+                            ? "#eab308"
+                            : "var(--text)",
                           fontSize: "13px",
                           cursor: isRootAdmin(editingUser)
                             ? "not-allowed"
@@ -4132,7 +4256,9 @@ export default function AdminPanel({
                       >
                         <option value="user">Standard User</option>
                         <option value="sub-admin">Sub-Admin</option>
-                        <option value="admin">Full Admin (Locked for Root)</option>
+                        <option value="admin">
+                          Full Admin (Locked for Root)
+                        </option>
                       </select>
                     </div>
 
@@ -4150,13 +4276,26 @@ export default function AdminPanel({
                       >
                         <span>Subscription Tier</span>
                         {isRootAdmin(editingUser) && (
-                          <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          <span
+                            style={{
+                              color: "#eab308",
+                              fontSize: "11px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px",
+                            }}
+                          >
                             <Lock size={10} /> Locked
                           </span>
                         )}
                       </label>
                       <select
-                        value={isRootAdmin(editingUser) ? "pro" : editUserForm.subscriptionTier}
+                        aria-label="Subscription Tier"
+                        value={
+                          isRootAdmin(editingUser)
+                            ? "pro"
+                            : editUserForm.subscriptionTier
+                        }
                         disabled={isRootAdmin(editingUser)}
                         onChange={(e) =>
                           setEditUserForm({
@@ -4169,10 +4308,14 @@ export default function AdminPanel({
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
+                          background: isRootAdmin(editingUser)
+                            ? "rgba(255,255,255,0.03)"
+                            : "var(--bg)",
                           border: "1px solid var(--border)",
                           borderRadius: "8px",
-                          color: isRootAdmin(editingUser) ? "#10b981" : "var(--text)",
+                          color: isRootAdmin(editingUser)
+                            ? "#10b981"
+                            : "var(--text)",
                           fontSize: "13px",
                           cursor: isRootAdmin(editingUser)
                             ? "not-allowed"
@@ -4181,7 +4324,9 @@ export default function AdminPanel({
                         }}
                       >
                         <option value="standard">Standard Tier</option>
-                        <option value="pro">Pro Tier (Permanent for Root)</option>
+                        <option value="pro">
+                          Pro Tier (Permanent for Root)
+                        </option>
                       </select>
                     </div>
                   </div>
@@ -4200,13 +4345,26 @@ export default function AdminPanel({
                     >
                       <span>Pro Activation Status</span>
                       {isRootAdmin(editingUser) && (
-                        <span style={{ color: "#eab308", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                        <span
+                          style={{
+                            color: "#eab308",
+                            fontSize: "11px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                          }}
+                        >
                           <Lock size={10} /> Locked
                         </span>
                       )}
                     </label>
                     <select
-                      value={isRootAdmin(editingUser) ? "active" : editUserForm.proStatus}
+                      aria-label="Pro Activation Status"
+                      value={
+                        isRootAdmin(editingUser)
+                          ? "active"
+                          : editUserForm.proStatus
+                      }
                       disabled={isRootAdmin(editingUser)}
                       onChange={(e) =>
                         setEditUserForm({
@@ -4217,10 +4375,14 @@ export default function AdminPanel({
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        background: isRootAdmin(editingUser) ? "rgba(255,255,255,0.03)" : "var(--bg)",
+                        background: isRootAdmin(editingUser)
+                          ? "rgba(255,255,255,0.03)"
+                          : "var(--bg)",
                         border: "1px solid var(--border)",
                         borderRadius: "8px",
-                        color: isRootAdmin(editingUser) ? "#10b981" : "var(--text)",
+                        color: isRootAdmin(editingUser)
+                          ? "#10b981"
+                          : "var(--text)",
                         fontSize: "13px",
                         cursor: isRootAdmin(editingUser)
                           ? "not-allowed"
@@ -4230,7 +4392,9 @@ export default function AdminPanel({
                     >
                       <option value="none">None / Inactive</option>
                       <option value="pending">Pending Approval</option>
-                      <option value="active">Active Pro (Permanent for Root)</option>
+                      <option value="active">
+                        Active Pro (Permanent for Root)
+                      </option>
                     </select>
                   </div>
 
@@ -4280,7 +4444,9 @@ export default function AdminPanel({
                           style={{ marginTop: "3px" }}
                         />
                         <div>
-                          <strong>Require password reset upon next sign-in</strong>
+                          <strong>
+                            Require password reset upon next sign-in
+                          </strong>
                           <p
                             style={{
                               margin: "3px 0 0 0",
@@ -4289,7 +4455,10 @@ export default function AdminPanel({
                               lineHeight: 1.4,
                             }}
                           >
-                            When enabled, the user will be prompted to choose a new password upon their next login. For privacy and security, administrators cannot view or set users' plaintext passwords.
+                            When enabled, the user will be prompted to choose a
+                            new password upon their next login. For privacy and
+                            security, administrators cannot view or set users'
+                            plaintext passwords.
                           </p>
                         </div>
                       </label>
@@ -4307,9 +4476,12 @@ export default function AdminPanel({
                         color: "var(--muted)",
                       }}
                     >
-                      <strong style={{ color: "#eab308" }}>Root Administrator Account</strong>
+                      <strong style={{ color: "#eab308" }}>
+                        Root Administrator Account
+                      </strong>
                       <p style={{ margin: "4px 0 0 0" }}>
-                        Root administrator credentials and password can be updated under the <strong>Admin Settings</strong> tab.
+                        Root administrator credentials and password can be
+                        updated under the <strong>Admin Settings</strong> tab.
                       </p>
                     </div>
                   )}
@@ -4352,211 +4524,218 @@ export default function AdminPanel({
           )}
 
           {/* Change Root Admin Password Modal */}
-          {showPasswordModal && passwordTargetUser && isRootAdmin(passwordTargetUser) && (
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.7)",
-                backdropFilter: "blur(4px)",
-                display: "grid",
-                placeItems: "center",
-                zIndex: 999999,
-                padding: "20px",
-              }}
-              onClick={() => setShowPasswordModal(false)}
-            >
+          {showPasswordModal &&
+            passwordTargetUser &&
+            isRootAdmin(passwordTargetUser) && (
               <div
                 style={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "16px",
-                  padding: "24px",
-                  maxWidth: "440px",
-                  width: "100%",
-                  boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.7)",
+                  backdropFilter: "blur(4px)",
+                  display: "grid",
+                  placeItems: "center",
+                  zIndex: 999999,
+                  padding: "20px",
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={() => setShowPasswordModal(false)}
               >
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "14px",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "16px",
+                    padding: "24px",
+                    maxWidth: "440px",
+                    width: "100%",
+                    boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <h3
-                    style={{
-                      fontSize: "16px",
-                      margin: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <Key size={18} color="#eab308" /> Change Root Admin Password
-                  </h3>
-                  <button
-                    onClick={() => setShowPasswordModal(false)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--muted)",
-                      cursor: "pointer",
-                      fontSize: "18px",
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    background: "rgba(255,255,255,0.03)",
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    marginBottom: "14px",
-                    fontSize: "12px",
-                  }}
-                >
-                  <div>
-                    <strong>User:</strong> {passwordTargetUser.name}
-                  </div>
-                  <small style={{ color: "var(--muted)" }}>
-                    {passwordTargetUser.email}
-                  </small>
-                </div>
-
-                {passwordError && (
                   <div
                     style={{
-                      padding: "8px 12px",
-                      background: "rgba(239, 68, 68, 0.15)",
-                      border: "1px solid rgba(239, 68, 68, 0.3)",
-                      borderRadius: "6px",
-                      color: "#ef4444",
-                      fontSize: "12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
                       marginBottom: "14px",
                     }}
                   >
-                    {passwordError}
-                  </div>
-                )}
-
-                <form onSubmit={handleSavePassword}>
-                  <div style={{ marginBottom: "12px" }}>
-                    <div
+                    <h3
                       style={{
+                        fontSize: "16px",
+                        margin: 0,
                         display: "flex",
-                        justifyContent: "space-between",
                         alignItems: "center",
-                        marginBottom: "4px",
+                        gap: "8px",
                       }}
                     >
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: "var(--muted)",
-                        }}
-                      >
-                        New Password (min 8 chars)
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowPasswordText(!showPasswordText)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "var(--muted)",
-                          cursor: "pointer",
-                          fontSize: "11px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                        }}
-                      >
-                        {showPasswordText ? (
-                          <EyeOff size={13} />
-                        ) : (
-                          <Eye size={13} />
-                        )}
-                        {showPasswordText ? "Hide" : "Show"}
-                      </button>
-                    </div>
-                    <input
-                      type={showPasswordText ? "text" : "password"}
-                      required
-                      minLength={8}
-                      placeholder="Enter new password"
-                      value={newPasswordValue}
-                      onChange={(e) => setNewPasswordValue(e.target.value)}
+                      <Key size={18} color="#eab308" /> Change Root Admin
+                      Password
+                    </h3>
+                    <button
+                      onClick={() => setShowPasswordModal(false)}
                       style={{
-                        width: "100%",
-                        padding: "8px 12px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "8px",
-                        color: "var(--text)",
-                        fontSize: "13px",
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: "18px" }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "12px",
-                        fontWeight: 600,
+                        background: "none",
+                        border: "none",
                         color: "var(--muted)",
-                        marginBottom: "4px",
+                        cursor: "pointer",
+                        fontSize: "18px",
                       }}
                     >
-                      Confirm New Password
-                    </label>
-                    <input
-                      type={showPasswordText ? "text" : "password"}
-                      required
-                      minLength={8}
-                      placeholder="Repeat new password"
-                      value={confirmPasswordValue}
-                      onChange={(e) => setConfirmPasswordValue(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "8px 12px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "8px",
-                        color: "var(--text)",
-                        fontSize: "13px",
-                      }}
-                    />
+                      ✕
+                    </button>
                   </div>
 
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      gap: "10px",
+                      background: "rgba(255,255,255,0.03)",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      marginBottom: "14px",
+                      fontSize: "12px",
                     }}
                   >
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setShowPasswordModal(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="primary">
-                      Update Password
-                    </button>
+                    <div>
+                      <strong>User:</strong> {passwordTargetUser.name}
+                    </div>
+                    <small style={{ color: "var(--muted)" }}>
+                      {passwordTargetUser.email}
+                    </small>
                   </div>
-                </form>
+
+                  {passwordError && (
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        background: "rgba(239, 68, 68, 0.15)",
+                        border: "1px solid rgba(239, 68, 68, 0.3)",
+                        borderRadius: "6px",
+                        color: "#ef4444",
+                        fontSize: "12px",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      {passwordError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSavePassword}>
+                    <div style={{ marginBottom: "12px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        <label
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--muted)",
+                          }}
+                        >
+                          New Password (min 8 chars)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswordText(!showPasswordText)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "var(--muted)",
+                            cursor: "pointer",
+                            fontSize: "11px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          {showPasswordText ? (
+                            <EyeOff size={13} />
+                          ) : (
+                            <Eye size={13} />
+                          )}
+                          {showPasswordText ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      <input
+                        aria-label="New password"
+                        type={showPasswordText ? "text" : "password"}
+                        required
+                        minLength={8}
+                        placeholder="Enter new password"
+                        value={newPasswordValue}
+                        onChange={(e) => setNewPasswordValue(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: "18px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "var(--muted)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Confirm New Password
+                      </label>
+                      <input
+                        aria-label="Confirm New Password"
+                        type={showPasswordText ? "text" : "password"}
+                        required
+                        minLength={8}
+                        placeholder="Repeat new password"
+                        value={confirmPasswordValue}
+                        onChange={(e) =>
+                          setConfirmPasswordValue(e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          color: "var(--text)",
+                          fontSize: "13px",
+                        }}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        gap: "10px",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setShowPasswordModal(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="primary">
+                        Update Password
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
       )}
 
@@ -4743,6 +4922,7 @@ export default function AdminPanel({
                     #
                   </span>
                   <input
+                    aria-label="Slug"
                     type="text"
                     required
                     placeholder="my-new-page"
@@ -4776,6 +4956,7 @@ export default function AdminPanel({
                   Page Title
                 </label>
                 <input
+                  aria-label="Page Title"
                   type="text"
                   required
                   placeholder="Platform Documentation"
@@ -4808,6 +4989,7 @@ export default function AdminPanel({
                   Navigation Label (Sidebar)
                 </label>
                 <input
+                  aria-label="Navigation Label (Sidebar)"
                   type="text"
                   placeholder="Docs"
                   value={pageForm.navTitle}
@@ -4839,6 +5021,7 @@ export default function AdminPanel({
                   Page Content (Markdown / Text)
                 </label>
                 <textarea
+                  aria-label="Page Content (Markdown / Text)"
                   required
                   rows={6}
                   placeholder="# Welcome to our platform documentation..."
@@ -4890,6 +5073,7 @@ export default function AdminPanel({
                   }}
                 >
                   <select
+                    aria-label="Status"
                     value={pageForm.status}
                     onChange={(e) =>
                       setPageForm({
@@ -5268,6 +5452,7 @@ export default function AdminPanel({
                             Webhook / API Endpoint URL
                           </label>
                           <input
+                            aria-label="Endpoint Url"
                             type="text"
                             value={gw.endpointUrl || ""}
                             onChange={(e) =>
@@ -5309,6 +5494,7 @@ export default function AdminPanel({
                               : "Public Key / API Key"}
                         </label>
                         <input
+                          aria-label="Public Key"
                           type="text"
                           value={gw.publicKey}
                           onChange={(e) =>
@@ -5382,6 +5568,7 @@ export default function AdminPanel({
                           </button>
                         </div>
                         <input
+                          aria-label="Secret Key"
                           type={showSecret ? "text" : "password"}
                           value={gw.secretKey}
                           onChange={(e) =>
@@ -5429,6 +5616,7 @@ export default function AdminPanel({
                             Webhook Secret
                           </label>
                           <input
+                            aria-label="Webhook Secret"
                             type="text"
                             value={gw.webhookSecret || ""}
                             onChange={(e) =>
@@ -5464,6 +5652,7 @@ export default function AdminPanel({
                             Settlement Currency
                           </label>
                           <select
+                            aria-label="Currency"
                             value={gw.currency}
                             onChange={(e) =>
                               handleUpdateGatewayField(
@@ -5786,6 +5975,7 @@ export default function AdminPanel({
               </a>
 
               <input
+                aria-label="API configuration file to import"
                 type="file"
                 ref={apiImportFileRef}
                 accept=".json,application/json"
@@ -5804,9 +5994,13 @@ export default function AdminPanel({
                     setCloudApis(list)
                     const res = await saveCloudApis(list)
                     if (res.syncedToServer) {
-                      showToast(`Imported ${list.length} APIs and synced with server database.`)
+                      showToast(
+                        `Imported ${list.length} APIs and synced with server database.`,
+                      )
                     } else {
-                      showToast(`Imported ${list.length} APIs locally to this device.`)
+                      showToast(
+                        `Imported ${list.length} APIs locally to this device.`,
+                      )
                     }
                   } catch {
                     showToast("Failed to parse API backup file.")
@@ -5826,7 +6020,7 @@ export default function AdminPanel({
                     downloadAnchor.setAttribute("href", dataStr)
                     downloadAnchor.setAttribute(
                       "download",
-                      `fluxkit-apis-config-${new Date().toISOString().slice(0, 10)}.json`,
+                      `masterfilepro-apis-config-${new Date().toISOString().slice(0, 10)}.json`,
                     )
                     document.body.appendChild(downloadAnchor)
                     downloadAnchor.click()
@@ -5952,9 +6146,23 @@ export default function AdminPanel({
                 Cross-Device Key Sync & Production Hosting Guide
               </div>
               <div style={{ color: "var(--muted)", fontSize: "12px" }}>
-                • <strong>Server Database:</strong> Keys saved in this panel are backed by your server database (<code style={{ color: "#ba9aee" }}>/api/db/apis</code>) and automatically synchronize when you log in as Admin on another laptop.<br />
-                • <strong>Hosting Dashboard (Permanent Zero-Maintenance):</strong> On serverless hosts (Vercel, Netlify), you can set your keys in your project's <strong>Environment Variables</strong> (e.g. <code style={{ color: "#ba9aee" }}>VITE_ADOBE_CLIENT_ID</code>, <code style={{ color: "#ba9aee" }}>VITE_GROQ_API_KEY</code>, <code style={{ color: "#ba9aee" }}>VITE_OCRSPACE_API_KEY</code>). They are immediately active across all devices.<br />
-                • <strong>Instant Transfer:</strong> Click <strong>Export Keys (JSON)</strong> on one laptop and <strong>Import Keys</strong> on another to instantly clone your configuration.
+                • <strong>Server Database:</strong> Keys saved in this panel are
+                backed by your server database (
+                <code style={{ color: "#ba9aee" }}>/api/db/apis</code>) and
+                automatically synchronize when you log in as Admin on another
+                laptop.
+                <br />•{" "}
+                <strong>Hosting Dashboard (Permanent Zero-Maintenance):</strong>{" "}
+                On serverless hosts (Vercel, Netlify), you can set your keys in
+                your project's <strong>Environment Variables</strong> (e.g.{" "}
+                <code style={{ color: "#ba9aee" }}>VITE_ADOBE_CLIENT_ID</code>,{" "}
+                <code style={{ color: "#ba9aee" }}>VITE_GROQ_API_KEY</code>,{" "}
+                <code style={{ color: "#ba9aee" }}>VITE_OCRSPACE_API_KEY</code>
+                ). They are immediately active across all devices.
+                <br />• <strong>Instant Transfer:</strong> Click{" "}
+                <strong>Export Keys (JSON)</strong> on one laptop and{" "}
+                <strong>Import Keys</strong> on another to instantly clone your
+                configuration.
               </div>
             </div>
           </div>
@@ -6218,6 +6426,7 @@ export default function AdminPanel({
                         API Provider Name *
                       </label>
                       <input
+                        aria-label="API Provider Name"
                         type="text"
                         required
                         placeholder="e.g. CloudConvert, PDF.co"
@@ -6247,6 +6456,7 @@ export default function AdminPanel({
                         Service Category
                       </label>
                       <select
+                        aria-label="Service Category"
                         value={newApiCategory}
                         onChange={(e) =>
                           setNewApiCategory(e.target.value as any)
@@ -6291,6 +6501,7 @@ export default function AdminPanel({
                         Endpoint URL / Base URL
                       </label>
                       <input
+                        aria-label="Endpoint URL / Base URL"
                         type="text"
                         placeholder="https://api.service.com/v1"
                         value={newApiEndpoint}
@@ -6319,6 +6530,7 @@ export default function AdminPanel({
                         Monthly Free Quota (Calls)
                       </label>
                       <input
+                        aria-label="Monthly Free Quota (Calls)"
                         type="number"
                         min="1"
                         value={newApiQuota}
@@ -6347,6 +6559,7 @@ export default function AdminPanel({
                         API Key / Client ID / Public Key
                       </label>
                       <input
+                        aria-label="API Key / Client ID / Public Key"
                         type="text"
                         placeholder="Paste your free API key here"
                         value={newApiKey}
@@ -6375,6 +6588,7 @@ export default function AdminPanel({
                         Secret Key / Client Secret (Optional)
                       </label>
                       <input
+                        aria-label="Secret Key / Client Secret (Optional)"
                         type="password"
                         placeholder="Optional secret or token"
                         value={newApiSecret}
@@ -7302,6 +7516,7 @@ export default function AdminPanel({
                                     : "API Key"}
                                 </label>
                                 <input
+                                  aria-label={api.provider === "adobe" ? "Client ID" : "API Key"}
                                   type="text"
                                   value={editApiKeyInput}
                                   onChange={(e) =>
@@ -7331,6 +7546,7 @@ export default function AdminPanel({
                                     Client Secret
                                   </label>
                                   <input
+                                    aria-label="Client Secret"
                                     type="text"
                                     value={editApiSecretInput}
                                     onChange={(e) =>
@@ -7360,6 +7576,7 @@ export default function AdminPanel({
                                   Monthly Quota (Calls)
                                 </label>
                                 <input
+                                  aria-label="Monthly Quota (Calls)"
                                   type="number"
                                   value={editApiQuotaInput}
                                   onChange={(e) =>
@@ -7529,9 +7746,13 @@ export default function AdminPanel({
                                   const saveRes = await saveCloudApis(updated)
                                   setEditingApiId(null)
                                   if (saveRes.syncedToServer) {
-                                    showToast(`${api.name} configuration saved to server database & this device.`)
+                                    showToast(
+                                      `${api.name} configuration saved to server database & this device.`,
+                                    )
                                   } else {
-                                    showToast(`${api.name} configuration saved on this device.`)
+                                    showToast(
+                                      `${api.name} configuration saved on this device.`,
+                                    )
                                   }
                                 }}
                                 style={{
@@ -7817,7 +8038,7 @@ export default function AdminPanel({
                     display: "block",
                   }}
                 >
-                  {dbStatus?.engine || "Server Disk Database (JSON/IndexedDB)"}
+                  {dbStatus?.engine || "Supabase Postgres (via /api/db)"}
                 </strong>
               </div>
 
@@ -7836,7 +8057,7 @@ export default function AdminPanel({
                     display: "block",
                   }}
                 >
-                  Database File Location
+                  Server Data Endpoint
                 </span>
                 <strong
                   style={{
@@ -7847,7 +8068,7 @@ export default function AdminPanel({
                     display: "block",
                   }}
                 >
-                  data/masterfile-db.json
+                  {dbStatus?.serverDbPath || "/api/db/admin"}
                 </strong>
               </div>
 
@@ -8095,6 +8316,7 @@ export default function AdminPanel({
                     </span>
                   </label>
                   <input
+                    aria-label="Administrator Display Name (Locked)"
                     disabled
                     type="text"
                     value={adminNameInput}
@@ -8121,7 +8343,9 @@ export default function AdminPanel({
                       gap: "4px",
                     }}
                   >
-                    <Lock size={10} color="#eab308" /> Root administrator name and status are locked. Only email and password can be updated.
+                    <Lock size={10} color="#eab308" /> Root administrator name
+                    and status are locked. Only email and password can be
+                    updated.
                   </div>
                 </div>
 
@@ -8148,6 +8372,7 @@ export default function AdminPanel({
                     </span>
                   </label>
                   <input
+                    aria-label="Administrator Email Address (Editable)"
                     required
                     type="email"
                     value={adminEmailInput}
@@ -8185,6 +8410,7 @@ export default function AdminPanel({
                     New Password (optional)
                   </label>
                   <input
+                    aria-label="New Password (optional)"
                     type={adminShowPassText ? "text" : "password"}
                     value={adminPassInput}
                     onChange={(e) => setAdminPassInput(e.target.value)}
@@ -8213,6 +8439,7 @@ export default function AdminPanel({
                     Confirm New Password
                   </label>
                   <input
+                    aria-label="Confirm New Password"
                     type={adminShowPassText ? "text" : "password"}
                     value={adminConfirmPassInput}
                     onChange={(e) => setAdminConfirmPassInput(e.target.value)}
