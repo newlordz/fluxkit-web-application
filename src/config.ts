@@ -51,13 +51,146 @@ export const brand = {
       text: "#F0F4F8", // Crisp contrast text
     },
     light: {
-      accent: "#00A896", // Rich brand teal for light mode
+      accent: "#00A899", // Rich brand teal for light mode
       background: "#F4F8FB", // Crisp arctic canvas
       surface: "#FFFFFF", // Pure white surface
       text: "#06204D", // Deep brand navy from official logo
     },
   },
+  // Users may recolour the brand accent only; canvas, text and status colours
+  // stay put. Every pair below was checked for WCAG AA: ink-on-fill, ink on the
+  // hover fill, and accentText on the surface, in both modes.
+  accents: {
+    teal: {
+      label: "Teal",
+      light: {
+        accent: "#00A899",
+        accentHover: "#00C9B7",
+        accentText: "#0f766e",
+        accentSoft: "#f0fdfa",
+        accentBorder: "#99f6e4",
+        accentInk: "#06204D",
+        accentRgb: "0, 168, 153",
+      },
+      dark: {
+        accent: "#00C9B7",
+        accentHover: "#00E5D2",
+        accentText: "#5eead4",
+        accentSoft: "rgba(0, 201, 183, 0.12)",
+        accentBorder: "rgba(0, 201, 183, 0.32)",
+        accentInk: "#06204D",
+        accentRgb: "0, 201, 183",
+      },
+    },
+    blue: {
+      label: "Blue",
+      light: {
+        accent: "#2563eb",
+        accentHover: "#1d4ed8",
+        accentText: "#1d4ed8",
+        accentSoft: "#eff6ff",
+        accentBorder: "#bfdbfe",
+        accentInk: "#ffffff",
+        accentRgb: "37, 99, 235",
+      },
+      dark: {
+        accent: "#2563eb",
+        accentHover: "#1d4ed8",
+        accentText: "#93c5fd",
+        accentSoft: "rgba(37, 99, 235, 0.18)",
+        accentBorder: "rgba(147, 197, 253, 0.32)",
+        accentInk: "#ffffff",
+        accentRgb: "37, 99, 235",
+      },
+    },
+    violet: {
+      label: "Violet",
+      light: {
+        accent: "#6d28d9",
+        accentHover: "#5b21b6",
+        accentText: "#6d28d9",
+        accentSoft: "#f5f3ff",
+        accentBorder: "#ddd6fe",
+        accentInk: "#ffffff",
+        accentRgb: "109, 40, 217",
+      },
+      dark: {
+        accent: "#7c3aed",
+        accentHover: "#6d28d9",
+        accentText: "#c4b5fd",
+        accentSoft: "rgba(124, 58, 237, 0.20)",
+        accentBorder: "rgba(196, 181, 253, 0.32)",
+        accentInk: "#ffffff",
+        accentRgb: "124, 58, 237",
+      },
+    },
+    amber: {
+      label: "Amber",
+      light: {
+        accent: "#b45309",
+        accentHover: "#92400e",
+        accentText: "#92400e",
+        accentSoft: "#fffbeb",
+        accentBorder: "#fde68a",
+        accentInk: "#ffffff",
+        accentRgb: "180, 83, 9",
+      },
+      dark: {
+        accent: "#f59e0b",
+        accentHover: "#fbbf24",
+        accentText: "#fcd34d",
+        accentSoft: "rgba(245, 158, 11, 0.18)",
+        accentBorder: "rgba(252, 211, 77, 0.32)",
+        accentInk: "#06204D",
+        accentRgb: "245, 158, 11",
+      },
+    },
+    rose: {
+      label: "Rose",
+      light: {
+        accent: "#be123c",
+        accentHover: "#9f1239",
+        accentText: "#be123c",
+        accentSoft: "#fff1f2",
+        accentBorder: "#fecdd3",
+        accentInk: "#ffffff",
+        accentRgb: "190, 18, 60",
+      },
+      dark: {
+        accent: "#e11d48",
+        accentHover: "#be123c",
+        accentText: "#fda4af",
+        accentSoft: "rgba(225, 29, 72, 0.20)",
+        accentBorder: "rgba(253, 164, 175, 0.32)",
+        accentInk: "#ffffff",
+        accentRgb: "225, 29, 72",
+      },
+    },
+    emerald: {
+      label: "Emerald",
+      light: {
+        accent: "#047857",
+        accentHover: "#065f46",
+        accentText: "#047857",
+        accentSoft: "#ecfdf5",
+        accentBorder: "#a7f3d0",
+        accentInk: "#ffffff",
+        accentRgb: "4, 120, 87",
+      },
+      dark: {
+        accent: "#10b981",
+        accentHover: "#34d399",
+        accentText: "#6ee7b7",
+        accentSoft: "rgba(16, 185, 129, 0.18)",
+        accentBorder: "rgba(110, 231, 183, 0.32)",
+        accentInk: "#06204D",
+        accentRgb: "16, 185, 129",
+      },
+    },
+  },
 }
+
+export type AccentId = keyof typeof brand.accents
 
 export type Category = "File tools" | "QR tools" | "AI text tools" | "Audio tools" | "Workspace"
 

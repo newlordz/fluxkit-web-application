@@ -635,8 +635,8 @@ export default function AuthPage({
                       <div
                         className="auth-field-hint"
                         style={{
-                          background: "rgba(0, 201, 183, 0.12)",
-                          border: "1px solid rgba(0, 201, 183, 0.35)",
+                          background: "rgba(var(--accent-rgb), 0.12)",
+                          border: "1px solid rgba(var(--accent-rgb), 0.35)",
                           padding: "10px 14px",
                           borderRadius: "8px",
                           marginBottom: "14px",

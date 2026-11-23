@@ -40,7 +40,14 @@ import {
   Zap,
 } from "lucide-react"
 
-import { brand, categories, tools, type Category, type Tool } from "./config"
+import {
+  brand,
+  categories,
+  tools,
+  type AccentId,
+  type Category,
+  type Tool,
+} from "./config"
 
 import MasterfileLogo from "./MasterfileLogo"
 
@@ -271,10 +278,10 @@ function ToolCard({
                   flexShrink: 0,
 
                   background: isToolPro(tool.id)
-                    ? "rgba(0,201,183,0.15)"
+                    ? "rgba(var(--accent-rgb),0.15)"
                     : "rgba(16,185,129,0.15)",
 
-                  color: isToolPro(tool.id) ? "#00C9B7" : "#10b981",
+                  color: isToolPro(tool.id) ? "var(--accent)" : "#10b981",
                 }}
               >
                 {isToolPro(tool.id)
@@ -332,6 +339,12 @@ export default function App() {
     if (v2) return v2
 
     return "light"
+  })
+
+  const [accent, setAccent] = useState<AccentId>(() => {
+    const saved = stored("masterfilepro-accent", "teal")
+
+    return saved in brand.accents ? (saved as AccentId) : "teal"
   })
 
   const [collapsed, setCollapsed] = useState(
@@ -481,10 +494,28 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
 
-    const palette = brand.colors[theme === "light" ? "light" : "dark"]
+    document.documentElement.dataset.accent = accent
+
+    const mode = theme === "light" ? "light" : "dark"
+
+    const palette = brand.colors[mode]
+
+    const tone = brand.accents[accent][mode]
 
     for (const [key, value] of Object.entries({
-      "--accent": palette.accent,
+      "--accent": tone.accent,
+
+      "--accent-hover": tone.accentHover,
+
+      "--accent-text": tone.accentText,
+
+      "--accent-soft": tone.accentSoft,
+
+      "--accent-border": tone.accentBorder,
+
+      "--accent-ink": tone.accentInk,
+
+      "--accent-rgb": tone.accentRgb,
 
       "--bg": palette.background,
 
@@ -499,7 +530,9 @@ export default function App() {
     persist("masterfilepro-theme", theme)
 
     persist("masterfilepro-theme-v2", theme)
-  }, [theme])
+
+    persist("masterfilepro-accent", accent)
+  }, [theme, accent])
 
   useEffect(() => {
     persist("masterfilepro-sidebar", String(collapsed))
@@ -939,9 +972,9 @@ export default function App() {
                       background:
                         "linear-gradient(135deg, #06204D 0%, #0A2558 100%)",
 
-                      color: "#00C9B7",
+                      color: "var(--accent)",
 
-                      border: "1.5px solid #00C9B7",
+                      border: "1.5px solid var(--accent)",
 
                       fontWeight: 800,
                     }
@@ -978,7 +1011,7 @@ export default function App() {
                       : ""
                   }
                   onClick={() => navigate("admin")}
-                  style={{ color: "#00C9B7", fontWeight: 600 }}
+                  style={{ color: "var(--accent)", fontWeight: 600 }}
                 >
                   <ShieldCheck size={18} />
                   <span>Admin Portal</span>
@@ -1092,9 +1125,9 @@ export default function App() {
                         background:
                           "linear-gradient(135deg, #06204D 0%, #0A2558 100%)",
 
-                        color: "#00C9B7",
+                        color: "var(--accent)",
 
-                        border: "1.5px solid #00C9B7",
+                        border: "1.5px solid var(--accent)",
 
                         fontWeight: 800,
                       }
@@ -1199,15 +1232,15 @@ export default function App() {
 
                   borderRadius: "20px",
 
-                  background: "rgba(0, 201, 183, 0.12)",
+                  background: "rgba(var(--accent-rgb), 0.12)",
 
-                  color: "#00C9B7",
+                  color: "var(--accent)",
 
                   fontSize: "12px",
 
                   fontWeight: 600,
 
-                  border: "1px solid rgba(0, 201, 183, 0.25)",
+                  border: "1px solid rgba(var(--accent-rgb), 0.25)",
 
                   cursor: "pointer",
                 }}
@@ -1614,7 +1647,7 @@ export default function App() {
                     <div className="settings-account-row">
                       <span>Role & Privileges</span>
                       <strong
-                        style={{ color: isAdmin ? "#00C9B7" : "inherit" }}
+                        style={{ color: isAdmin ? "var(--accent)" : "inherit" }}
                       >
                         {isAdmin
                           ? "Root Administrator"
@@ -2208,11 +2241,11 @@ export default function App() {
 
                           borderRadius: "6px",
 
-                          background: "rgba(0, 201, 183, 0.15)",
+                          background: "rgba(var(--accent-rgb), 0.15)",
 
-                          color: "#00C9B7",
+                          color: "var(--accent)",
 
-                          border: "1px solid rgba(0, 201, 183, 0.3)",
+                          border: "1px solid rgba(var(--accent-rgb), 0.3)",
 
                           fontWeight: 600,
 
@@ -2268,6 +2301,38 @@ export default function App() {
                       <option value="light">Light</option>
                     </select>
                   </label>
+                  <div className="accent-picker">
+                    <span className="accent-picker-label">Accent colour</span>
+                    <div
+                      className="accent-swatches"
+                      role="group"
+                      aria-label="Accent colour"
+                    >
+                      {Object.entries(brand.accents).map(([id, tone]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className={
+                            accent === id
+                              ? "accent-swatch is-selected"
+                              : "accent-swatch"
+                          }
+                          style={{
+                            background:
+                              tone[theme === "light" ? "light" : "dark"].accent,
+                          }}
+                          title={tone.label}
+                          aria-label={`${tone.label} accent`}
+                          aria-pressed={accent === id}
+                          onClick={() => setAccent(id as AccentId)}
+                        />
+                      ))}
+                    </div>
+                    <small>
+                      Changes the brand colour only. Backgrounds, text and
+                      success or error states are untouched.
+                    </small>
+                  </div>
                   <p>
                     Preferences stay in this browser. Files and document
                     contents are never saved to local storage.

@@ -642,12 +642,13 @@ test("Suite 4: Chained Multi-Action Pipelines & Progress Tracking", async (t) =>
       /Choose at least two PDFs to merge and compress\./
     )
 
-    // Contains 0-byte file
+    // A 0-byte file is skipped and reported, the same way plain merge treats it.
     const zeroPdf = new File([new Blob([])], "zero.pdf", { type: "application/pdf" })
-    await assert.rejects(
-      async () => services.mergeAndCompress([pdf1, zeroPdf]),
-      /zero\.pdf is empty \(0 bytes\)\./
-    )
+    const withZero = await services.mergeAndCompress([pdf1, zeroPdf])
+    assert.strictEqual(withZero.skipped.length, 1, "the empty file is named, not fatal")
+    assert.strictEqual(withZero.skipped[0].name, "zero.pdf")
+    const zeroDoc = await PDFDocument.load(await withZero.blob.arrayBuffer())
+    assert.strictEqual(zeroDoc.getPageCount(), 1, "the readable document still merged")
 
     // Valid 3-file merge + compression
     const pdf2 = await createSamplePDF(1, "Doc 2")

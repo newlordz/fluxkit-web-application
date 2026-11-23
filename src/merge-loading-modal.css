@@ -261,7 +261,7 @@
 .mlm-progress-fill {
   height: 100%;
   border-radius: 10px;
-  background: linear-gradient(90deg, #06204D 0%, #00C9B7 50%, #00E5D2 100%);
+  background: linear-gradient(90deg, #06204D 0%, var(--accent) 50%, var(--accent-hover) 100%);
   background-size: 200% 100%;
   animation: mlmShimmer 2s linear infinite;
   transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -381,19 +381,19 @@ body.light-mode .mlm-floating-doc {
 
 [data-theme='light'] .mlm-floating-doc--center,
 body.light-mode .mlm-floating-doc--center {
-  background: #f0fdfa;
-  border-color: #00C9B7;
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 [data-theme='light'] .mlm-progress-track,
 body.light-mode .mlm-progress-track {
-  background: #e6f9f7;
+  background: var(--accent-soft);
 }
 
 [data-theme='light'] .mlm-file-status,
 body.light-mode .mlm-file-status {
-  background: #f0fdfa;
-  border-color: #99f6e4;
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
   color: #06204D;
 }
 

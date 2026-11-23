@@ -560,7 +560,7 @@
 }
 :root[data-theme='light'] .hint-pill-teal:hover {
   background: var(--accent-soft);
-  color: #115e59;
+  color: var(--accent-text);
   transform: translateY(-1px);
 }
 
@@ -704,10 +704,10 @@
   border: 1px solid var(--accent-soft);
 }
 :root[data-theme='light'] .quick-teal:hover {
-  border-color: #5eead4;
+  border-color: var(--accent-border);
   background: #fafffe;
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px -2px rgba(13, 148, 136, 0.08);
+  box-shadow: 0 8px 18px -2px rgba(var(--accent-rgb), 0.08);
 }
 :root[data-theme='light'] .quick-teal:hover .quick-icon-wrapper {
   background: var(--accent-text);
@@ -882,8 +882,8 @@
   border: 1px solid var(--accent-soft);
 }
 :root[data-theme='light'] .tool-card.theme-teal:hover {
-  border-color: #5eead4;
-  box-shadow: 0 10px 24px -4px rgba(13, 148, 136, 0.08);
+  border-color: var(--accent-border);
+  box-shadow: 0 10px 24px -4px rgba(var(--accent-rgb), 0.08);
 }
 :root[data-theme='light'] .tool-card.theme-teal:hover .card-arrow {
   color: var(--accent-text);
@@ -995,7 +995,7 @@
   border: 1px solid var(--accent-soft);
 }
 :root[data-theme='light'] .strip-teal:hover {
-  border-color: #5eead4;
+  border-color: var(--accent-border);
 }
 
 :root[data-theme='light'] .strip-violet .category-icon {
@@ -1051,8 +1051,8 @@
 
 :root[data-theme='light'] .primary {
   background: var(--accent);
-  /* White on this teal is 2.9:1; the brand navy clears AA at body sizes. */
-  color: var(--brand-navy);
+  /* Navy on teal was AA, but a fixed navy fails on rose or blue; the accent carries its own ink. */
+  color: var(--accent-ink);
   border-radius: 8px;
   font-weight: 600;
   padding: 12px 20px;
@@ -1063,10 +1063,10 @@
 :root[data-theme='light'] .primary:hover,
 :root[data-theme='light'] .tool-page button.primary:hover,
 :root[data-theme='light'] .primary:focus-visible {
-  background: #4338ca;
-  color: #ffffff;
+  background: var(--accent-hover);
+  color: var(--accent-ink);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px -1px rgba(67, 56, 202, 0.4);
+  box-shadow: 0 4px 14px -1px rgba(var(--accent-rgb), 0.4);
 }
 
 :root[data-theme='light'] .primary:hover *,
@@ -1496,7 +1496,7 @@
 }
 
 :root[data-theme='light'] .admin-nav-tab.active .admin-nav-icon {
-  color: #00877a;
+  color: var(--accent-text);
 }
 
 :root[data-theme='light'] .admin-nav-tab::before,
@@ -1513,13 +1513,13 @@
 
 :root[data-theme='light'] .admin-nav-tab.active .admin-nav-badge {
   background: rgba(var(--accent-rgb), 0.12);
-  color: #00695f;
+  color: var(--accent-text);
   border-color: rgba(var(--accent-rgb), 0.28);
 }
 
 :root[data-theme='light'] .admin-nav-badge.pro {
   background: rgba(var(--accent-rgb), 0.12);
-  color: #00695f;
+  color: var(--accent-text);
   border-color: rgba(var(--accent-rgb), 0.28);
 }
 
@@ -1537,7 +1537,7 @@
 
 /* Card Format Pills in Light Mode */
 :root[data-theme='light'] .card-pro-pill {
-  background: #e6fffa !important;
+  background: var(--accent-soft) !important;
   color: var(--accent-text) !important;
   border-color: var(--accent-border) !important;
 }

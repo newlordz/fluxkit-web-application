@@ -44,6 +44,26 @@ async function getPdfEngine(): Promise<any> {
   }
 }
 
+// Loaded the same way as the other engine modules. A tool that cannot reach the
+// policy treats the job as local-only, so a broken import never spends a credit.
+async function getEngineRouter(): Promise<any> {
+  try {
+    return await import("./engineRouter")
+  } catch {
+    return null
+  }
+}
+
+async function localCompressFellShort(args: {
+  level?: string
+  originalSize: number
+  outSize: number
+}): Promise<boolean> {
+  const router = await getEngineRouter()
+
+  return router?.compressNeedsCloud?.(args) === true
+}
+
 async function getApiPool(): Promise<any> {
   if (typeof window !== "undefined" && (window as any).__masterfileproApiPool) {
     return (window as any).__masterfileproApiPool
@@ -1308,19 +1328,17 @@ async function maybeStripPdfMetadata(
     : await stripPdfMetadata(bytes, options?.signal)
 }
 
-export async function compressPDF(
-  file: File,
+// Billed rescue for compress jobs the in-browser engine could not shrink enough.
+// Runs only after the local bytes exist, and only for a file worth a credit.
+async function cloudCompressRescue(
+  originalBytes: ArrayBuffer,
+
+  originalSize: number,
+
+  level: string,
 
   options?: CompressOptions,
-): Promise<OutputResult> {
-  if (!file) throw new Error("Select a PDF to compress.")
-
-  const originalBytes = await file.arrayBuffer()
-
-  const originalSize = file.size || originalBytes.byteLength
-
-  const level = options?.level || "standard"
-
+): Promise<Uint8Array | null> {
   // 0. High-Fidelity Adobe PDF Services Cloud Engine (with automatic failover)
 
   const activeApi = await nextCloudApi("pdf-compression")
@@ -1384,30 +1402,8 @@ export async function compressPDF(
             options,
           )
 
-          const compressedSize = outputBytes.byteLength
-
-          const savedBytes = Math.max(0, originalSize - compressedSize)
-
-          const savedPercentage =
-            originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
-
-          const isAlreadyOptimal = compressedSize >= originalSize
-
-          const safeName = file.name || "document.pdf"
-
-          return {
-            name: `compressed-${safeName}`,
-
-            blob: new Blob([outputBytes as any], { type: "application/pdf" }),
-
-            originalSize,
-
-            compressedSize,
-
-            savedPercentage,
-
-            isAlreadyOptimal,
-          }
+          // The caller compares these bytes with the local result before serving.
+          return outputBytes
         }
       } else {
         const errorData = await response.json().catch(() => ({}))
@@ -1509,30 +1505,8 @@ export async function compressPDF(
             options,
           )
 
-          const compressedSize = outputBytes.byteLength
-
-          const savedBytes = Math.max(0, originalSize - compressedSize)
-
-          const savedPercentage =
-            originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
-
-          const isAlreadyOptimal = compressedSize >= originalSize
-
-          const safeName = file.name || "document.pdf"
-
-          return {
-            name: `compressed-${safeName}`,
-
-            blob: new Blob([outputBytes as any], { type: "application/pdf" }),
-
-            originalSize,
-
-            compressedSize,
-
-            savedPercentage,
-
-            isAlreadyOptimal,
-          }
+          // The caller compares these bytes with the local result before serving.
+          return outputBytes
         }
       } else {
         const errorData = await response.json().catch(() => ({}))
@@ -1563,6 +1537,22 @@ export async function compressPDF(
       })
     }
   }
+  return null
+}
+
+export async function compressPDF(
+  file: File,
+
+  options?: CompressOptions,
+): Promise<OutputResult> {
+  if (!file) throw new Error("Select a PDF to compress.")
+
+  const originalBytes = await file.arrayBuffer()
+
+  const originalSize = file.size || originalBytes.byteLength
+
+  const level = options?.level || "standard"
+
 
   const quality = level === "extreme" ? 0.4 : level === "high" ? 0.55 : 0.7
 
@@ -1789,6 +1779,53 @@ export async function compressPDF(
     originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0
 
   const safeName = file.name || "document.pdf"
+
+  // The browser already has an answer. A billed engine is asked only when that
+  // answer barely shrank the file, and even then its bytes are used only if they
+  // beat what the page produced for free.
+  if (
+    await localCompressFellShort({
+      level,
+
+      originalSize,
+
+      outSize: finalSize,
+    })
+  ) {
+    ensureNotCancelled(options?.signal)
+
+    const rescueBytes = await cloudCompressRescue(
+      originalBytes,
+
+      originalSize,
+
+      level,
+
+      options,
+    )
+
+    if (rescueBytes && rescueBytes.byteLength < finalSize) {
+      const rescuedSize = rescueBytes.byteLength
+
+      return {
+        name: `compressed-${safeName}`,
+
+        blob: new Blob([rescueBytes as any], {
+          type: "application/pdf",
+        }),
+
+        originalSize,
+
+        compressedSize: rescuedSize,
+
+        savedPercentage: Math.round(
+          ((originalSize - rescuedSize) / originalSize) * 100,
+        ),
+
+        isAlreadyOptimal: false,
+      }
+    }
+  }
 
   return {
     name: `compressed-${safeName}`,
@@ -10165,9 +10202,8 @@ export async function mergeAndCompress(
     throw new Error("Choose at least two PDFs to merge and compress.")
   }
 
-  for (const f of files) {
-    if (f.size === 0) throw new Error(`${f.name} is empty (0 bytes).`)
-  }
+  // Empty and unreadable files are left to mergePDFs, which skips them and
+  // reports the reason instead of failing the whole job.
 
   const tracker = new PipelineProgressTracker(
     [
@@ -10339,6 +10375,10 @@ export async function splitAndCompress(
 
         `Split page ${i + 1} of ${pageCount}...`,
       )
+
+      // pageDoc.save() is synchronous, so without this the bar would paint once
+      // at the start and the Cancel button could not respond until the end.
+      if (i % 8 === 7) await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     tracker.nextStage()

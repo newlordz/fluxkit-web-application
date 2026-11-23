@@ -197,6 +197,34 @@ test("Suite: merge skip-and-report & split progress", async (t) => {
     assert.equal(res.pageCount, 2)
   })
 
+  await t.test("M.7 merge & compress skips a 0-byte file instead of failing", async () => {
+    const good = [
+      toFile("keep-a.pdf", await createTestPDF(2, "KeepA")),
+      toFile("keep-b.pdf", await createTestPDF(3, "KeepB")),
+    ]
+
+    const zero = new File([], "hollow.pdf", { type: "application/pdf" })
+
+    const res = await services.mergeAndCompress([...good, zero], {
+      compressLevel: "standard",
+
+      stripMetadata: true,
+    })
+
+    assert.equal(res.skipped.length, 1, "the empty file is reported, not fatal")
+    assert.equal(res.skipped[0].name, "hollow.pdf")
+    assert.match(res.skipped[0].reason, /empty/i)
+
+    const doc = await PDFDocument.load(await res.blob.arrayBuffer())
+    assert.equal(doc.getPageCount(), 5, "the readable documents still merged")
+
+    assert.equal(
+      res.originalSize,
+      good.reduce((acc, f) => acc + f.size, 0),
+      "the empty file contributes nothing to the baseline",
+    )
+  })
+
   await t.test("S.1 split reports progress from 0 to 100", async () => {
     const file = toFile("pages.pdf", await createTestPDF(6, "Progress"))
 
@@ -274,5 +302,57 @@ test("Suite: merge skip-and-report & split progress", async (t) => {
       splitting.some((e) => /assembling/i.test(e.message || "")),
       "the combined document is reported as its own step",
     )
+  })
+
+  await t.test("S.4 split-compress every-page mode reports each page and yields", async () => {
+    const file = toFile("pages.pdf", await createTestPDF(20, "EveryPage"))
+
+    const events = []
+
+    // a timer can only advance when the loop hands the event loop back, so this
+    // counts the yields React needs to repaint and Cancel needs to respond.
+    let beats = 0
+    let beatsDuringSplit = 0
+    let stopped = false
+    const tick = () => {
+      if (stopped) return
+      beats += 1
+      setTimeout(tick, 0)
+    }
+    setTimeout(tick, 0)
+
+    const res = await services.splitAndCompress(file, {
+      splitMode: "all-pages",
+
+      compressLevel: "standard",
+
+      onProgress: (evt) => {
+        if (evt.stage === "splitting") beatsDuringSplit = beats
+        events.push(evt)
+      },
+    })
+
+    stopped = true
+
+    const splitting = events.filter((e) => e.stage === "splitting")
+    const pageMessages = splitting.map((e) => e.message).filter((m) => /Split page/.test(m || ""))
+
+    assert.equal(pageMessages.length, 20, "one step per page")
+    assert.match(pageMessages[0], /Split page 1 of 20/)
+    assert.match(pageMessages[19], /Split page 20 of 20/)
+
+    const stageProgress = splitting.map((e) => e.stageProgress)
+    assert.deepEqual(
+      stageProgress,
+      [...stageProgress].sort((a, b) => a - b),
+      "progress never moves backwards",
+    )
+
+    assert.ok(beatsDuringSplit > 0, "the splitting loop yields to the event loop")
+
+    assert.ok(res.finalSize > 0)
+
+    const zip = await new Response(res.blob).blob().then((b) => b.size)
+    assert.ok(zip > 0, "the per-page ZIP is produced")
   })
 })

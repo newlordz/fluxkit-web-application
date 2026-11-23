@@ -133,7 +133,7 @@
   width: 380px;
   height: 140px;
   transform: translate(-50%, -50%) rotate(-15deg);
-  border: 1.5px dashed rgba(0, 201, 183, 0.28);
+  border: 1.5px dashed rgba(var(--accent-rgb), 0.28);
   border-radius: 50%;
   pointer-events: none;
   animation: orbit-spin 60s linear infinite;
@@ -175,11 +175,11 @@
 @keyframes core-axis-spin {
   0%, 100% {
     transform: rotate(-8deg) scale(1);
-    box-shadow: 0 0 35px rgba(0, 201, 183, 0.28), 0 15px 35px rgba(6, 32, 77, 0.25);
+    box-shadow: 0 0 35px rgba(var(--accent-rgb), 0.28), 0 15px 35px rgba(6, 32, 77, 0.25);
   }
   50% {
     transform: rotate(4deg) scale(1.05);
-    box-shadow: 0 0 50px rgba(0, 201, 183, 0.5), 0 20px 45px rgba(6, 32, 77, 0.35);
+    box-shadow: 0 0 50px rgba(var(--accent-rgb), 0.5), 0 20px 45px rgba(6, 32, 77, 0.35);
   }
 }
 .auth-float {
@@ -614,8 +614,8 @@
   line-height: 1.6;
   margin-top: 14px;
   padding: 10px 14px;
-  background: rgba(0, 201, 183, 0.1);
-  border: 1px solid rgba(0, 201, 183, 0.25);
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
   border-radius: 6px;
 }
 .toast-stack { position: fixed; bottom: 24px; right: 24px; width: min(380px,calc(100vw - 40px)); display: flex; flex-direction: column; gap: 10px; z-index: 100; }
@@ -702,8 +702,8 @@
   color: var(--accent-text);
   margin-top: 8px;
   line-height: 1.5;
-  background: rgba(0, 201, 183, 0.08);
-  border: 1px solid rgba(0, 201, 183, 0.25);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
   padding: 10px 14px;
   border-radius: 6px;
 }

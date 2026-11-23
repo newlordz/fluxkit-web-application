@@ -3714,19 +3714,19 @@ export default function ToolPage({
 
                       background: "#06204D",
 
-                      border: "2px solid #00C9B7",
+                      border: "2px solid var(--accent)",
 
                       display: "grid",
 
                       placeItems: "center",
 
-                      color: "#00E5D2",
+                      color: "var(--accent-hover)",
 
                       fontSize: "20px",
 
                       fontWeight: 700,
 
-                      boxShadow: "0 0 25px rgba(0, 201, 183, 0.4)",
+                      boxShadow: "0 0 25px rgba(var(--accent-rgb), 0.4)",
 
                       marginBottom: 10,
                     }}
@@ -7254,23 +7254,22 @@ export default function ToolPage({
                 >
                   {dropSuccessState ? (
                     <div className="dropzone-feedback-wrapper dropzone-success-enter">
-                      <div className="dropzone-success-ring-wrapper">
-                        <span className="dropzone-ring-wave" />
-                        <span className="dropzone-ring-wave ring-wave-delayed" />
-                        <div className="dropzone-success-icon-badge">
-                          <CheckCircle2
-                            size={36}
-                            className="dropzone-check-icon"
-                          />
-                        </div>
-                      </div>
+                      <svg
+                        className="result-done-mark"
+                        viewBox="0 0 44 44"
+                        role="img"
+                        aria-label="Files added"
+                      >
+                        <circle cx="22" cy="22" r="20" />
+                        <path d="M13 22.5l6 6 12-13" />
+                      </svg>
                       <strong className="dropzone-feedback-title">
                         {dropSuccessState.count === 1
-                          ? `"${dropSuccessState.names[0]}" loaded successfully!`
-                          : `${dropSuccessState.count} files loaded successfully!`}
+                          ? `"${dropSuccessState.names[0]}" added`
+                          : `${dropSuccessState.count} files added`}
                       </strong>
                       <span className="dropzone-feedback-subtitle">
-                        Ready to process · Drop more or configure settings below
+                        Drop more, or adjust the settings below
                       </span>
                     </div>
                   ) : isDropzoneDragging ? (
@@ -9339,7 +9338,7 @@ export default function ToolPage({
           <section className="panel result-panel" aria-live="polite">
             <div className="section-heading">
               <h2>Your result</h2>
-              {status === "completed" && (
+              {status === "completed" && textOutput && (
                 <span className="live-badge">
                   <Check size={12} /> Ready
                 </span>
@@ -10264,11 +10263,11 @@ export default function ToolPage({
                         className="primary"
                         style={{
                           background:
-                            "linear-gradient(135deg, #06204D, #00C9B7)",
+                            "linear-gradient(135deg, #06204D, var(--accent))",
 
                           borderColor: "transparent",
 
-                          boxShadow: "0 4px 14px rgba(0, 201, 183, 0.3)",
+                          boxShadow: "0 4px 14px rgba(var(--accent-rgb), 0.3)",
 
                           display: "inline-flex",
 
@@ -10720,45 +10719,40 @@ export default function ToolPage({
                   <div className="compress-results-card">
                     {result.savedPercentage && result.savedPercentage > 0 ? (
                       <>
-                        <div className="compress-metrics-header">
-                          <strong className="compress-success-tag">
-                            {result.savedPercentage}% space saved
-                          </strong>
-                          <span className="compress-saved-kb">
-                            {(
-                              (files[0].size - result.blob.size) /
-                              1024
-                            ).toFixed(1)}{" "}
-                            KB smaller
-                          </span>
+                        <div className="compress-metrics-row">
+                          <span>Original</span>
+
+                          <strong>{(files[0].size / 1024).toFixed(1)} KB</strong>
                         </div>
-                        <div className="compress-reduction-bar-row">
-                          <div className="compress-size-pill original">
-                            <small>Original</small>
-                            <strong>
-                              {(files[0].size / 1024).toFixed(1)} KB
-                            </strong>
-                          </div>
-                          <div className="compress-reduction-arrow">
-                            <span>&rarr;</span>
-                          </div>
-                          <div className="compress-size-pill final">
-                            <small>Compressed</small>
-                            <strong>
-                              {(result.blob.size / 1024).toFixed(1)} KB
-                            </strong>
-                          </div>
+
+                        <div className="compress-metrics-row">
+                          <span>Compressed</span>
+
+                          <strong>
+                            {(result.blob.size / 1024).toFixed(1)} KB
+                          </strong>
+                        </div>
+
+                        <div className="compress-metrics-row saved">
+                          <span>Saved</span>
+
+                          <strong>
+                            {((files[0].size - result.blob.size) / 1024).toFixed(
+                              1,
+                            )}{" "}
+                            KB
+                          </strong>
                         </div>
                       </>
                     ) : (
                       <div className="compress-already-optimal">
                         <Check size={18} className="compress-optimal-icon" />
                         <div>
-                          <strong>Maximum Compression Reached</strong>
+                          <strong>No further reduction found</strong>
                           <p>
-                            This PDF is already fully compacted at{" "}
-                            {(files[0].size / 1024).toFixed(1)} KB (0% further
-                            reduction possible without quality degradation).
+                            Output is{" "}
+                            {(result.blob.size / 1024).toFixed(1)} KB, against an
+                            input of {(files[0].size / 1024).toFixed(1)} KB.
                           </p>
                         </div>
                       </div>
@@ -11353,7 +11347,7 @@ export default function ToolPage({
                 <div className="empty-icon">
                   <tool.icon size={28} />
                 </div>
-                <h3>A little input. A great result.</h3>
+                <h3>Nothing here yet</h3>
                 <p>
                   Your {tool.id === "qr" ? "QR code" : "document"} will appear
                   here when it’s ready.

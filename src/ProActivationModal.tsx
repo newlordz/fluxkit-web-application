@@ -777,7 +777,7 @@ export default function ProActivationModal({
 
                     gap: "8px",
 
-                    color: "#00C9B7",
+                    color: "var(--accent)",
 
                     fontWeight: 600,
                   }}

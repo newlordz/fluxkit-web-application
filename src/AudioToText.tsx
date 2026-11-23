@@ -835,15 +835,17 @@ export default function AudioToText({
           >
             {dropSuccess ? (
               <div className="dropzone-feedback-wrapper dropzone-success-enter">
-                <div className="dropzone-success-ring-wrapper">
-                  <span className="dropzone-ring-wave" />
-                  <span className="dropzone-ring-wave ring-wave-delayed" />
-                  <div className="dropzone-success-icon-badge">
-                    <CheckCircle2 size={36} className="dropzone-check-icon" />
-                  </div>
-                </div>
+                <svg
+                  className="result-done-mark"
+                  viewBox="0 0 44 44"
+                  role="img"
+                  aria-label="Audio file added"
+                >
+                  <circle cx="22" cy="22" r="20" />
+                  <path d="M13 22.5l6 6 12-13" />
+                </svg>
                 <strong className="dropzone-feedback-title">
-                  Audio file loaded successfully!
+                  Audio file added
                 </strong>
                 <span className="dropzone-feedback-subtitle">
                   {file?.name || "Ready to transcribe"}

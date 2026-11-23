@@ -92,11 +92,11 @@ export default function MasterfileLogo({
 
               borderRadius: "4px",
 
-              background: "rgba(0, 201, 183, 0.15)",
+              background: "rgba(var(--accent-rgb), 0.15)",
 
               color: tealColor,
 
-              border: "1px solid rgba(0, 201, 183, 0.35)",
+              border: "1px solid rgba(var(--accent-rgb), 0.35)",
 
               letterSpacing: "0.5px",
             }}
@@ -128,7 +128,7 @@ export default function MasterfileLogo({
         width="54"
         height="68"
         rx="10"
-        fill="#00C9B7"
+        fill="#00C9B7" className="logo-teal-fill"
         opacity="0.95"
       />
       {/* Middle document (Teal) */}
@@ -138,7 +138,7 @@ export default function MasterfileLogo({
         width="54"
         height="68"
         rx="10"
-        fill="#00D2C4"
+        fill="#00D2C4" className="logo-teal-fill"
         opacity="0.95"
       />
 
@@ -172,10 +172,10 @@ export default function MasterfileLogo({
         <path d="M41.5 51L51 61.5L47 65.5L38.5 56.5L41.5 51Z" fill="#FFFFFF" />
 
         {/* Right half of M (Teal #00C9B7) */}
-        <path d="M51 61.5L60.5 51L63.5 56.5L55 65.5L51 61.5Z" fill="#00C9B7" />
+        <path d="M51 61.5L60.5 51L63.5 56.5L55 65.5L51 61.5Z" fill="#00C9B7" className="logo-teal-fill" />
         {/* Right column outer upright (Teal #00C9B7) */}
-        <path d="M60.5 44H66V70H60.5V44Z" fill="#00C9B7" />
-        <path d="M60.5 59L55 64.5V55.5L66 44V70H60.5V59Z" fill="#00C9B7" />
+        <path d="M60.5 44H66V70H60.5V44Z" fill="#00C9B7" className="logo-teal-fill" />
+        <path d="M60.5 59L55 64.5V55.5L66 44V70H60.5V59Z" fill="#00C9B7" className="logo-teal-fill" />
       </g>
     </svg>
   )
@@ -263,11 +263,11 @@ export default function MasterfileLogo({
 
             borderRadius: "4px",
 
-            background: "rgba(0, 201, 183, 0.12)",
+            background: "rgba(var(--accent-rgb), 0.12)",
 
             color: tealColor,
 
-            border: "1px solid rgba(0, 201, 183, 0.3)",
+            border: "1px solid rgba(var(--accent-rgb), 0.3)",
 
             letterSpacing: "0.8px",
 

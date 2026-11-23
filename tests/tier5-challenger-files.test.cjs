@@ -941,12 +941,13 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
       /Choose at least two PDFs to merge and compress/,
     )
 
-    // Rejection on 0-byte file in batch
+    // A 0-byte file is skipped and reported rather than failing the batch.
     const emptyPdf = createMockFile(new Uint8Array(0), "empty.pdf")
-    await assert.rejects(
-      async () => await services.mergeAndCompress([pdf1, emptyPdf]),
-      /is empty \(0 bytes\)/,
-    )
+    const withEmpty = await services.mergeAndCompress([pdf1, emptyPdf])
+    assert.strictEqual(withEmpty.skipped.length, 1)
+    assert.match(withEmpty.skipped[0].reason, /empty/i)
+    const emptyDoc = await PDFDocument.load(await withEmpty.blob.arrayBuffer())
+    assert.strictEqual(emptyDoc.getPageCount(), 2, "the readable document survived")
   })
 
   await t.test("3.6 splitAndCompress: mode 'all' (zip packaging) vs mode 'ranges' and empty error guards", async () => {

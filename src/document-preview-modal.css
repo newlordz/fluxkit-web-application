@@ -1137,22 +1137,22 @@
 }
 
 .dpm-file-preview-card--over {
-  border-color: #00C9B7 !important;
-  background: rgba(0, 201, 183, 0.08) !important;
+  border-color: var(--accent) !important;
+  background: rgba(var(--accent-rgb), 0.08) !important;
   transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 12px 28px rgba(0, 201, 183, 0.25) !important;
+  box-shadow: 0 12px 28px rgba(var(--accent-rgb), 0.25) !important;
 }
 
 .dpm-drop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 201, 183, 0.16);
-  border: 2px dashed #00C9B7;
+  background: rgba(var(--accent-rgb), 0.16);
+  border: 2px dashed var(--accent);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #00877a;
+  color: var(--accent-text);
   font-weight: 700;
   font-size: 12px;
   pointer-events: none;
@@ -1163,8 +1163,8 @@
 }
 
 [data-theme="dark"] .dpm-drop-overlay {
-  background: rgba(0, 201, 183, 0.24);
-  color: #5ffce9;
+  background: rgba(var(--accent-rgb), 0.24);
+  color: var(--accent-text);
 }
 
 .dpm-file-preview-card__grip {
@@ -1173,7 +1173,7 @@
 }
 
 .dpm-file-preview-card__grip:hover {
-  color: var(--accent, #00C9B7);
+  color: var(--accent, var(--accent));
   transform: scale(1.15);
 }
 
