@@ -627,6 +627,43 @@ test("Suite 4: Chained Multi-Action Pipelines", async (t) => {
       )
     },
   )
+
+  await t.test(
+    "4.7 compressPDF keeps or strips metadata on request",
+    async () => {
+      const doc = await PDFDocument.create()
+      const font = await doc.embedFont(StandardFonts.Helvetica)
+      doc.setTitle("Quarterly Report")
+      doc.setAuthor("Accounting Dept")
+      doc.setSubject("Confidential")
+      const page = doc.addPage([600, 400])
+      page.drawText("Numbers for the board pack", { x: 50, y: 340, size: 14, font })
+      const file = toFile("meta.pdf", await doc.save(), "application/pdf")
+
+      const keptResult = await services.compressPDF(file, {
+        level: "low",
+        stripMetadata: false,
+      })
+      const keptDoc = await PDFDocument.load(
+        await keptResult.blob.arrayBuffer(),
+      )
+      assert.strictEqual(keptDoc.getTitle(), "Quarterly Report")
+      assert.strictEqual(keptDoc.getAuthor(), "Accounting Dept")
+
+      const strippedResult = await services.compressPDF(file, { level: "low" })
+      const strippedDoc = await PDFDocument.load(
+        await strippedResult.blob.arrayBuffer(),
+      )
+      assert.strictEqual(strippedDoc.getTitle(), undefined)
+      assert.strictEqual(strippedDoc.getAuthor(), undefined)
+      assert.strictEqual(strippedDoc.getSubject(), undefined)
+      // the extra re-save used to delete the entries must not enlarge the file
+      assert.ok(
+        strippedResult.compressedSize <= keptResult.compressedSize,
+        `stripping grew the output: ${strippedResult.compressedSize} > ${keptResult.compressedSize}`,
+      )
+    },
+  )
 })
 
 // ============================================================================

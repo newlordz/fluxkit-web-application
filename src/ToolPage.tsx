@@ -2133,7 +2133,9 @@ export default function ToolPage({
 
             percentage: 100,
 
-            stage: "All files successfully stitched!",
+            stage: mergedRes.skipped
+              ? `Stitched ${mergedRes.breakdown?.length || 0} of ${files.length} documents.`
+              : "All files successfully stitched!",
           })
 
           await new Promise((resolve) => setTimeout(resolve, 450))
@@ -2157,7 +2159,30 @@ export default function ToolPage({
       } else if (tool.id === "split-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to split.")
 
-        setResult(await splitPDF(files[0], extra, signal))
+        setPipelineStep({
+          current: 1,
+
+          total: 1,
+
+          label: "Reading document pages...",
+        })
+
+        try {
+          setResult(
+            await splitPDF(files[0], extra, signal, {
+              onProgress: (p) =>
+                setPipelineStep({
+                  current: p.current,
+
+                  total: p.total,
+
+                  label: p.stage,
+                }),
+            }),
+          )
+        } finally {
+          setPipelineStep(null)
+        }
       } else if (tool.id === "compress") {
         if (files.length < 1) throw new Error("Select a PDF to compress.")
 
@@ -2950,14 +2975,26 @@ export default function ToolPage({
           },
         })
 
-        setResult({ name: res.name, blob: res.blob })
+        setResult({
+          name: res.name,
+
+          blob: res.blob,
+
+          skipped: res.skipped,
+        })
 
         setPipelineMetrics(res)
 
         setPipelineStep(null)
 
         notify.success(
-          `Merged & compressed ${files.length} PDFs: saved ${res.savedPercentage}%.`,
+          res.skipped
+            ? `Merged & compressed ${files.length - res.skipped.length} of ${
+                files.length
+              } PDFs: saved ${res.savedPercentage}%.`
+            : `Merged & compressed ${files.length} PDFs: saved ${
+                res.savedPercentage
+              }%.`,
         )
 
         onComplete(res.name)
@@ -10745,6 +10782,59 @@ export default function ToolPage({
                     </div>
                   </div>
                 )}
+
+                {(tool.id === "merge-pdf" || tool.id === "merge-compress") &&
+                result.skipped?.length ? (
+                  <div
+                    style={{
+                      width: "100%",
+
+                      margin: "12px 0",
+
+                      padding: "10px 12px",
+
+                      background: "rgba(245, 158, 11, 0.1)",
+
+                      border: "1px solid rgba(245, 158, 11, 0.3)",
+
+                      borderRadius: "8px",
+
+                      textAlign: "left",
+                    }}
+                  >
+                    <strong
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--warning, #b45309)",
+                      }}
+                    >
+                      {result.skipped.length} file
+                      {result.skipped.length !== 1 ? "s" : ""} skipped
+                    </strong>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "4px",
+                        marginTop: "6px",
+                      }}
+                    >
+                      {result.skipped.map((item, sIdx) => (
+                        <div
+                          key={sIdx}
+                          style={{
+                            fontSize: "11px",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{item.name}</span>
+                          {" — "}
+                          {item.reason}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* PDF to Word Extracted Text Preview card */}
                 {tool.id === "pdf-to-word" &&

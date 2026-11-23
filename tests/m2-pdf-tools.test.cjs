@@ -196,9 +196,9 @@ test("M2 compressPDF: high compression mode strips metadata cleanly", async () =
   const result = await compressPDF(file, { level: "high" })
   const reloaded = await PDFDocument.load(await result.blob.arrayBuffer())
 
-  assert.equal(reloaded.getTitle(), "")
-  assert.equal(reloaded.getAuthor(), "")
-  assert.equal(reloaded.getSubject(), "")
+  assert.equal(reloaded.getTitle(), undefined)
+  assert.equal(reloaded.getAuthor(), undefined)
+  assert.equal(reloaded.getSubject(), undefined)
   assert.ok(reloaded.getProducer())
 })
 

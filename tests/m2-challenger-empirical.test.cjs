@@ -243,10 +243,10 @@ test("CHALLENGE: compressPDF standard vs high stream savings & metadata strippin
   assert.equal(stdDoc.getPageCount(), 6)
   assert.equal(highDoc.getPageCount(), 6)
 
-  // 2. High compression strips metadata
-  assert.equal(highDoc.getTitle(), "")
-  assert.equal(highDoc.getAuthor(), "")
-  assert.equal(highDoc.getSubject(), "")
+  // 2. High compression strips metadata (the keys are deleted, not blanked)
+  assert.equal(highDoc.getTitle(), undefined)
+  assert.equal(highDoc.getAuthor(), undefined)
+  assert.equal(highDoc.getSubject(), undefined)
   assert.ok(!highDoc.getKeywords() || highDoc.getKeywords() === "")
   assert.ok(highDoc.getProducer())
   assert.equal(highDoc.getCreator(), "Masterfilepro")
@@ -768,6 +768,6 @@ test("CHALLENGE: Full 7-stage PDF toolchain round-trip pipeline", async () => {
   // Assert pipeline integrity
   assert.equal(finalDoc.getPageCount(), 1)
   assert.equal(finalDoc.getPage(0).getRotation().angle, 90)
-  assert.equal(finalDoc.getSubject(), "") // Unlocked and stripped
+  assert.equal(finalDoc.getSubject(), undefined) // Unlocked and stripped
   assert.ok(stage7.blob.size > 500)
 })

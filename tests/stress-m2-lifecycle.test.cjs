@@ -306,8 +306,8 @@ test("Lifecycle Step 5: compressPDF optimizes object streams with high level", a
   const doc5 = await PDFDocument.load(await res5.blob.arrayBuffer())
   assert.equal(doc5.getPageCount(), initialPageCount, "Compression must preserve page count")
   assert.equal(doc5.getCreator(), "Masterfilepro")
-  assert.equal(doc5.getTitle(), "")
-  assert.equal(doc5.getAuthor(), "")
+  assert.equal(doc5.getTitle(), undefined)
+  assert.equal(doc5.getAuthor(), undefined)
 })
 
 test("Lifecycle Step 6: splitPDF extracts subrange 1-2 from multi-page document", async () => {

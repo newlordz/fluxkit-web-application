@@ -1,4 +1,5 @@
 import {
+  PDFDict,
   PDFDocument,
   PDFName,
   PDFNumber,
@@ -118,6 +119,10 @@ export type {
 
 export interface CompressOptions {
   level?: "standard" | "high" | "low" | "extreme"
+
+  // Defaults to true: the document's title/author/dates are removed unless a
+  // caller explicitly asks to keep them.
+  stripMetadata?: boolean
 
   signal?: AbortSignal
 }
@@ -492,6 +497,21 @@ export interface MergePDFProgress {
 
 export type MergeProgressCallback = (progress: MergePDFProgress) => void
 
+// Splitting reports the same progress shape as merging: current item of total.
+export type SplitProgressCallback = (progress: MergePDFProgress) => void
+
+export interface SplitPDFOptions {
+  onProgress?: SplitProgressCallback
+
+  // Chained pipelines compress one combined document and never read the pieces,
+  // so they opt out of building N extra documents.
+  buildPieces?: boolean
+}
+
+// A merge keeps every source document in memory simultaneously, so the guard is
+// on the combined size; the dropzone already rejects single files over 25 MB.
+const MERGE_MAX_TOTAL_BYTES = 100 * 1024 * 1024
+
 export async function mergePDFs(
   files: File[],
 
@@ -501,6 +521,16 @@ export async function mergePDFs(
 ): Promise<OutputResult> {
   if (!files || files.length < 2) {
     throw new Error("Choose at least two PDFs to merge.")
+  }
+
+  const totalBytes = files.reduce((acc, f) => acc + f.size, 0)
+
+  if (totalBytes > MERGE_MAX_TOTAL_BYTES) {
+    const totalMb = (totalBytes / (1024 * 1024)).toFixed(1)
+
+    throw new Error(
+      `These ${files.length} PDFs total ${totalMb} MB, which is more than a browser merge can hold in memory. Split them into batches of up to ${MERGE_MAX_TOTAL_BYTES / (1024 * 1024)} MB.`,
+    )
   }
 
   onProgress?.({
@@ -518,6 +548,8 @@ export async function mergePDFs(
   const merged = await PDFDocument.create()
 
   const breakdown: Array<{ name: string; pageCount: number }> = []
+
+  const skipped: Array<{ name: string; reason: string }> = []
 
   for (let idx = 0; idx < files.length; idx++) {
     ensureNotCancelled(signal)
@@ -540,29 +572,47 @@ export async function mergePDFs(
       stage: `Extracting & stitching pages from ${file.name}...`,
     })
 
-    const buffer = await file.arrayBuffer()
+    // One unreadable document should not cost the user the other good pages,
+    // so failures are recorded per file and reported alongside the result.
+    try {
+      const buffer = await file.arrayBuffer()
 
-    if (!buffer || buffer.byteLength === 0) {
-      throw new Error(`File "${file.name}" is empty (0 bytes).`)
+      if (!buffer || buffer.byteLength === 0) {
+        throw new Error("the file is empty (0 bytes)")
+      }
+
+      const pdf = await PDFDocument.load(buffer, {
+        ignoreEncryption: true,
+      })
+
+      const indices = pdf.getPageIndices()
+
+      if (indices.length === 0) {
+        throw new Error("the document contains no valid pages")
+      }
+
+      const pages = await merged.copyPages(pdf, indices)
+
+      pages.forEach((page) => merged.addPage(page))
+
+      breakdown.push({ name: file.name, pageCount: indices.length })
+    } catch (err: any) {
+      if (err?.message === JOB_CANCELLED) throw err
+
+      skipped.push({
+        name: file.name,
+
+        reason: err?.message
+          ? String(err.message).replace(/^Error:\s*/, "")
+          : "it could not be read as a PDF",
+      })
     }
+  }
 
-    const pdf = await PDFDocument.load(buffer, {
-      ignoreEncryption: true,
-    })
-
-    const indices = pdf.getPageIndices()
-
-    if (indices.length === 0) {
-      throw new Error(
-        `Document "${file.name}" contains no valid pages to merge.`,
-      )
-    }
-
-    const pages = await merged.copyPages(pdf, indices)
-
-    pages.forEach((page) => merged.addPage(page))
-
-    breakdown.push({ name: file.name, pageCount: indices.length })
+  if (breakdown.length === 0) {
+    throw new Error(
+      `None of the ${files.length} PDFs could be read (${skipped[0]?.reason || "they are not valid PDFs"}). Fix the files and merge again.`,
+    )
   }
 
   onProgress?.({
@@ -603,6 +653,8 @@ export async function mergePDFs(
     pageCount: totalPages,
 
     breakdown,
+
+    skipped: skipped.length > 0 ? skipped : undefined,
   }
 }
 
@@ -700,7 +752,11 @@ export async function splitPDF(
   pageRange?: string,
 
   signal?: AbortSignal,
+
+  options: SplitPDFOptions = {},
 ): Promise<OutputResult> {
+  const { onProgress, buildPieces = true } = options
+
   if (!file) throw new Error("Select a PDF to split.")
 
   const pdf = await PDFDocument.load(await file.arrayBuffer(), {
@@ -821,11 +877,52 @@ export async function splitPDF(
     label?: string
   }> = []
 
-  if (groupRanges.length > 1) {
+  const groupCount = Math.max(groupRanges.length, 1)
+
+  const reportSplit = (current: number, percentage: number, stage: string) => {
+    onProgress?.({
+      current,
+
+      total: groupCount,
+
+      currentFileName: safeName,
+
+      percentage,
+
+      stage,
+    })
+  }
+
+  reportSplit(
+    1,
+
+    5,
+
+    `Splitting ${totalPages} pages into ${groupRanges.length} part${groupRanges.length === 1 ? "" : "s"}...`,
+  )
+
+  if (buildPieces && groupRanges.length > 1) {
     for (let g = 0; g < groupRanges.length; g++) {
       ensureNotCancelled(signal)
 
       const gIndices = groupRanges[g]
+
+      const label =
+        gIndices.length === 1
+          ? `Page ${gIndices[0] + 1}`
+          : `Pages ${gIndices[0] + 1}-${gIndices[gIndices.length - 1] + 1}`
+
+      reportSplit(
+        g + 1,
+
+        Math.round(5 + (g / groupRanges.length) * 80),
+
+        `Building ${label.toLowerCase()}...`,
+      )
+
+      // pdf-lib saves synchronously, so without handing control back every few
+      // parts the progress bar and the Cancel button cannot respond.
+      if (g % 8 === 7) await new Promise((resolve) => setTimeout(resolve, 0))
 
       const pieceDoc = await PDFDocument.create()
 
@@ -834,11 +931,6 @@ export async function splitPDF(
       pieceCopied.forEach((p) => pieceDoc.addPage(p))
 
       const pieceBytes = await pieceDoc.save()
-
-      const label =
-        gIndices.length === 1
-          ? `Page ${gIndices[0] + 1}`
-          : `Pages ${gIndices[0] + 1}-${gIndices[gIndices.length - 1] + 1}`
 
       pieces.push({
         name: `${baseName}-part-${g + 1}.pdf`,
@@ -854,6 +946,14 @@ export async function splitPDF(
     }
   }
 
+  reportSplit(
+    groupCount,
+
+    92,
+
+    `Assembling the extracted ${uniqueIndices.length} page${uniqueIndices.length === 1 ? "" : "s"}...`,
+  )
+
   const newPdf = await PDFDocument.create()
 
   const copied = await newPdf.copyPages(pdf, uniqueIndices)
@@ -861,6 +961,8 @@ export async function splitPDF(
   copied.forEach((p) => newPdf.addPage(p))
 
   const pdfBytes = await newPdf.save()
+
+  reportSplit(groupCount, 100, `Extracted ${uniqueIndices.length} pages.`)
 
   return {
     name: `split-${safeName}`,
@@ -1108,6 +1210,70 @@ async function compressImageStream(
   return null
 }
 
+const PDF_PERSONAL_INFO_KEYS = [
+  "Title",
+  "Author",
+  "Subject",
+  "Keywords",
+  "CreationDate",
+  "ModDate",
+  "Trapped",
+]
+
+// Every engine returns its own bytes (the cloud ones before the local stages),
+// so the strip request is applied to whichever output is about to be handed back.
+async function stripPdfMetadata(
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true })
+
+    doc.catalog.delete(PDFName.of("Metadata"))
+
+    doc.catalog.delete(PDFName.of("PieceInfo"))
+
+    const infoRef = doc.context.trailerInfo.Info
+
+    const info = infoRef ? doc.context.lookup(infoRef) : undefined
+
+    if (info instanceof PDFDict) {
+      for (const key of PDF_PERSONAL_INFO_KEYS) {
+        info.delete(PDFName.of(key))
+      }
+    }
+
+    // Replacing the producer removes the source application, which can identify
+    // the author's organisation, without leaving the file unattributed.
+    doc.setProducer("Masterfilepro PDF Optimizer")
+
+    doc.setCreator("Masterfilepro")
+
+    ensureNotCancelled(signal)
+
+    return new Uint8Array(
+      await doc.save({ useObjectStreams: true, addDefaultPage: false }),
+    )
+  } catch (err) {
+    ensureNotCancelled(signal)
+
+    console.warn("Metadata strip skipped:", err)
+
+    return bytes
+  }
+}
+
+async function maybeStripPdfMetadata(
+  bytes: Uint8Array,
+  options?: CompressOptions,
+): Promise<Uint8Array> {
+  // Compression has always removed personal metadata, so only an explicit
+  // false (the Merge & Compress checkbox unticked) keeps it.
+  return options?.stripMetadata === false
+    ? bytes
+    : await stripPdfMetadata(bytes, options?.signal)
+}
+
 export async function compressPDF(
   file: File,
 
@@ -1178,7 +1344,13 @@ export async function compressPDF(
 
           recordApiOutcome(activeApi.id, { success: true })
 
-          const compressedSize = compressedBytes.byteLength
+          const outputBytes = await maybeStripPdfMetadata(
+            compressedBytes,
+
+            options,
+          )
+
+          const compressedSize = outputBytes.byteLength
 
           const savedBytes = Math.max(0, originalSize - compressedSize)
 
@@ -1192,7 +1364,7 @@ export async function compressPDF(
           return {
             name: `compressed-${safeName}`,
 
-            blob: new Blob([compressedBytes], { type: "application/pdf" }),
+            blob: new Blob([outputBytes as any], { type: "application/pdf" }),
 
             originalSize,
 
@@ -1297,7 +1469,13 @@ export async function compressPDF(
 
           recordApiOutcome(iloveApi.id, { success: true })
 
-          const compressedSize = compressedBytes.byteLength
+          const outputBytes = await maybeStripPdfMetadata(
+            compressedBytes,
+
+            options,
+          )
+
+          const compressedSize = outputBytes.byteLength
 
           const savedBytes = Math.max(0, originalSize - compressedSize)
 
@@ -1311,7 +1489,7 @@ export async function compressPDF(
           return {
             name: `compressed-${safeName}`,
 
-            blob: new Blob([compressedBytes], { type: "application/pdf" }),
+            blob: new Blob([outputBytes as any], { type: "application/pdf" }),
 
             originalSize,
 
@@ -1365,19 +1543,8 @@ export async function compressPDF(
       ignoreEncryption: true,
     })
 
-    try {
-      pdf.catalog.delete(PDFName.of("Metadata"))
-
-      pdf.catalog.delete(PDFName.of("PieceInfo"))
-    } catch {}
-
-    pdf.setTitle("")
-
-    pdf.setAuthor("")
-
-    pdf.setSubject("")
-
-    pdf.setKeywords([])
+    // Provenance only: the document's own title/author/XMP are kept unless the
+    // caller asked for stripMetadata, which is applied to the winning bytes.
 
     pdf.setProducer("Masterfilepro PDF Optimizer")
 
@@ -1571,10 +1738,14 @@ export async function compressPDF(
 
   const isAlreadyOptimal = bestBytes.byteLength >= originalSize
 
-  const finalBytes =
+  const finalBytes = await maybeStripPdfMetadata(
     isAlreadyOptimal && level !== "high" && level !== "extreme"
       ? new Uint8Array(originalBytes)
-      : bestBytes
+
+      : bestBytes,
+
+    options,
+  )
 
   const finalSize = finalBytes.byteLength
 
@@ -7488,6 +7659,10 @@ export interface PipelineMetricsResult {
 
   originalSize: number
 
+  // Documents the first stage could not read, so the UI can say which inputs
+  // never reached the rest of the chain.
+  skipped?: Array<{ name: string; reason: string }>
+
   intermediateSize?: number
 
   finalSize: number
@@ -9867,8 +10042,6 @@ export async function mergeAndCompress(
     if (f.size === 0) throw new Error(`${f.name} is empty (0 bytes).`)
   }
 
-  const originalSize = files.reduce((acc, f) => acc + f.size, 0)
-
   const tracker = new PipelineProgressTracker(
     [
       { stage: "merging", weight: 50 },
@@ -9889,6 +10062,15 @@ export async function mergeAndCompress(
 
   const intermediateBlob = merged.blob
 
+  // Documents mergePDFs skipped never reach the compressor, so counting their
+  // bytes as "original" would inflate the reported saving.
+  const skippedNames = new Set((merged.skipped || []).map((s) => s.name))
+
+  const originalSize = files.reduce(
+    (acc, f) => acc + (skippedNames.has(f.name) ? 0 : f.size),
+    0,
+  )
+
   const intermediateSize = intermediateBlob.size
 
   const defaultIntermediateName =
@@ -9899,7 +10081,9 @@ export async function mergeAndCompress(
   tracker.report(10, `Compressing merged PDF document...`)
 
   const compressed = await compressPDF(intermediateFile, {
-    level: options.compressLevel === "low" ? "standard" : "high",
+    level: options.compressLevel || "standard",
+
+    stripMetadata: options.stripMetadata,
 
     signal: options.signal,
   })
@@ -9931,6 +10115,8 @@ export async function mergeAndCompress(
     filename: finalFilename,
 
     originalSize,
+
+    skipped: merged.skipped,
 
     intermediateSize,
 
@@ -10046,7 +10232,7 @@ export async function splitAndCompress(
       )
 
       const compressed = await compressPDF(intermediateFile, {
-        level: options.compressLevel === "low" ? "standard" : "high",
+        level: options.compressLevel || "standard",
 
         signal: options.signal,
       })
@@ -10130,7 +10316,22 @@ export async function splitAndCompress(
 
     tracker.report(10, `Extracting pages (${options.pageRange || "all"})...`)
 
-    const splitResult = await splitPDF(file, options.pageRange, options.signal)
+    const splitResult = await splitPDF(
+      file,
+
+      options.pageRange,
+
+      options.signal,
+
+      // This chain compresses the single combined document, so building one
+      // PDF per page here would be work the caller throws away.
+      {
+        buildPieces: false,
+
+        onProgress: (p) =>
+          tracker.report(Math.max(10, Math.round(p.percentage * 0.9)), p.stage),
+      },
+    )
 
     tracker.report(100, `Page extraction complete.`)
 
@@ -10149,7 +10350,7 @@ export async function splitAndCompress(
     tracker.report(10, `Compressing extracted PDF...`)
 
     const compressed = await compressPDF(intermediateFile, {
-      level: options.compressLevel === "low" ? "standard" : "high",
+      level: options.compressLevel || "standard",
 
       signal: options.signal,
     })

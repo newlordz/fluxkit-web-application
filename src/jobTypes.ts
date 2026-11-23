@@ -33,6 +33,8 @@ export interface OutputResult {
 
   breakdown?: Array<{ name: string; pageCount: number }>
 
+  skipped?: Array<{ name: string; reason: string }>
+
   originalSize?: number
 
   compressedSize?: number

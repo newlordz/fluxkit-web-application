@@ -449,13 +449,13 @@ test("Suite 1: PDF Core & Page Manipulation White-Box Coverage", async (t) => {
     doc.addPage([600, 400])
     const file = createMockFile(await doc.save(), "meta.pdf", "application/pdf")
 
-    // High compression strips metadata
+    // High compression strips metadata (Info keys deleted, branding replaced)
     const highRes = await services.compressPDF(file, { level: "high" })
     const highDoc = await PDFDocument.load(await highRes.blob.arrayBuffer())
-    assert.strictEqual(highDoc.getTitle(), "")
-    assert.strictEqual(highDoc.getAuthor(), "")
-    assert.strictEqual(highDoc.getSubject(), "")
-    assert.strictEqual(highDoc.getKeywords().length, 0)
+    assert.strictEqual(highDoc.getTitle(), undefined)
+    assert.strictEqual(highDoc.getAuthor(), undefined)
+    assert.strictEqual(highDoc.getSubject(), undefined)
+    assert.strictEqual(highDoc.getKeywords(), undefined)
     assert.strictEqual(highDoc.getProducer(), "Masterfilepro PDF Optimizer")
     assert.strictEqual(highDoc.getCreator(), "Masterfilepro")
 
@@ -921,9 +921,19 @@ test("Suite 3: Multi-Action Pipelines, Archiving & OCR White-Box Coverage", asyn
     assert.strictEqual(res.name, "merged-compressed.pdf")
     const doc = await PDFDocument.load(await res.blob.arrayBuffer())
     assert.strictEqual(doc.getPageCount(), 4)
-    assert.strictEqual(doc.getTitle(), "")
+    // stripMetadata deletes the Info entries rather than blanking their values
+    assert.strictEqual(doc.getTitle(), undefined)
+    assert.strictEqual(doc.getAuthor(), undefined)
     assert.ok(progressReports.some((r) => r.stage === "merging"))
     assert.ok(progressReports.some((r) => r.stage === "compressing"))
+
+    // The unticked checkbox still produces the same page count
+    const kept = await services.mergeAndCompress([pdf1, pdf2], {
+      compressLevel: "low",
+      stripMetadata: false,
+    })
+    const keptDoc = await PDFDocument.load(await kept.blob.arrayBuffer())
+    assert.strictEqual(keptDoc.getPageCount(), 4)
 
     // Rejection on fewer than 2 files
     await assert.rejects(
