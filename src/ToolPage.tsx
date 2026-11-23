@@ -6,6 +6,8 @@ import QRCodeStudioModal from "./QRCodeStudioModal"
 
 import MergeLoadingModal from "./MergeLoadingModal"
 
+import { getEngineRunSince } from "./apiPoolService"
+
 import ImageShowcaseDesigner, {
   ShowcaseMobileMockup,
   type ShowcaseMobileMockupProps,
@@ -764,6 +766,24 @@ function safeFormatByteSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * Tools whose service layer asks the cloud pool for an engine when a session exists.
+ * Anything else always runs in the tab, so the privacy copy can be stated flatly.
+ */
+const CLOUD_ROUTED_TOOLS = new Set([
+  "compress",
+  "convert",
+  "batch-convert",
+  "convert-compress",
+  "merge-compress",
+  "split-compress",
+  "pdf-to-word",
+  "pdf-to-ppt",
+  "pdf-to-excel",
+  "ppt-to-pdf",
+  "ocr",
+])
+
 export default function ToolPage({
   tool,
 
@@ -796,6 +816,12 @@ export default function ToolPage({
   const [status, setStatus] = useState<JobStatus>("idle")
 
   const [result, setResultState] = useState<OutputResult>()
+
+  // Which engine actually finished the job, so the result can name where the document
+  // went instead of promising browser-only processing that a cloud failover breaks.
+  const [engineRun, setEngineRun] = useState<{ name: string; provider: string } | null>(null)
+
+  const jobStartedAtRef = useRef(0)
 
   const [qr, setQr] = useState("")
 
@@ -2004,11 +2030,15 @@ export default function ToolPage({
 
     setResultState(undefined)
 
+    setEngineRun(null)
+
     setTextOutput("")
 
     setQr("")
 
     setStatus("processing")
+
+    jobStartedAtRef.current = Date.now()
 
     const controller = new AbortController()
 
@@ -2022,6 +2052,8 @@ export default function ToolPage({
 
     const setResult = (res: OutputResult | undefined) => {
       out = res
+
+      setEngineRun(getEngineRunSince(jobStartedAtRef.current))
 
       setResultState(res)
     }
@@ -2247,7 +2279,7 @@ export default function ToolPage({
 
         setResult(
           await signPDF(files[0], {
-            signerName: extra || "Digitally Signed",
+            signerName: extra || "Signed",
 
             signatureImageBytes,
 
@@ -7250,7 +7282,9 @@ export default function ToolPage({
                         Release to drop your files here
                       </strong>
                       <span className="dropzone-feedback-subtitle">
-                        Processing happens privately in your browser
+                        {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                          ? "Runs in your browser first · a cloud engine may take over the heavy work"
+                          : "Processing happens privately in your browser"}
                       </span>
                     </div>
                   ) : (
@@ -7259,7 +7293,9 @@ export default function ToolPage({
                       <strong>Drop your files here</strong>
                       <span>or click to browse files</span>
                       <small>
-                        Up to 25 MB each · Private in-browser processing
+                        {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                          ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
+                          : "Up to 25 MB each · Private in-browser processing"}
                       </small>
                     </>
                   )}
@@ -7901,9 +7937,9 @@ export default function ToolPage({
                           setOptionB("")
                         }}
                       >
-                        <option value="lock">Lock / Protect Document</option>
+                        <option value="lock">Add Lock Stamp &amp; Labels</option>
                         <option value="unlock">
-                          Unlock Protected Document
+                          Remove Lock Stamp
                         </option>
                       </select>
                     </label>
@@ -7951,6 +7987,11 @@ export default function ToolPage({
                         </label>
                       </div>
                     )}
+                    <p className="processing-location-note">
+                      This stamps a password marker and restriction labels into
+                      the PDF. Readers still open the file without the password:
+                      it is marking, not encryption.
+                    </p>
                   </>
                 )}
 
@@ -9151,8 +9192,8 @@ export default function ToolPage({
                                     ? "Stamp Signature on PDF"
                                     : tool.id === "password"
                                       ? optionA === "unlock"
-                                        ? "Unlock Document"
-                                        : "Secure Document"
+                                        ? "Remove Lock Stamp"
+                                        : "Add Lock Stamp"
                                       : tool.id === "text-pdf"
                                         ? "Generate PDF"
                                         : tool.id === "pdf-to-word"
@@ -9287,8 +9328,10 @@ export default function ToolPage({
             )}
 
             <div className="local-note">
-              <ShieldCheck size={14} /> Processed locally in your browser. No
-              upload required.
+              <ShieldCheck size={14} />
+              {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                ? " Runs in your browser by default; this tool can hand a job to a cloud engine, which uploads that file."
+                : " Processed locally in your browser. No upload required."}
             </div>
           </form>
 
@@ -10415,32 +10458,34 @@ export default function ToolPage({
               </div>
             ) : result ? (
               <div className="result-ready result-ready-celebrate">
-                {/* Concentric expanding celebration wave rings & badge */}
-                <div className="result-celebrate-hero">
-                  <span className="result-wave-ring ring-1" />
-                  <span className="result-wave-ring ring-2" />
-                  <span className="result-wave-ring ring-3" />
-                  <div className="result-celebrate-badge">
-                    <CheckCircle2
-                      size={38}
-                      className="result-celebrate-check"
-                    />
-                    <Sparkles size={16} className="result-sparkle-star s1" />
-                    <Sparkles size={14} className="result-sparkle-star s2" />
-                  </div>
-                </div>
+                <svg
+                  className="result-done-mark"
+                  viewBox="0 0 44 44"
+                  role="img"
+                  aria-label="Job complete"
+                >
+                  <circle cx="22" cy="22" r="20" />
+                  <path d="M13 22.5l6 6 12-13" />
+                </svg>
 
                 <div className="result-celebrate-text">
                   <span className="result-celebrate-eyebrow">
                     <span className="celebrate-status-dot" /> Completed
-                    Successfully
                   </span>
                   <h3 className="result-celebrate-heading">
-                    {tool.id === "compress"
-                      ? result.savedPercentage && result.savedPercentage > 0
-                        ? "Document Optimized & Compressed!"
-                        : "Optimization Complete"
-                      : "Your Document is Ready!"}
+                    {tool.id === "compress" && result.savedPercentage
+                      ? `${result.savedPercentage}% smaller`
+                      : result.pieces?.length
+                        ? `${result.pieces.length} files`
+                        : result.pageCount
+                          ? `${result.pageCount} page${
+                              result.pageCount === 1 ? "" : "s"
+                            }${
+                              (result.breakdown?.length || 0) > 1
+                                ? ` from ${result.breakdown?.length} documents`
+                                : ""
+                            }`
+                          : "Output ready"}
                   </h3>
                   <div className="result-file-meta-pill">
                     <FileText size={14} />
@@ -10588,6 +10633,16 @@ export default function ToolPage({
                   </div>
                 )}
 
+                {/* Where the document actually went. A cloud failover is only visible
+                    in the network log, so name the engine instead of implying privacy. */}
+                {result && status === "completed" && (
+                  <p className="processing-location-note">
+                    {engineRun && engineRun.provider !== "local"
+                      ? `Processed by ${engineRun.name}. Your document was uploaded to their servers for this job.`
+                      : "Processed on this device. Nothing was uploaded."}
+                  </p>
+                )}
+
                 {pipelineMetrics ? (
                   <div
                     className="pipeline-stats-badge"
@@ -10667,7 +10722,7 @@ export default function ToolPage({
                       <>
                         <div className="compress-metrics-header">
                           <strong className="compress-success-tag">
-                            🎉 {result.savedPercentage}% Space Saved
+                            {result.savedPercentage}% space saved
                           </strong>
                           <span className="compress-saved-kb">
                             {(

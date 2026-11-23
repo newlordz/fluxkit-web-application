@@ -801,22 +801,23 @@ test("UI Mounting Route 8: #text-pdf mounts document title, text area, and 'Gene
   assert.match(html, /Generate PDF/)
 })
 
-test("UI Mounting Route 9: #password mounts dropzone, action dropdown, lock password inputs, and 'Secure Document' button", () => {
+test("UI Mounting Route 9: #password mounts dropzone, action dropdown, lock password inputs, and 'Add Lock Stamp' button", () => {
   const { load } = createDOMEnv("password")
   const App = load("App").default
   const html = renderToStaticMarkup(React.createElement(App))
 
-  assert.match(html, /PDF Security &amp; Unlock|PDF Security & Unlock/)
+  assert.match(html, /PDF Lock Stamp &amp; Unlock|PDF Lock Stamp & Unlock/)
   assert.match(html, /File tools/)
   assert.doesNotMatch(html, /404 · A SMALL DETOUR/)
 
   // Dropzone
   assert.match(html, /class="dropzone"/)
 
-  // Security action dropdown
+  // Security action dropdown, worded as the marking it actually performs
   assert.match(html, /Security Action/)
-  assert.match(html, /Lock \/ Protect Document/)
-  assert.match(html, /Unlock Protected Document/)
+  assert.match(html, /Add Lock Stamp/)
+  assert.match(html, /Remove Lock Stamp/)
+  assert.match(html, /marking, not encryption/i)
 
   // Lock password fields
   assert.match(html, /Protection Password/)
@@ -825,5 +826,5 @@ test("UI Mounting Route 9: #password mounts dropzone, action dropdown, lock pass
   assert.match(html, /placeholder="Repeat password"/)
 
   // Action button
-  assert.match(html, /Secure Document/)
+  assert.match(html, /Add Lock Stamp/)
 })

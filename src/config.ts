@@ -250,7 +250,7 @@ export const tools: Tool[] = [
   tool(
     "sign-pdf",
     "Sign PDF",
-    "Sign yourself or request electronic signatures from collaborators in seconds.",
+    "Place a drawn or typed signature on a page. A visual stamp, not a verified e-signature.",
     "File tools",
     PenTool,
     true,
@@ -340,15 +340,15 @@ export const tools: Tool[] = [
   ),
   tool(
     "password",
-    "PDF Security & Unlock",
-    "Manage access, protect with encryption, or remove passwords from your files.",
+    "PDF Lock Stamp & Unlock",
+    "Stamp a password lock and print/copy labels on a PDF, or remove them. Marking only: the file itself is not encrypted.",
     "File tools",
     FileLock2,
     true,
     false,
     "purple",
     "lock",
-    "SECURE",
+    "MARKING",
   ),
   tool(
     "zip",

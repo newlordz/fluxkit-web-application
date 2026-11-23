@@ -723,3 +723,39 @@ test("Auth: an already-scrypt account is not re-hashed on every sign-in", async 
   assert.equal(res.statusCode, 200)
   assert.deepEqual(s.calls, [])
 })
+
+test("API Pool: remembers which engine actually served the job", () => {
+  const store = new Map()
+  const pool = loadHandler("src/apiPoolService.ts", {}, {
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    },
+    indexedDB: undefined,
+    fetch: async () => {
+      throw new Error("offline")
+    },
+  })
+
+  const apis = pool.getCloudApis()
+  const cloud = apis.find((a) => a.provider === "adobe")
+  const local = apis.find((a) => a.provider === "local")
+  assert.ok(cloud && local, "the catalog must carry both a cloud and a local engine")
+
+  const windowStart = Date.now()
+  assert.equal(pool.getEngineRunSince(windowStart), null, "nothing has run yet")
+
+  pool.recordApiOutcome(cloud.id, { success: true })
+  assert.equal(pool.getEngineRunSince(windowStart).provider, "adobe")
+
+  pool.recordApiOutcome(local.id, { success: true })
+  assert.equal(pool.getEngineRunSince(windowStart).provider, "local")
+
+  pool.recordApiOutcome(cloud.id, { success: false, errorMessage: "quota" })
+  assert.equal(
+    pool.getEngineRunSince(windowStart).provider,
+    "local",
+    "a refused cloud attempt must not be reported as the engine that ran the job",
+  )
+})

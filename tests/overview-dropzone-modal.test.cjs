@@ -152,8 +152,8 @@ test("Overview Smart Dropzone: recognizes dropped PDF file and mounts Conversion
   assert.match(html, /Summarize Document/i, "Must offer AI Document Summary")
   assert.match(html, /Ask Document AI/i, "Must offer Ask Document AI")
 
-  // 4. Privacy badge
-  assert.match(html, /100% Client-Side Privacy/i, "Must highlight client-side local privacy guarantee")
+  // 4. The hub only stages the file, so the footer must not claim processing happened
+  assert.match(html, /Nothing is processed until you open a tool/i, "Must avoid claiming processing")
 })
 
 test("Overview Smart Dropzone: recognizes image file and offers JPG to PDF & OCR", () => {

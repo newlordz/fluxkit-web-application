@@ -427,107 +427,42 @@
   }
 }
 
-.result-celebrate-hero {
-  position: relative;
-  width: 84px;
-  height: 84px;
-  display: grid;
-  place-items: center;
-  margin-bottom: 6px;
+/* Completed-job mark: one drawn check. No glow, no looping celebration. */
+.result-done-mark {
+  width: 44px;
+  height: 44px;
+  display: block;
+  margin-bottom: 2px;
 }
 
-.result-wave-ring {
-  position: absolute;
-  inset: -10px;
-  border-radius: 50%;
-  border: 2px solid #34d399;
-  opacity: 0;
-  animation: resultRingWave 2s cubic-bezier(0.1, 0.8, 0.2, 1) infinite;
+.result-done-mark circle {
+  fill: none;
+  stroke: rgba(52, 211, 153, 0.4);
+  stroke-width: 1.5;
 }
 
-.result-wave-ring.ring-2 {
-  animation-delay: 0.5s;
-  border-color: #10b981;
+.result-done-mark path {
+  fill: none;
+  stroke: var(--ok-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 28;
+  stroke-dashoffset: 28;
+  animation: resultCheckDraw 320ms 120ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
 
-.result-wave-ring.ring-3 {
-  animation-delay: 1s;
-  border-color: #6ee7b7;
-}
-
-@keyframes resultRingWave {
-  0% {
-    transform: scale(0.65);
-    opacity: 0.85;
-  }
-  100% {
-    transform: scale(1.6);
-    opacity: 0;
+@keyframes resultCheckDraw {
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
-.result-celebrate-badge {
-  position: relative;
-  z-index: 2;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #10b981 0%, #064e3b 100%);
-  border: 2px solid #34d399;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 0 28px rgba(52, 211, 153, 0.45), 0 8px 24px rgba(0, 0, 0, 0.4);
-  animation: resultBadgePop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-@keyframes resultBadgePop {
-  0% {
-    transform: scale(0.2) rotate(-25deg);
-    opacity: 0;
-  }
-  60% {
-    transform: scale(1.22) rotate(6deg);
-    opacity: 1;
-  }
-  80% {
-    transform: scale(0.95) rotate(-2deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-.result-celebrate-check {
-  color: #ffffff;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
-}
-
-.result-sparkle-star {
-  position: absolute;
-  color: #fef08a;
-  filter: drop-shadow(0 0 6px #facc15);
-  animation: sparkleFloat 1.8s ease-in-out infinite alternate;
-}
-
-.result-sparkle-star.s1 {
-  top: -4px;
-  right: -4px;
-}
-
-.result-sparkle-star.s2 {
-  bottom: 2px;
-  left: -4px;
-  animation-delay: 0.9s;
-}
-
-@keyframes sparkleFloat {
-  0% {
-    transform: scale(0.8) rotate(0deg);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(1.25) rotate(45deg);
-    opacity: 1;
+/* The global reduced-motion rule kills animations, so the stroke must be
+   settled by hand or the check would never be drawn. */
+@media (prefers-reduced-motion: reduce) {
+  .result-done-mark path {
+    stroke-dashoffset: 0;
   }
 }
 
@@ -542,32 +477,27 @@
 .result-celebrate-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #34d399;
-  letter-spacing: 0.8px;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.25);
-  padding: 3px 10px;
-  border-radius: 20px;
 }
 
 .celebrate-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 6px #34d399;
+  background: var(--ok-ink);
 }
 
 .result-celebrate-heading {
-  font-size: 21px !important;
-  font-weight: 750 !important;
-  letter-spacing: -0.4px !important;
+  font-size: 17px !important;
+  font-weight: 620 !important;
+  letter-spacing: -0.2px !important;
   color: var(--text) !important;
-  margin: 2px 0 0 !important;
+  margin: 0 !important;
 }
 
 .result-file-meta-pill {
@@ -627,6 +557,15 @@
   color: #34d399;
   font-weight: 750;
   letter-spacing: -0.2px;
+}
+
+/* States which engine actually handled the job, so the copy cannot overclaim privacy. */
+.processing-location-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-muted, #8b93a7);
 }
 
 .compress-saved-kb {

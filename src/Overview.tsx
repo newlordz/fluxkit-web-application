@@ -291,7 +291,7 @@ export default function Overview({
         {
           id: "password",
           name: "Protect / Unlock",
-          desc: "Encrypt with 128-bit AES password protection",
+          desc: "Password lock stamp and print/copy labels · marking, not encryption",
           category: "edit" as const,
           badge: "Security",
         },
@@ -657,9 +657,9 @@ export default function Overview({
           </h1>
 
           <p className="hero-subtitle">
-            Merge, split, compress, convert, sign, and enhance your documents
-            with uncompromising privacy. 100% processed in your browser with
-            zero server uploads.
+            Merge, split, compress, convert, sign, and enhance your documents.
+            Work runs in your browser by default — signed-in sessions add cloud
+            engines for the heaviest jobs.
           </p>
 
           {/* Value Props Matrix */}
@@ -963,7 +963,7 @@ export default function Overview({
               {/* Modal Bottom Toolbar */}
               <div className="quick-action-modal-footer">
                 <span>
-                  🔒 100% Client-Side Privacy — files never leave your browser
+                  🔒 Nothing is processed until you open a tool
                 </span>
                 <span>{modalActions.length} actions available</span>
               </div>
@@ -1189,10 +1189,11 @@ export default function Overview({
             <Lock size={19} />
           </div>
           <div>
-            <strong>100% Client-Side Architecture</strong>
+            <strong>Browser-first architecture</strong>
             <p>
-              Your sensitive documents never leave your browser memory. All
-              processing runs through local WebAssembly and vector engines.
+              Documents are processed in your browser by default. When a
+              signed-in job uses a cloud engine, that file is uploaded for the
+              job, and the result panel names which engine ran.
             </p>
           </div>
         </div>

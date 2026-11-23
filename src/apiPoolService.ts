@@ -617,6 +617,17 @@ export function getNextAvailableApi(
 }
 
 /**
+ * Which engine last completed work, so a tool page can say where the document was
+ * processed instead of assuming the browser did it.
+ */
+
+let lastEngineRun: { provider: string; name: string; at: number } | null = null
+
+export function getEngineRunSince(sinceMs: number) {
+  return lastEngineRun && lastEngineRun.at >= sinceMs ? lastEngineRun : null
+}
+
+/**
  * Record API call outcome (success, usage increment, quota exhaustion)
  */
 
@@ -639,6 +650,14 @@ export function recordApiOutcome(
     if (!api) return
 
     if (result.success) {
+      lastEngineRun = {
+        provider: api.provider || "cloud",
+
+        name: api.name,
+
+        at: Date.now(),
+      }
+
       api.usedThisMonth = (api.usedThisMonth || 0) + 1
 
       api.status = "active"
