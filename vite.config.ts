@@ -511,18 +511,11 @@ function figmaMakeKitPlugin(options: {
 // extension-less for the Vercel build, and Vite's native config loader rejects
 // extension-less imports anywhere in the config's import graph.
 const DEV_API_ROUTES: Record<string, string> = {
-  "/api/db/admin": "/api/db/admin.ts",
-  "/api/db/apis": "/api/db/apis.ts",
-  "/api/db/gateways": "/api/db/gateways.ts",
-  "/api/db/status": "/api/db/status.ts",
-  "/api/db/users": "/api/db/users.ts",
+  // The db/* and auth/* suffixes fall through to these two routers; the middleware
+  // turns the trailing segment into ?action=, exactly like the vercel.json rewrites.
+  "/api/db": "/api/db.ts",
+  "/api/auth": "/api/auth.ts",
   "/api/cloud-apis/ping": "/api/cloud-apis/ping.ts",
-  "/api/auth/login": "/api/auth/login.ts",
-  "/api/auth/register": "/api/auth/register.ts",
-  "/api/auth/password": "/api/auth/password.ts",
-  "/api/auth/reset-request": "/api/auth/reset-request.ts",
-  "/api/auth/reset-confirm": "/api/auth/reset-confirm.ts",
-  "/api/auth/session": "/api/auth/session.ts",
   "/api/paystack": "/api/paystack.ts",
   "/api/paystack/verify": "/api/paystack.ts",
   "/api/paystack/verify-keys": "/api/paystack/verify-keys.ts",

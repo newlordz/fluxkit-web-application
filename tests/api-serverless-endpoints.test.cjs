@@ -200,7 +200,7 @@ const ADMIN = { id: "usr_admin", role: "admin" }
 
 test("API Gateways: GET /api/db/gateways requires an administrator session", async () => {
   const s = createStubs({ admin: null, rows: GATEWAY_ROWS })
-  const handler = loadHandler("api/db/gateways.ts", {
+  const handler = loadHandler("server/db/gateways.ts", {
     "../_lib/db": s.db,
     "../_lib/auth": s.auth,
   })
@@ -215,7 +215,7 @@ test("API Gateways: GET /api/db/gateways requires an administrator session", asy
 
 test("API Gateways: GET /api/db/gateways returns masked secrets to an admin", async () => {
   const s = createStubs({ admin: ADMIN, rows: GATEWAY_ROWS })
-  const handler = loadHandler("api/db/gateways.ts", {
+  const handler = loadHandler("server/db/gateways.ts", {
     "../_lib/db": s.db,
     "../_lib/auth": s.auth,
   })
@@ -245,7 +245,7 @@ test("API Gateways: GET /api/db/gateways returns masked secrets to an admin", as
 
 test("API Gateways: POST /api/db/gateways preserves stored secrets when the UI sends masked values", async () => {
   const s = createStubs({ admin: ADMIN, rows: GATEWAY_ROWS })
-  const handler = loadHandler("api/db/gateways.ts", {
+  const handler = loadHandler("server/db/gateways.ts", {
     "../_lib/db": s.db,
     "../_lib/auth": s.auth,
   })
@@ -291,7 +291,7 @@ test("API Gateways: POST /api/db/gateways preserves stored secrets when the UI s
 
 test("API Gateways: POST /api/db/gateways rejects a non-admin writer", async () => {
   const s = createStubs({ admin: null, rows: GATEWAY_ROWS })
-  const handler = loadHandler("api/db/gateways.ts", {
+  const handler = loadHandler("server/db/gateways.ts", {
     "../_lib/db": s.db,
     "../_lib/auth": s.auth,
   })
@@ -313,9 +313,9 @@ test("API Gateways: POST /api/db/gateways rejects a non-admin writer", async () 
 test("API Paystack: POST /api/paystack/verify-keys requires an administrator session", async () => {
   const s = createStubs({ admin: null })
   const handler = loadHandler("api/paystack/verify-keys.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
-    "../_lib/providers": s.providers,
+    "../../server/_lib/db": s.db,
+    "../../server/_lib/auth": s.auth,
+    "../../server/_lib/providers": s.providers,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -331,9 +331,9 @@ test("API Paystack: POST /api/paystack/verify-keys requires an administrator ses
 test("API Paystack: POST /api/paystack/verify-keys rejects missing key", async () => {
   const s = createStubs({ admin: ADMIN })
   const handler = loadHandler("api/paystack/verify-keys.ts", {
-    "../_lib/db": s.db,
-    "../_lib/auth": s.auth,
-    "../_lib/providers": s.providers,
+    "../../server/_lib/db": s.db,
+    "../../server/_lib/auth": s.auth,
+    "../../server/_lib/providers": s.providers,
   })
   const { req, res } = createMockReqRes({
     method: "POST",
@@ -359,7 +359,7 @@ test("API Paystack: POST /api/paystack/verify-keys safely unmasks bullet charact
   })
   const handler = loadHandler(
     "api/paystack/verify-keys.ts",
-    { "../_lib/db": s.db, "../_lib/auth": s.auth, "../_lib/providers": s.providers },
+    { "../../server/_lib/db": s.db, "../../server/_lib/auth": s.auth, "../../server/_lib/providers": s.providers },
     {
       fetch: async (url, init) => {
         sent.push({ url, init })

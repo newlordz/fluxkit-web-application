@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody } from "../_lib/db"
-import { getGatewayConfig } from "../_lib/providers"
-import { requireAdmin } from "../_lib/auth"
+import { cors, json, query, readBody } from "../../server/_lib/db"
+import { getGatewayConfig } from "../../server/_lib/providers"
+import { requireAdmin } from "../../server/_lib/auth"
 
 const isMasked = (value: string) => !value || value.includes("•")
 

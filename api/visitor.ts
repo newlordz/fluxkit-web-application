@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "./_lib/db"
-import { currentUser, requireAdmin } from "./_lib/auth"
+import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db"
+import { currentUser, requireAdmin } from "../server/_lib/auth"
 
 const PASS_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{2,63}$/
 const MAX_RECORDS = 2000

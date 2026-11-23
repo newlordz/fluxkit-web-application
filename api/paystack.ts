@@ -1,7 +1,7 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "./_lib/db"
-import { getGatewayConfig } from "./_lib/providers"
-import { currentUser } from "./_lib/auth"
+import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db"
+import { getGatewayConfig } from "../server/_lib/providers"
+import { currentUser } from "../server/_lib/auth"
 
 async function paystackSecret(): Promise<string> {
   const { secretKey } = await getGatewayConfig("paystack", ["PAYSTACK_SECRET_KEY"])

@@ -1,5 +1,5 @@
-import { currentUser } from "./_lib/auth"
-import { getILovePdfCredentials, recordApiCall } from "./_lib/providers"
+import { currentUser } from "../server/_lib/auth"
+import { getILovePdfCredentials, recordApiCall } from "../server/_lib/providers"
 
 async function parseRequestBody(req: any): Promise<any> {
   if (req.body && typeof req.body === "object") return req.body

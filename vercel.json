@@ -10,6 +10,50 @@
   },
   "rewrites": [
     {
+      "source": "/api/auth/login",
+      "destination": "/api/auth?action=login"
+    },
+    {
+      "source": "/api/auth/register",
+      "destination": "/api/auth?action=register"
+    },
+    {
+      "source": "/api/auth/password",
+      "destination": "/api/auth?action=password"
+    },
+    {
+      "source": "/api/auth/reset-request",
+      "destination": "/api/auth?action=reset-request"
+    },
+    {
+      "source": "/api/auth/reset-confirm",
+      "destination": "/api/auth?action=reset-confirm"
+    },
+    {
+      "source": "/api/auth/session",
+      "destination": "/api/auth?action=session"
+    },
+    {
+      "source": "/api/db/admin",
+      "destination": "/api/db?action=admin"
+    },
+    {
+      "source": "/api/db/apis",
+      "destination": "/api/db?action=apis"
+    },
+    {
+      "source": "/api/db/gateways",
+      "destination": "/api/db?action=gateways"
+    },
+    {
+      "source": "/api/db/status",
+      "destination": "/api/db?action=status"
+    },
+    {
+      "source": "/api/db/users",
+      "destination": "/api/db?action=users"
+    },
+    {
       "source": "/api/adobe-pdf/(.*)",
       "destination": "/api/adobe-pdf?action=$1"
     },
