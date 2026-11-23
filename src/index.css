@@ -1387,3 +1387,11 @@ main:has(.pro-paywall-panel) {
 /* The brand mark keeps its authored teal as a plain attribute so exported SVG still renders;
    the class lets the on-screen logo follow the chosen accent. */
 .logo-teal-fill { fill: var(--accent); }
+
+/* Topbar accent picker. The generic .popover button rule would stretch the
+   swatches to full width, so the swatch box is re-asserted here. */
+.popover-accent { width: 216px; }
+
+.popover-accent .accent-swatches { margin-top: 12px; }
+
+.popover-accent .accent-swatch { width: 26px; height: 26px; margin-top: 0; font-size: 0; justify-content: center; }

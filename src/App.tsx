@@ -25,6 +25,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Palette,
   PanelLeftClose,
   Plus,
   QrCode,
@@ -363,6 +364,8 @@ export default function App() {
 
   const [notifications, setNotifications] = useState(false)
 
+  const [accentMenu, setAccentMenu] = useState(false)
+
   const [profile, setProfile] = useState(() => stored("masterfilepro-name", "Jamie"))
 
   const [saved, setSaved] = useState(false)
@@ -592,6 +595,8 @@ export default function App() {
         setMenu(false)
 
         setNotifications(false)
+
+        setAccentMenu(false)
       }
     }
 
@@ -616,6 +621,8 @@ export default function App() {
         setMenu(false)
 
         setNotifications(false)
+
+        setAccentMenu(false)
 
         setMobile(false)
       }
@@ -1349,6 +1356,47 @@ export default function App() {
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
+            <div className="popover-wrap">
+              <button
+                className="icon-button"
+                aria-label="Accent colour"
+                aria-expanded={accentMenu}
+                onClick={() => setAccentMenu(!accentMenu)}
+              >
+                <Palette size={18} />
+              </button>
+              {accentMenu && (
+                <div className="popover popover-accent">
+                  <strong>Accent colour</strong>
+                  <div
+                    className="accent-swatches"
+                    role="group"
+                    aria-label="Accent colour"
+                  >
+                    {Object.entries(brand.accents).map(([id, tone]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={
+                          accent === id
+                            ? "accent-swatch is-selected"
+                            : "accent-swatch"
+                        }
+                        style={{
+                          background:
+                            tone[theme === "light" ? "light" : "dark"].accent,
+                        }}
+                        title={tone.label}
+                        aria-label={`${tone.label} accent`}
+                        aria-pressed={accent === id}
+                        onClick={() => setAccent(id as AccentId)}
+                      />
+                    ))}
+                  </div>
+                  <p>Changes the brand colour only, on any screen.</p>
+                </div>
+              )}
+            </div>
             <div className="popover-wrap">
               <button
                 className="icon-button"
