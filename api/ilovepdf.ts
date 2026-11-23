@@ -1,6 +1,38 @@
 import { cors } from "../server/_lib/db.ts"
 import { getILovePdfCredentials, recordApiCall } from "../server/_lib/providers.ts"
 import { readPaidBody, requirePaidAccess } from "../server/_lib/gateway.ts"
+import JSZip from "jszip"
+
+const EXPECTED_MEMBER: Record<string, string[]> = {
+  pdfword: [".docx", ".doc"],
+  pdfppt: [".pptx", ".ppt"],
+  compress: [".pdf"],
+  officepdf: [".pdf"],
+}
+
+function mimeOf(name: string): string {
+  const lower = name.toLowerCase()
+  if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  return "application/pdf"
+}
+
+/**
+ * iLovePDF answers every finished task as an archive, so a single converted document
+ * arrives zipped. PK\x03\x04 is the local file header; anything else (a bare PDF, say)
+ * is already the deliverable and is returned untouched.
+ */
+async function unwrapMember(payload: ArrayBuffer, tool: string): Promise<Buffer> {
+  const raw = Buffer.from(payload)
+  if (raw.length < 4 || raw[0] !== 0x50 || raw[1] !== 0x4b) return raw
+  const zip = await JSZip.loadAsync(raw)
+  const names = Object.keys(zip.files).filter((name) => !zip.files[name].dir)
+  if (names.length === 0) return raw
+  const wanted = names.find((name) => (EXPECTED_MEMBER[tool] || []).some((ext) => name.toLowerCase().endsWith(ext)))
+  if (!wanted) return raw
+  return zip.files[wanted].async("nodebuffer")
+}
 
 export default async function handler(req: any, res: any) {
   cors(req, res)
@@ -18,9 +50,11 @@ export default async function handler(req: any, res: any) {
         ? "pdfword"
         : url.includes("/pdfppt")
           ? "pdfppt"
-          : url.includes("/compress")
-            ? "compress"
-            : "")
+          : url.includes("/officepdf")
+            ? "officepdf"
+            : url.includes("/compress")
+              ? "compress"
+              : "")
 
   // 1. Status / Ping check
   if (action === "status" || req.method === "GET") {
@@ -78,18 +112,21 @@ export default async function handler(req: any, res: any) {
     const body = await readPaidBody(req, res)
     if (!body) return
 
-    const pdfBase64 = body.pdfBase64
+    const fileBase64 = body.pdfBase64 || body.fileBase64
     const compressionLevel = body.compressionLevel || "recommended"
     const { publicKey } = await getILovePdfCredentials()
 
-    if (!pdfBase64) {
+    if (!fileBase64) {
       res.status?.(400)?.json?.({ error: "pdfBase64 is required" }) ||
         res.end?.(JSON.stringify({ error: "pdfBase64 is required" }))
       return
     }
 
-    const fileBuffer = Buffer.from(pdfBase64, "base64")
+    const fileBuffer = Buffer.from(fileBase64, "base64")
     const originalSize = fileBuffer.length
+    // officepdf takes a PowerPoint or Word document, so the upload keeps the name and
+    // type the caller sent instead of being labelled a PDF.
+    const uploadName = body.fileName || "document.pdf"
 
     const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
       method: "POST",
@@ -109,7 +146,9 @@ export default async function handler(req: any, res: any) {
         ? "pdfword"
         : action === "pdfppt"
           ? "pdfppt"
-          : "compress"
+          : action === "officepdf"
+            ? "officepdf"
+            : "compress"
 
     const startRes = await fetch(`https://api.ilovepdf.com/v1/start/${tool}`, {
       headers: { Authorization: "Bearer " + token },
@@ -127,8 +166,8 @@ export default async function handler(req: any, res: any) {
     uploadForm.append("task", task)
     uploadForm.append(
       "file",
-      new Blob([fileBuffer], { type: "application/pdf" }),
-      "document.pdf",
+      new Blob([fileBuffer], { type: mimeOf(uploadName) }),
+      uploadName,
     )
 
     const uploadRes = await fetch(`https://${server}/v1/upload`, {
@@ -147,7 +186,7 @@ export default async function handler(req: any, res: any) {
     const processPayload: any = {
       task,
       tool,
-      files: [{ server_filename: serverFilename, filename: "document.pdf" }],
+      files: [{ server_filename: serverFilename, filename: uploadName }],
     }
     if (tool === "compress") {
       processPayload.compression_level = compressionLevel
@@ -171,18 +210,22 @@ export default async function handler(req: any, res: any) {
     const downloadRes = await fetch(`https://${server}/v1/download/${task}`, {
       headers: { Authorization: "Bearer " + token },
     })
-    const resultBuffer = Buffer.from(await downloadRes.arrayBuffer())
+    // A task is always packaged as a ZIP, even when it produced one file, so the
+    // member is unwrapped here rather than served as a .docx that no office suite
+    // can open. A plain (non-zipped) answer passes straight through.
+    const resultBuffer = await unwrapMember(await downloadRes.arrayBuffer(), tool)
 
     // Append-only usage ledger; monthly totals derive from this, never a stored counter.
-    await recordApiCall("ilovepdf", "compress", actor.id, "success")
+    await recordApiCall("ilovepdf", tool, actor.id, "success")
 
+    const resultBase64 = resultBuffer.toString("base64")
     const responsePayload = {
       ok: true,
       success: true,
-      base64: resultBuffer.toString("base64"),
-      docxBase64: resultBuffer.toString("base64"),
-      pdfBase64: resultBuffer.toString("base64"),
-      compressedBase64: resultBuffer.toString("base64"),
+      base64: resultBase64,
+      docxBase64: resultBase64,
+      pdfBase64: resultBase64,
+      compressedBase64: resultBase64,
       compressedSize: resultBuffer.length,
       originalSize,
       ratio: Math.round(((originalSize - resultBuffer.length) / originalSize) * 100),

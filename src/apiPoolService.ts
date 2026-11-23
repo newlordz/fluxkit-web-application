@@ -12,7 +12,7 @@ export interface CloudApiConfig {
 
   name: string
 
-  provider: "adobe" | "ilovepdf" | "cloudconvert" | "convertapi" | "ocrspace" | "tinypng" | "groq" | "google" | "mymemory" | "local" | "custom"
+  provider: "adobe" | "ilovepdf" | "ocrspace" | "tinypng" | "groq" | "google" | "mymemory" | "local" | "custom"
 
   category: "pdf-compression" | "pdf-tools" | "ocr-text" | "image-tools" | "audio-speech" | "ai-text"
 
@@ -42,6 +42,8 @@ export interface CloudApiConfig {
 
   lastError?: string
 
+  lastErrorAt?: number
+
   isFreeTier: boolean
 
   freeCreditResetDay?: number // e.g. 1st of month
@@ -60,6 +62,11 @@ export interface ApiHealthResult {
 }
 
 const STORAGE_KEY = "masterfilepro_cloud_apis_config_v2"
+
+// CloudConvert and ConvertAPI were listed as failover priorities #3 and #4 but no
+// tool ever sent a request to them, so the pool must not advertise or select them
+// again from a saved copy or a leftover database row.
+const RETIRED_ENGINE_IDS = ["cloudconvert-api", "convertapi"]
 
 const b64 = (s: string) => {
   try {
@@ -149,68 +156,6 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
   },
 
   {
-    id: "cloudconvert-api",
-
-    name: "CloudConvert API",
-
-    provider: "cloudconvert",
-
-    category: "pdf-compression",
-
-    priority: 3,
-
-    enabled: true,
-
-    description:
-      "Server-grade Ghostscript & LibreOffice engine for heavy PDF shrinking and cross-format conversion. 25 free credits/day (750/mo).",
-
-    dashboardUrl: "https://cloudconvert.com/dashboard/api/v2/keys",
-
-    apiKey: "",
-
-    endpoint: "https://api.cloudconvert.com/v2",
-
-    monthlyQuota: 750,
-
-    usedThisMonth: 0,
-
-    status: "active",
-
-    isFreeTier: true,
-  },
-
-  {
-    id: "convertapi",
-
-    name: "ConvertAPI",
-
-    provider: "convertapi",
-
-    category: "pdf-compression",
-
-    priority: 4,
-
-    enabled: true,
-
-    description:
-      "High-speed document conversion and compression. 250 free conversions included on registration.",
-
-    dashboardUrl: "https://www.convertapi.com/a",
-
-    apiKey: "",
-
-    endpoint: "https://v2.convertapi.com",
-
-    monthlyQuota: 250,
-
-    usedThisMonth: 0,
-
-    status: "active",
-
-    isFreeTier: true,
-  },
-
-  {
     id: "local-wasm-engine",
 
     name: "In-Browser WebAssembly Engine (pdf-lib / wasm)",
@@ -219,7 +164,7 @@ export const DEFAULT_CLOUD_APIS: CloudApiConfig[] = [
 
     category: "pdf-compression",
 
-    priority: 5,
+    priority: 3,
 
     enabled: true,
 
@@ -417,6 +362,16 @@ export function getCloudApis(category?: string): CloudApiConfig[] {
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
     } else {
+      // A browser that once saved the retired engines must not keep offering them.
+
+      const kept = list.filter((a) => !RETIRED_ENGINE_IDS.includes(a.id))
+
+      if (kept.length !== list.length) {
+        list = kept
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+      }
+
       // Ensure all catalog providers exist
 
       let changed = false
@@ -587,8 +542,13 @@ export async function moveApiPriority(
 
 /**
  * Get next available API for a given category (e.g. "pdf-compression"),
- * skipping disabled, exhausted, or excluded API IDs.
+ * skipping disabled, exhausted, excluded or recently failed API IDs.
  */
+
+// An engine that just failed is given a short rest rather than being dropped for
+// the session, so a transient network error is retried but never retried twice in
+// the same job.
+const ERROR_COOLDOWN_MS = 5 * 60_000
 
 export function getNextAvailableApi(
   category: string,
@@ -607,6 +567,16 @@ export function getNextAvailableApi(
     if (api.monthlyQuota && api.usedThisMonth >= api.monthlyQuota) {
       api.status = "exhausted"
 
+      continue
+    }
+
+    // Without this, a job that fails over and asks again is handed the same engine
+    // that just failed, and the next provider check silently drops to local.
+    if (
+      api.status === "error" &&
+      api.lastErrorAt &&
+      Date.now() - api.lastErrorAt < ERROR_COOLDOWN_MS
+    ) {
       continue
     }
 
@@ -664,11 +634,15 @@ export function recordApiOutcome(
 
       api.lastError = undefined
 
+      api.lastErrorAt = undefined
+
       // The proxy functions write the ledger themselves; a client-supplied
 
       // increment would double-count and could be forged.
     } else {
       api.lastError = result.errorMessage
+
+      api.lastErrorAt = Date.now()
 
       if (
         result.statusCode === 429 ||
@@ -818,7 +792,7 @@ export async function testApiHealth(
       const proxyRes = await fetch("/api/cloud-apis/ping", {
         method: "POST",
 
-        headers: { "Content-Type": "application/json" },
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
 
         body: JSON.stringify({
           endpoint: api.endpoint,
@@ -830,15 +804,19 @@ export async function testApiHealth(
       if (proxyRes.ok) {
         const data = await proxyRes.json()
 
+        // The route now reports what it actually saw, so a green badge means the
+        // endpoint answered rather than that the request was delivered.
         return {
-          ok: true,
+          ok: data.ok === true,
 
           service: api.name,
 
           latencyMs: data.latencyMs || Math.round(performance.now() - start),
 
           message:
-            data.message || `Connected & Ready (${data.latencyMs || 15}ms)`,
+            data.message ||
+            data.error ||
+            (data.ok ? "Endpoint responded." : "Endpoint did not respond."),
         }
       }
     } catch {
@@ -855,26 +833,26 @@ export async function testApiHealth(
       const latencyMs = Math.round(performance.now() - start)
 
       return {
-        ok: true,
+        ok: !!res && res.status < 400,
 
         service: api.name,
 
         latencyMs,
 
         message: res
-          ? `Connected • HTTP ${res.status} (${latencyMs}ms)`
-          : `Endpoint configured & ready (${latencyMs}ms)`,
+          ? `Endpoint returned HTTP ${res.status} (${latencyMs}ms)`
+          : "No answer from the endpoint: it is unreachable or the browser blocked the cross-origin probe.",
       }
     }
 
     return {
-      ok: true,
+      ok: false,
 
       service: api.name,
 
-      latencyMs: 5,
+      latencyMs: 0,
 
-      message: "Ready",
+      message: "No endpoint configured for this engine, so it cannot be tested.",
     }
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - start)
@@ -909,7 +887,9 @@ export async function syncCloudApisWithServer(): Promise<CloudApiConfig[]> {
 
         // Merge without losing local unmasked credentials if response had masked tokens
 
-        const merged = data.apis.map((srvApi: CloudApiConfig) => {
+        const merged = data.apis
+          .filter((srvApi: CloudApiConfig) => !RETIRED_ENGINE_IDS.includes(srvApi.id))
+          .map((srvApi: CloudApiConfig) => {
           const locApi = local.find((l) => l.id === srvApi.id)
 
           if (!locApi) return srvApi

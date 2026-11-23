@@ -64,6 +64,54 @@ async function localCompressFellShort(args: {
   return router?.compressNeedsCloud?.(args) === true
 }
 
+async function localTextLooksMissing(args: {
+  chars: number
+  pageCount: number
+}): Promise<boolean> {
+  const router = await getEngineRouter()
+
+  return router?.textNeedsCloud?.(args) === true
+}
+
+async function localTableNeedsRescue(rows: string[][]): Promise<boolean> {
+  const router = await getEngineRouter()
+
+  return router?.tableNeedsCloud?.(rows) === true
+}
+
+// PowerPoint has no in-page renderer, so the deck is judged on whether the local
+// parser found anything at all to draw rather than on how well it drew it.
+async function localDeckLooksUnreadable(
+  bytes: Uint8Array,
+
+  slides: Array<{ title?: string; bullets?: string[]; images?: unknown[] }>,
+): Promise<boolean> {
+  const router = await getEngineRouter()
+
+  if (!router?.deckNeedsCloud) return false
+
+  return (
+    router.deckNeedsCloud({
+      slideCount: slides.length,
+
+      hasContent: slides.some(
+        (slide) =>
+          (slide.title || "").trim().length > 0 ||
+          (slide.bullets || []).some((b) => b.trim().length > 0) ||
+          (slide.images || []).length > 0,
+      ),
+
+      // D0 CF 11 E0 is the OLE2 container used by PowerPoint 97-2003.
+      isLegacyBinaryPpt:
+        bytes.length >= 4 &&
+        bytes[0] === 0xd0 &&
+        bytes[1] === 0xcf &&
+        bytes[2] === 0x11 &&
+        bytes[3] === 0xe0,
+    }) === true
+  )
+}
+
 async function getApiPool(): Promise<any> {
   if (typeof window !== "undefined" && (window as any).__masterfileproApiPool) {
     return (window as any).__masterfileproApiPool
@@ -1339,7 +1387,7 @@ async function cloudCompressRescue(
 
   options?: CompressOptions,
 ): Promise<Uint8Array | null> {
-  // 0. High-Fidelity Adobe PDF Services Cloud Engine (with automatic failover)
+  // Adobe Acrobat PDF Services: the higher-fidelity compressor of the two.
 
   const activeApi = await nextCloudApi("pdf-compression")
 
@@ -1435,7 +1483,7 @@ async function cloudCompressRescue(
     }
   }
 
-  // 0b. iLovePDF Cloud Engine (Secondary Priority / Failover)
+  // iLovePDF: the second engine when Adobe is unavailable or out of quota.
 
   const iloveApi =
     activeApi?.provider === "ilovepdf"
@@ -1552,7 +1600,6 @@ export async function compressPDF(
   const originalSize = file.size || originalBytes.byteLength
 
   const level = options?.level || "standard"
-
 
   const quality = level === "extreme" ? 0.4 : level === "high" ? 0.55 : 0.7
 
@@ -3357,34 +3404,18 @@ function isLikelyWordHeading(
 
 // ----------------------------------------------------------------------------
 
-export async function pdfToWord(
-  fileOrBytes: File | Uint8Array | ArrayBuffer,
+// Billed rescue for PDF to Word: runs only when the in-page extractor could not
+// recover text, which is the case a document API is actually better at.
+async function cloudWordRescue(
+  bytes: Uint8Array,
 
-  options: PDFToWordOptions = {},
-): Promise<OutputResult> {
-  const { bytes, name } = await extractBytes(fileOrBytes)
+  baseName: string,
 
-  if (bytes.length === 0) {
-    throw new Error("Invalid or empty PDF file.")
-  }
+  format: string,
 
-  if (
-    bytes.length < 4 ||
-    bytes[0] !== 0x25 ||
-    bytes[1] !== 0x50 ||
-    bytes[2] !== 0x44 ||
-    bytes[3] !== 0x46
-  ) {
-    throw new Error("Select a valid PDF to convert to Word.")
-  }
-
-  const baseName = name.replace(/\.[^/.]+$/, "")
-
-  const format = options.format || "docx"
-
-  const layout = options.layout || "standard"
-
-  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
+  options: PDFToWordOptions,
+): Promise<OutputResult | null> {
+  // Adobe Acrobat PDF Services: the higher-fidelity converter of the two.
 
   if (
     typeof window !== "undefined" &&
@@ -3392,7 +3423,7 @@ export async function pdfToWord(
   ) {
     const activeApi = await nextCloudApi("pdf-compression")
 
-    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+    if (activeApi && activeApi.provider === "adobe") {
       try {
         let binary = ""
 
@@ -3482,14 +3513,14 @@ export async function pdfToWord(
       }
     }
 
-    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    // iLovePDF: the second engine when Adobe is unavailable or out of quota.
 
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
         : await nextCloudApi("pdf-compression")
 
-    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+    if (iloveApi && iloveApi.provider === "ilovepdf") {
       try {
         let binary = ""
 
@@ -3579,6 +3610,35 @@ export async function pdfToWord(
       }
     }
   }
+  return null
+}
+
+export async function pdfToWord(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+
+  options: PDFToWordOptions = {},
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+
+  if (bytes.length === 0) {
+    throw new Error("Invalid or empty PDF file.")
+  }
+
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0x25 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x44 ||
+    bytes[3] !== 0x46
+  ) {
+    throw new Error("Select a valid PDF to convert to Word.")
+  }
+
+  const baseName = name.replace(/\.[^/.]+$/, "")
+
+  const format = options.format || "docx"
+
+  const layout = options.layout || "standard"
 
   // 1. Try extracting high-fidelity text with PDF.js (decodes ToUnicode CMaps, subsetted fonts, layout)
 
@@ -3648,6 +3708,31 @@ export async function pdfToWord(
     .join("\n\n")
 
     .trim()
+
+  // Nothing has been uploaded yet. A page of text the browser cannot read is the
+  // only reason to spend a credit here, and the converter wins because it reads
+  // layout and scans rather than guessing.
+  if (
+    await localTextLooksMissing({
+      chars: fullExtractedText.length,
+
+      pageCount: pages.length,
+    })
+  ) {
+    ensureNotCancelled(options?.signal)
+
+    const rescued = await cloudWordRescue(
+      bytes,
+
+      baseName,
+
+      format,
+
+      options,
+    )
+
+    if (rescued) return rescued
+  }
 
   const zipEntries: Array<{ name: string; data: string | Uint8Array }> = []
 
@@ -3876,35 +3961,19 @@ export async function pdfToWord(
 
 // ----------------------------------------------------------------------------
 
-export async function pdfToPPT(
-  fileOrBytes: File | Uint8Array | ArrayBuffer,
+// Billed rescue for PDF to PowerPoint. It runs only after the in-page engine has
+// produced a result, and only when that result is too weak to ship.
+async function cloudPptRescue(
+  bytes: Uint8Array,
 
-  options: PDFToPPTOptions = {},
-): Promise<OutputResult> {
-  const { bytes, name } = await extractBytes(fileOrBytes)
+  baseName: string,
 
-  if (bytes.length === 0) {
-    throw new Error("Invalid or empty PDF file.")
-  }
-
-  if (
-    bytes.length < 4 ||
-    bytes[0] !== 0x25 ||
-    bytes[1] !== 0x50 ||
-    bytes[2] !== 0x44 ||
-    bytes[3] !== 0x46
-  ) {
-    throw new Error("Select a valid PDF to convert to PowerPoint.")
-  }
-
-  const baseName = name.replace(/\.[^/.]+$/, "")
-
-  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
-
+  options: PDFToPPTOptions,
+): Promise<OutputResult | null> {
   if (typeof window !== "undefined") {
     const activeApi = await nextCloudApi("pdf-compression")
 
-    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+    if (activeApi && activeApi.provider === "adobe") {
       try {
         let binary = ""
 
@@ -3990,14 +4059,14 @@ export async function pdfToPPT(
       }
     }
 
-    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    // iLovePDF: the second engine when Adobe is unavailable or out of quota.
 
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
         : await nextCloudApi("pdf-compression")
 
-    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+    if (iloveApi && iloveApi.provider === "ilovepdf") {
       try {
         let binary = ""
 
@@ -4083,10 +4152,57 @@ export async function pdfToPPT(
       }
     }
   }
+  return null
+}
 
-  // 1. Local Fallback Engine (with Master slides and Layout relationships to prevent PowerPoint repair errors)
+export async function pdfToPPT(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
 
+  options: PDFToPPTOptions = {},
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+
+  if (bytes.length === 0) {
+    throw new Error("Invalid or empty PDF file.")
+  }
+
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0x25 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x44 ||
+    bytes[3] !== 0x46
+  ) {
+    throw new Error("Select a valid PDF to convert to PowerPoint.")
+  }
+
+  const baseName = name.replace(/\.[^/.]+$/, "")
+
+  // 1. Local engine first: Master slides and layout relationships keep PowerPoint
+  // from asking to repair the file.
   const pages = await extractPDFPages(bytes)
+
+  // Nothing has been uploaded yet: a paid converter earns a credit only once the
+  // free result is known to be weak.
+  if (
+    await localTextLooksMissing({
+      chars: pages.reduce((n, pg) => n + (pg.fullText || "").length, 0),
+
+      pageCount: pages.length,
+    })
+  ) {
+    ensureNotCancelled(options?.signal)
+
+    const rescued = await cloudPptRescue(
+      bytes,
+
+      baseName,
+
+      options,
+    )
+
+    if (rescued) return rescued
+  }
 
   const slideCount = Math.max(1, pages.length)
 
@@ -4400,39 +4516,23 @@ function parseCsvLine(line: string): string[] {
 
 // ----------------------------------------------------------------------------
 
-export async function pdfToExcel(
-  fileOrBytes: File | Uint8Array | ArrayBuffer,
+// Billed rescue for PDF to Excel. It runs only after the in-page engine has
+// produced a result, and only when that result is too weak to ship.
+async function cloudExcelRescue(
+  bytes: Uint8Array,
 
-  options: PDFToExcelOptions = {},
-): Promise<OutputResult> {
-  const { bytes, name } = await extractBytes(fileOrBytes)
+  baseName: string,
 
-  if (bytes.length === 0) {
-    throw new Error("Invalid or empty PDF file.")
-  }
+  format: string,
 
-  if (
-    bytes.length < 4 ||
-    bytes[0] !== 0x25 ||
-    bytes[1] !== 0x50 ||
-    bytes[2] !== 0x44 ||
-    bytes[3] !== 0x46
-  ) {
-    throw new Error("Select a valid PDF to extract into Excel.")
-  }
-
-  const baseName = name.replace(/\.[^/.]+$/, "")
-
-  const format = options.format || "xlsx"
-
-  const strategy = options.strategy || "auto"
-
+  options: PDFToExcelOptions,
+): Promise<OutputResult | null> {
   // 0. Cloud conversion with Adobe Acrobat PDF Services (if linked in Admin / API Pool)
 
   if (format === "xlsx" && typeof window !== "undefined") {
     const activeApi = await nextCloudApi("pdf-compression")
 
-    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+    if (activeApi && activeApi.provider === "adobe") {
       try {
         let binary = ""
 
@@ -4520,6 +4620,35 @@ export async function pdfToExcel(
       }
     }
   }
+  return null
+}
+
+export async function pdfToExcel(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+
+  options: PDFToExcelOptions = {},
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+
+  if (bytes.length === 0) {
+    throw new Error("Invalid or empty PDF file.")
+  }
+
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0x25 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x44 ||
+    bytes[3] !== 0x46
+  ) {
+    throw new Error("Select a valid PDF to extract into Excel.")
+  }
+
+  const baseName = name.replace(/\.[^/.]+$/, "")
+
+  const format = options.format || "xlsx"
+
+  const strategy = options.strategy || "auto"
 
   let rows: string[][] = []
 
@@ -4592,6 +4721,25 @@ export async function pdfToExcel(
 
       rows.push(cols.map((c) => c.trim()))
     }
+  }
+
+  // Nothing has been uploaded yet: a paid converter earns a credit only once the
+  // free result is known to be weak, which is no rows at all or a grid that
+  // collapsed everything into a single column.
+  if (await localTableNeedsRescue(rows)) {
+    ensureNotCancelled(options?.signal)
+
+    const rescued = await cloudExcelRescue(
+      bytes,
+
+      baseName,
+
+      format,
+
+      options,
+    )
+
+    if (rescued) return rescued
   }
 
   if (rows.length === 0) {
@@ -5807,27 +5955,24 @@ function wrapTextLines(
 
 // ----------------------------------------------------------------------------
 
-export async function pptToPDF(
-  fileOrText: File | string | Uint8Array | ArrayBuffer,
+// Billed rescue for PowerPoint to PDF. The in-page builder can only redraw text
+// boxes and embedded media, so this runs when it parsed nothing usable, or when
+// the file is a binary .ppt the page cannot open at all.
+async function cloudDeckRescue(
+  bytes: Uint8Array,
 
-  options: PPTToPDFOptions = {},
-): Promise<OutputResult> {
-  const { bytes, name } = await extractBytes(fileOrText)
+  name: string,
 
-  if (bytes.length === 0) {
-    throw new Error(
-      "Select a presentation file or enter outline text to convert to PDF.",
-    )
-  }
+  baseName: string,
 
-  const baseName = name.replace(/\.[^/.]+$/, "")
-
-  // 0. Cloud conversion with Adobe Acrobat PDF Services (Primary Priority in Pool)
+  options: PPTToPDFOptions,
+): Promise<OutputResult | null> {
+  // Adobe Acrobat PDF Services: the higher-fidelity converter of the two.
 
   if (typeof window !== "undefined") {
     const activeApi = await nextCloudApi("pdf-compression")
 
-    if (activeApi && activeApi.provider === "adobe" && activeApi.apiKey) {
+    if (activeApi && activeApi.provider === "adobe") {
       try {
         let binary = ""
 
@@ -5909,14 +6054,14 @@ export async function pptToPDF(
       }
     }
 
-    // 0b. iLovePDF Cloud API (Secondary Priority in Pool)
+    // iLovePDF: the second engine when Adobe is unavailable or out of quota.
 
     const iloveApi =
       activeApi?.provider === "ilovepdf"
         ? activeApi
         : await nextCloudApi("pdf-compression")
 
-    if (iloveApi && iloveApi.provider === "ilovepdf" && iloveApi.apiKey) {
+    if (iloveApi && iloveApi.provider === "ilovepdf") {
       try {
         let binary = ""
 
@@ -5998,6 +6143,24 @@ export async function pptToPDF(
       }
     }
   }
+  return null
+}
+
+export async function pptToPDF(
+  fileOrText: File | string | Uint8Array | ArrayBuffer,
+
+  options: PPTToPDFOptions = {},
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrText)
+
+  if (bytes.length === 0) {
+    throw new Error(
+      "Select a presentation file or enter outline text to convert to PDF.",
+    )
+  }
+
+  const baseName = name.replace(/\.[^/.]+$/, "")
+
 
   interface ExtractedSlideImage {
     bytes: Uint8Array
@@ -6403,6 +6566,24 @@ export async function pptToPDF(
   }
 
   const slidesPerPage = options.slidesPerPage || 1
+
+  // A deck with no readable slide content is a capability gap, not a quality
+  // preference, so this is the point where an upload is worth it.
+  if (await localDeckLooksUnreadable(bytes, rawSlides)) {
+    ensureNotCancelled(options?.signal)
+
+    const rescued = await cloudDeckRescue(
+      bytes,
+
+      name,
+
+      baseName,
+
+      options,
+    )
+
+    if (rescued) return rescued
+  }
 
   const totalSlides = rawSlides.length
 
@@ -7496,7 +7677,17 @@ export async function pdfToJPG(
       }
     }
 
-    return createValidTestJfifBlob(Math.round(width), Math.round(height))
+    // Reaching here means neither rasterizer nor text painter produced pixels. In a
+    // browser that is a genuine failure, and a blank JPEG would look like a
+    // successful conversion, so the page is reported as failed. Only an environment
+    // with no document at all (tests, prerender) answers with the empty frame.
+    if (typeof document === "undefined") {
+      return createValidTestJfifBlob(width, height)
+    }
+
+    throw new Error(
+      `Page ${pageIdx + 1} could not be rendered in this browser.`,
+    )
   }
 
   try {

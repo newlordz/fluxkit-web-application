@@ -400,7 +400,12 @@ test("API Paystack: POST /api/paystack/verify-keys safely unmasks bullet charact
 })
 
 test("API Cloud APIs: POST /api/cloud-apis/ping blocks loopback and SSRF IP addresses", async () => {
-  const handler = loadHandler("api/cloud-apis/ping.ts")
+  // The probe dials an address the caller picks, so it now runs only for the pool
+  // editor. An admin session is supplied to reach the address check itself.
+  const s = createStubs({ admin: { id: "usr_admin", role: "admin" } })
+  const handler = loadHandler("api/cloud-apis/ping.ts", {
+    "../../server/_lib/auth.ts": s.auth,
+  })
   const { req, res } = createMockReqRes({
     method: "POST",
     body: { endpoint: "http://127.0.0.1:8080/admin" },
@@ -412,6 +417,22 @@ test("API Cloud APIs: POST /api/cloud-apis/ping blocks loopback and SSRF IP addr
   assert.equal(res._getStatus(), 403)
   assert.equal(data.ok, false)
   assert.ok(String(data.error || data.message || "").includes("Prohibited"))
+})
+
+test("API Cloud APIs: POST /api/cloud-apis/ping requires an administrator session", async () => {
+  const s = createStubs({ admin: null })
+  const handler = loadHandler("api/cloud-apis/ping.ts", {
+    "../../server/_lib/auth.ts": s.auth,
+  })
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    body: { endpoint: "http://169.254.169.254/latest/meta-data/" },
+  })
+
+  await handler(req, res)
+
+  assert.equal(res._getStatus(), 401)
+  assert.equal(res._getData().ok, false)
 })
 
 // ---------------------------------------------------------------------------
@@ -758,4 +779,53 @@ test("API Pool: remembers which engine actually served the job", () => {
     "local",
     "a refused cloud attempt must not be reported as the engine that ran the job",
   )
+})
+
+// The endpoint probe is admin-gated, so an unauthenticated curl can no longer show
+// whether a given address would be refused. These assert the range logic itself.
+test("API Pool: the endpoint probe refuses every form of a loopback address", () => {
+  const file = path.resolve("api/cloud-apis/ping.ts")
+  const compiled = ts.transpileModule(fs.readFileSync(file, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const mod = { exports: {} }
+  vm.runInThisContext(`(function (exports, require, module) {\n${compiled}\n})`, {
+    filename: file,
+  })(
+    mod.exports,
+    (id) => (id.includes("/server/_lib/auth.ts") ? { requireAdmin: async () => ({ id: "admin" }) } : require(id)),
+    mod,
+  )
+  const isPrivate = mod.exports.isPrivateAddress
+
+  for (const blocked of [
+    "127.0.0.1",
+    "127.1",
+    "2130706433",
+    "0x7f000001",
+    "::ffff:127.0.0.1",
+    "0.0.0.0",
+    "10.1.2.3",
+    "169.254.169.254",
+    "172.16.0.9",
+    "192.168.1.1",
+    "192.0.2.1",
+    "100.64.0.1",
+    "198.18.0.1",
+    "224.0.0.1",
+    "8.8.8.8\x00.internal",
+    "::1",
+    "[::1]",
+    "::",
+    "fe80::1",
+    "fc00::1",
+    "fd12::34",
+    "64:ff9b::127.0.0.1",
+  ]) {
+    assert.equal(isPrivate(blocked), true, `${blocked} must never be dialed by the server`)
+  }
+
+  for (const allowed of ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946", "test.example.com"]) {
+    assert.equal(isPrivate(allowed), false, `${allowed} is a legitimate public endpoint`)
+  }
 })

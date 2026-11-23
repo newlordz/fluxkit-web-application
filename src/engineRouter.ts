@@ -47,3 +47,18 @@ export function tableNeedsCloud(rows: string[][]): boolean {
 
   return widest < 2
 }
+
+// PowerPoint is the one input a page genuinely cannot render: the legacy binary
+// .ppt container has no JavaScript reader, and a deck whose XML yielded no shapes
+// or media has nothing left for the local builder to draw.
+export function deckNeedsCloud(options: {
+  slideCount: number
+  hasContent: boolean
+  isLegacyBinaryPpt: boolean
+}): boolean {
+  if (options.isLegacyBinaryPpt) return true
+
+  if (options.slideCount === 0) return true
+
+  return !options.hasContent
+}
