@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react"
+import { lazy, Suspense, useEffect, useState, useRef, useMemo } from "react"
 
 import {
   Activity,
@@ -52,10 +52,6 @@ import {
 
 import MasterfileLogo from "./MasterfileLogo"
 
-import ToolPage from "./ToolPage"
-
-import AudioToText from "./AudioToText"
-
 import AuthPage, { type AuthPageMode } from "./AuthPage"
 
 import Overview from "./Overview"
@@ -100,17 +96,29 @@ import {
   getPublishedCustomPages,
 } from "./pageManagerService"
 
-import AdminPanel from "./AdminPanel"
-
-import ProActivationModal from "./ProActivationModal"
-
 import ForcedPasswordResetModal from "./ForcedPasswordResetModal"
 
-import ImageShowcaseViewer from "./ImageShowcaseViewer"
-
-import VisitorPassStudio from "./VisitorPassStudio"
-
 import { GoogleIcon } from "./GoogleAuth"
+
+const ToolPage = lazy(() => import("./ToolPage"))
+const AudioToText = lazy(() => import("./AudioToText"))
+const AdminPanel = lazy(() => import("./AdminPanel"))
+const ProActivationModal = lazy(() => import("./ProActivationModal"))
+const ImageShowcaseViewer = lazy(() => import("./ImageShowcaseViewer"))
+const VisitorPassStudio = lazy(() => import("./VisitorPassStudio"))
+
+function RouteLoading() {
+  return (
+    <div
+      className="panel page-enter"
+      role="status"
+      aria-live="polite"
+      style={{ margin: "24px auto", maxWidth: 640, padding: 24 }}
+    >
+      Loading…
+    </div>
+  )
+}
 
 function stored(key: string, fallback: string) {
   try {
@@ -882,11 +890,13 @@ export default function App() {
 
   if (page.startsWith("showcase") || page.startsWith("image-qr"))
     return (
-      <ImageShowcaseViewer
-        theme={theme}
-        toggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-        onNavigate={navigate}
-      />
+      <Suspense fallback={<RouteLoading />}>
+        <ImageShowcaseViewer
+          theme={theme}
+          toggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onNavigate={navigate}
+        />
+      </Suspense>
     )
 
   const isAdmin =
@@ -2395,25 +2405,27 @@ export default function App() {
               </div>
             </div>
           ) : page === "admin" || page.startsWith("admin-") ? (
-            <AdminPanel
-              currentUser={currentUser}
-              navigate={navigate}
-              initialTab={
-                page === "admin-apis"
-                  ? "apis"
-                  : page === "admin-integrations"
-                    ? "integrations"
-                    : page === "admin-users"
-                      ? "users"
-                      : page === "admin-pages"
-                        ? "pages"
-                        : page === "admin-settings"
-                          ? "settings"
-                          : page === "admin-tiers"
-                            ? "tiers"
-                            : undefined
-              }
-            />
+            <Suspense fallback={<RouteLoading />}>
+              <AdminPanel
+                currentUser={currentUser}
+                navigate={navigate}
+                initialTab={
+                  page === "admin-apis"
+                    ? "apis"
+                    : page === "admin-integrations"
+                      ? "integrations"
+                      : page === "admin-users"
+                        ? "users"
+                        : page === "admin-pages"
+                          ? "pages"
+                          : page === "admin-settings"
+                            ? "settings"
+                            : page === "admin-tiers"
+                              ? "tiers"
+                              : undefined
+                }
+              />
+            </Suspense>
           ) : customPage ? (
             <div
               className="page-enter custom-page-view"
@@ -2442,102 +2454,108 @@ export default function App() {
               </div>
             </div>
           ) : page === "audio-text" ? (
-            !canUserAccessTool("audio-text", currentUser) ? (
-              <ProActivationModal
-                tool={tools.find((t) => t.id === "audio-text")!}
-                currentUser={currentUser}
-                onActivated={(upgraded) => {
-                  setCurrentUser(upgraded)
-                }}
-                onNavigate={navigate}
-              />
-            ) : (
-              <AudioToText
-                key={`${page}-${stagedFiles[0]?.name || "empty"}`}
-                initialFile={stagedFiles[0]}
-                currentUser={currentUser}
-                onComplete={() =>
-                  setActivity((a) => [
-                    {
-                      name: "Audio to Text",
+            <Suspense fallback={<RouteLoading />}>
+              {!canUserAccessTool("audio-text", currentUser) ? (
+                <ProActivationModal
+                  tool={tools.find((t) => t.id === "audio-text")!}
+                  currentUser={currentUser}
+                  onActivated={(upgraded) => {
+                    setCurrentUser(upgraded)
+                  }}
+                  onNavigate={navigate}
+                />
+              ) : (
+                <AudioToText
+                  key={`${page}-${stagedFiles[0]?.name || "empty"}`}
+                  initialFile={stagedFiles[0]}
+                  currentUser={currentUser}
+                  onComplete={() =>
+                    setActivity((a) => [
+                      {
+                        name: "Audio to Text",
 
-                      time: new Date().toLocaleTimeString([], {
-                        hour: "2-digit",
+                        time: new Date().toLocaleTimeString([], {
+                          hour: "2-digit",
 
-                        minute: "2-digit",
-                      }),
-                    },
+                          minute: "2-digit",
+                        }),
+                      },
 
-                    ...a,
-                  ])
-                }
-              />
-            )
+                      ...a,
+                    ])
+                  }
+                />
+              )}
+            </Suspense>
           ) : page === "visitor-pass" ? (
-            !canUserAccessTool("visitor-pass", currentUser) ? (
-              <ProActivationModal
-                tool={tools.find((t) => t.id === "visitor-pass")!}
-                currentUser={currentUser}
-                onActivated={(upgraded) => {
-                  setCurrentUser(upgraded)
-                }}
-                onNavigate={navigate}
-              />
-            ) : (
-              <VisitorPassStudio
-                navigate={navigate}
-                currentUser={currentUser}
-                onComplete={() =>
-                  setActivity((a) => [
-                    {
-                      name: "Visitor Pass & Badges",
+            <Suspense fallback={<RouteLoading />}>
+              {!canUserAccessTool("visitor-pass", currentUser) ? (
+                <ProActivationModal
+                  tool={tools.find((t) => t.id === "visitor-pass")!}
+                  currentUser={currentUser}
+                  onActivated={(upgraded) => {
+                    setCurrentUser(upgraded)
+                  }}
+                  onNavigate={navigate}
+                />
+              ) : (
+                <VisitorPassStudio
+                  navigate={navigate}
+                  currentUser={currentUser}
+                  onComplete={() =>
+                    setActivity((a) => [
+                      {
+                        name: "Visitor Pass & Badges",
 
-                      time: new Date().toLocaleTimeString([], {
-                        hour: "2-digit",
+                        time: new Date().toLocaleTimeString([], {
+                          hour: "2-digit",
 
-                        minute: "2-digit",
-                      }),
-                    },
+                          minute: "2-digit",
+                        }),
+                      },
 
-                    ...a,
-                  ])
-                }
-              />
-            )
+                      ...a,
+                    ])
+                  }
+                />
+              )}
+            </Suspense>
           ) : selected?.available ? (
-            !canUserAccessTool(selected.id, currentUser) ? (
-              <ProActivationModal
-                tool={selected}
-                currentUser={currentUser}
-                onActivated={(upgraded) => {
-                  setCurrentUser(upgraded)
-                }}
-                onNavigate={navigate}
-              />
-            ) : (
-              <ToolPage
-                key={`${page}-${stagedFiles.map((f) => f.name).join(",") || "empty"}`}
-                tool={selected}
-                initialFiles={stagedFiles}
-                navigate={navigate}
-                currentUser={currentUser}
-                onComplete={(name) =>
-                  setActivity((a) => [
-                    {
-                      name,
+            <Suspense fallback={<RouteLoading />}>
+              {!canUserAccessTool(selected.id, currentUser) ? (
+                <ProActivationModal
+                  tool={selected}
+                  currentUser={currentUser}
+                  onActivated={(upgraded) => {
+                    setCurrentUser(upgraded)
+                  }}
+                  onNavigate={navigate}
+                />
+              ) : (
+                <ToolPage
+                  key={`${page}-${stagedFiles.map((f) => f.name).join(",") || "empty"}`}
+                  tool={selected}
+                  initialFiles={stagedFiles}
+                  navigate={navigate}
+                  currentUser={currentUser}
+                  onComplete={(name) =>
+                    setActivity((a) => [
+                      {
+                        name,
 
-                      time: new Date().toLocaleTimeString([], {
-                        hour: "2-digit",
+                        time: new Date().toLocaleTimeString([], {
+                          hour: "2-digit",
 
-                        minute: "2-digit",
-                      }),
-                    },
+                          minute: "2-digit",
+                        }),
+                      },
 
-                    ...a,
-                  ])
-                }
-              />
-            )
+                      ...a,
+                    ])
+                  }
+                />
+              )}
+            </Suspense>
           ) : page === "help" ? (
             <div className="page-enter">
               <button className="text-button" onClick={() => navigate("all")}>

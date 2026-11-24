@@ -45,25 +45,6 @@ export default defineConfig(({ mode }) => {
               return "lucide-icons"
             }
             if (
-              id.includes("AdminPanel") ||
-              id.includes("adminDbService") ||
-              id.includes("paymentIntegrationService") ||
-              id.includes("apiPoolService") ||
-              id.includes("pageManagerService")
-            ) {
-              return "admin-portal"
-            }
-            if (
-              id.includes("VisitorPassStudio") ||
-              id.includes("ImageShowcase") ||
-              id.includes("imageShowcaseService")
-            ) {
-              return "studio-tools"
-            }
-            if (id.includes("dataConversionService")) {
-              return "data-conversions"
-            }
-            if (
               id.includes("tesseract.js") ||
               id.includes("wasm-feature-detect") ||
               id.includes("idb-keyval") ||
