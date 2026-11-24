@@ -31,9 +31,10 @@ export function compressNeedsCloud(options: {
 // rather than a document, whichever reader it was.
 const MIN_CHARS_PER_PAGE = 120
 
-// A legible scan scores in the low nineties here; anything under half the characters
-// recognized on average is the engine describing texture rather than reading it.
-const MIN_OCR_CONFIDENCE = 50
+// A legible scan scores around 0.95 here, on the same 0-1 scale every reader in this
+// app reports; anything under half is the engine describing texture rather than reading
+// it, however many characters it counted.
+const MIN_OCR_CONFIDENCE = 0.5
 
 // A page with almost no extractable characters is scanned or image-only: no
 // in-page converter can rebuild it, but the document APIs can.

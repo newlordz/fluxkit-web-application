@@ -35,6 +35,19 @@ export interface LocalOcrPage {
   text: string;
   confidence: number;
   lines: Array<{ text: string ; confidence: number }>;
+
+  // Set when the engine ran on this page and could not finish it, which is a different
+  // answer from the null this module returns when there is no engine to run at all: one
+  // is a job the billed provider can still take, the other is not a job at all.
+  failed?: boolean;
+}
+
+// Tesseract scores a page 0-100 while every other reader in this app reports 0-1, and
+// the interface has no way to say which it is handing over. Converting here is the only
+// place a second scale can be kept from leaking into a result the visitor reads as
+// "9600% confidence".
+function toAppScale(score: number): number {
+  return Math.round(score || 0) / 100;
 }
 
 /** Any other language stays on the engine that can spell it. */
@@ -101,9 +114,9 @@ async function discardWorker(): Promise<void> {
 }
 
 /**
- * Reads one page image. Returns null for anything the engine could not do, which the
- * caller treats as "no local answer" rather than an error, because the paid engine is
- * still standing behind it.
+ * Reads one page image. A null means there was no engine to ask, which the caller treats
+ * as "nothing to report" rather than a failure; a page flagged as failed is one the
+ * engine attempted and could not do, and that is the paid engine's business.
  */
 export async function recognizePage(
   image: Blob,
@@ -142,7 +155,7 @@ export async function recognizePage(
             lines.push({
               text,
 
-              confidence: Math.round(
+              confidence: toAppScale(
                 typeof line.confidence === "number" ? line.confidence : data.confidence ?? 0,
               ),
             });
@@ -154,7 +167,7 @@ export async function recognizePage(
     return {
       text: (data.text || "").trim(),
 
-      confidence: Math.round(data.confidence ?? 0),
+      confidence: toAppScale(data.confidence ?? 0),
 
       lines,
     };
@@ -165,7 +178,7 @@ export async function recognizePage(
     // unusable, so the worker is discarded rather than inherited by the next scan.
     await discardWorker();
 
-    return null;
+    return { text: "", confidence: 0, lines: [], failed: true };
   } finally {
     if (timer) clearTimeout(timer);
   }

@@ -85,8 +85,9 @@ async function getBrowserOcr(): Promise<any> {
 
 /**
  * Reads a page that has no text layer with the WebAssembly engine bundled in /ocr.
- * A null result means the browser could not do the job, which is the only thing that
- * lets a billed OCR engine be contacted for it.
+ * `needsCloud` is the answer that lets a billed OCR engine be contacted for the page: it
+ * is true only when the browser engine genuinely read the page and could not do it well,
+ * never when there was no engine to ask in the first place.
  */
 async function localOcrScan(
   rawBytes: Uint8Array,
@@ -94,25 +95,27 @@ async function localOcrScan(
   isPdf: boolean,
 
   options: OCROptions,
-): Promise<OCRResult | null> {
+): Promise<{ result: OCRResult | null ; needsCloud: boolean }> {
   const ocr = await getBrowserOcr()
 
   // Any other language stays with the engine that can spell it.
-  if (!ocr?.recognizePage || !ocr.isLocallySupported(options.language)) return null
+  if (!ocr?.recognizePage || !ocr.isLocallySupported(options.language)) {
+    return { result: null, needsCloud: false }
+  }
 
   const images: Blob[] = []
 
   if (isPdf) {
     const pdfDoc = await openRasterDocument(rawBytes)
 
-    if (!pdfDoc) return null
+    if (!pdfDoc) return { result: null, needsCloud: false }
 
     for (let i = 0; i < pdfDoc.numPages; i++) {
       ensureNotCancelled(options.signal)
 
       const image = await rasterizePageForOcr(pdfDoc, i)
 
-      if (!image) return null
+      if (!image) return { result: null, needsCloud: false }
 
       images.push(image)
     }
@@ -120,7 +123,7 @@ async function localOcrScan(
     images.push(new Blob([rawBytes as any]))
   }
 
-  if (images.length === 0) return null
+  if (images.length === 0) return { result: null, needsCloud: false }
 
   const ocrLines: OCRLine[] = []
 
@@ -135,9 +138,11 @@ async function localOcrScan(
 
     const page = await ocr.recognizePage(image)
 
-    // One unreadable page makes the whole transcript a lie, so the job is handed over
-    // rather than delivered with a hole in it.
-    if (!page) return null
+    // One unreadable page makes the whole transcript a lie. A page the engine timed out
+    // on is a job the provider can still take; an environment with no engine is not.
+    if (!page) return { result: null, needsCloud: false }
+
+    if (page.failed) return { result: null, needsCloud: true }
 
     confidenceSum += page.confidence
 
@@ -152,6 +157,8 @@ async function localOcrScan(
 
   const router = await getEngineRouter()
 
+  const pageScore = confidenceSum / images.length
+
   // The engine came back with almost nothing, or with a lot of text it was not sure
   // about: a skewed photo, handwriting, or texture it read as words. That is what the
   // provider is for.
@@ -161,30 +168,34 @@ async function localOcrScan(
 
       pageCount: images.length,
 
-      confidence: Math.round(confidenceSum / images.length),
+      confidence: pageScore,
     }) === true
   ) {
-    return null
+    return { result: null, needsCloud: true }
   }
 
   return {
-    text: ocrLines.map((l) => l.text).join("\n"),
+    needsCloud: false,
 
-    // Tesseract reports a measured mean per page, so unlike an embedded text layer
-    // this scan carries a real quality figure.
-    confidence: Math.round(confidenceSum / images.length),
+    result: {
+      text: ocrLines.map((l) => l.text).join("\n"),
 
-    lines: ocrLines,
+      // Tesseract reports a measured mean per page, so unlike an embedded text layer
+      // this scan carries a real quality figure.
+      confidence: Math.round(pageScore * 100) / 100,
 
-    pageCount: images.length,
+      lines: ocrLines,
 
-    language: options.language || "en",
+      pageCount: images.length,
 
-    wordCount: totalWords,
+      language: options.language || "en",
 
-    characterCount: totalChars,
+      wordCount: totalWords,
 
-    sourceType: isPdf ? "pdf-scanned" : "image-raster",
+      characterCount: totalChars,
+
+      sourceType: isPdf ? "pdf-scanned" : "image-raster",
+    },
   }
 }
 
@@ -256,6 +267,13 @@ async function nextCloudApi(category: string): Promise<any> {
   if (!mod?.getSessionToken?.()) return null
 
   return getNextAvailableApi(category)
+}
+
+/** Whether the visitor is signed in, which decides how a refused page is explained. */
+async function hasVisitorSession(): Promise<boolean> {
+  const mod = await import("./sessionService").catch(() => null)
+
+  return Boolean(mod?.getSessionToken?.())
 }
 
 function getNextAvailableApi(category: string): any {
@@ -9752,7 +9770,7 @@ export async function scanOCR(
 
   const scanned = await localOcrScan(rawBytes, isPdf, options)
 
-  if (scanned) return scanned
+  if (scanned.result) return scanned.result
 
   // 1c. Cloud OCR Engine (OCR.space - 25,000 free operations/mo)
 
@@ -9856,6 +9874,18 @@ export async function scanOCR(
         errorMessage: String(ocrErr),
       })
     }
+  }
+
+  // A page the browser's engine read and declined is not a page the pixel reader below
+  // can manage: measured on a page of noise it invented two characters and called them
+  // text, which the visitor would then download as their document. When the rescue
+  // engine cannot be reached the job stops here with the reason instead.
+  if (scanned.needsCloud) {
+    throw new Error(
+      (await hasVisitorSession())
+        ? "This page needs a cloud OCR engine and none is available right now. Please try again in a moment."
+        : "This page needs a cloud OCR engine, which runs for signed-in visitors. Please sign in and scan it again.",
+    )
   }
 
   // 2. Optical Raster Scan (BMP or Canvas)

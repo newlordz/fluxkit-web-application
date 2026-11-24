@@ -11,7 +11,14 @@ const { PDFDocument, StandardFonts, rgb } = require("pdf-lib")
 // intercepting fetch, so a pass means no credit was spent rather than merely that an
 // endpoint happened to be unreachable.
 
-function loadServices(routerExports, ocrExports) {
+function loadServices(
+  routerExports,
+  ocrExports,
+  // A signed-out visitor cannot be billed, so no rescue engine is reachable for them
+  // even with the pool armed. That is the case deciding whether a refused page gets an
+  // explanation or a guess.
+  sessionExports = { getSessionToken: () => "test-session-token" },
+) {
   const filePath = path.resolve("src", "services.ts")
   const raw = fs.readFileSync(filePath, "utf8")
   const code = ts.transpileModule(raw, {
@@ -35,7 +42,7 @@ function loadServices(routerExports, ocrExports) {
       // The in-browser OCR engine is stood up the same way: a real one drags a 3.9 MB
       // WASM binary and a Worker into a unit test that is only about the decision.
       if (id === "./browserOcr" && ocrExports) return ocrExports
-      if (id === "./sessionService") return { getSessionToken: () => "test-session-token" }
+      if (id === "./sessionService") return sessionExports
       if (id === "./jobTypes") return {}
       return require(id)
     },
@@ -181,17 +188,17 @@ test("engine policy: the thresholds that decide when a credit is spent", () => {
     false,
     "a page the engine read for free is not",
   )
-  // Observed, not imagined: a page of random pixels returned 16,227 characters at a
-  // mean confidence of 15. A gate that only counts characters ships that as a result.
+  // Observed, not imagined: a page of random pixels returned 16,227 characters at a mean
+  // confidence of 0.15. A gate that only counts characters ships that as a result.
   assert.equal(
-    policy.ocrNeedsCloud({ chars: 16_227, pageCount: 1, confidence: 15 }),
+    policy.ocrNeedsCloud({ chars: 16_227, pageCount: 1, confidence: 0.15 }),
     true,
     "confident-looking nonsense is not a finished job",
   )
   assert.equal(
-    policy.ocrNeedsCloud({ chars: 1_800, pageCount: 2, confidence: 91 }),
+    policy.ocrNeedsCloud({ chars: 1_800, pageCount: 2, confidence: 0.91 }),
     false,
-    "a real scan scores in the low nineties and stays local",
+    "a real scan scores around 0.9 and stays local",
   )
 
   assert.equal(policy.tableNeedsCloud([]), true)
@@ -423,8 +430,8 @@ function readableEngine() {
     isLocallySupported: () => true,
     recognizePage: async () => ({
       text: [sentence, sentence, sentence].join("\n"),
-      confidence: 93,
-      lines: [sentence, sentence, sentence].map((text) => ({ text, confidence: 93 })),
+      confidence: 0.93,
+      lines: [sentence, sentence, sentence].map((text) => ({ text, confidence: 0.93 })),
     }),
   }
 }
@@ -444,7 +451,7 @@ test("scan: a page the browser can read never reaches a paid engine", async () =
 
   assert.deepEqual(cloud.calls, [], "the whole job stayed on the visitor's own machine")
   assert.ok(result.characterCount > 200, "and the transcript is the engine's own work")
-  assert.equal(result.confidence, 93, "a real recognition score is reported, not a placeholder")
+  assert.equal(result.confidence, 0.93, "on the 0-1 scale every OCR reader in this app reports")
   assert.equal(result.sourceType, "image-raster")
 })
 
@@ -453,8 +460,8 @@ test("scan: a page the browser read badly asks the pool exactly once", async () 
     isLocallySupported: () => true,
     recognizePage: async () => ({
       text: "rn 1",
-      confidence: 11,
-      lines: [{ text: "rn 1", confidence: 11 }],
+      confidence: 0.11,
+      lines: [{ text: "rn 1", confidence: 0.11 }],
     }),
   })
   const cloud = stubCloud(
@@ -479,10 +486,10 @@ test("scan: a hallucinated page is not treated as a result", async () => {
     isLocallySupported: () => true,
     recognizePage: async () => ({
       text: "BE Dela ctigeah cesta ead eee tee cage wana ates Sr ee ure ge A eras sapere ".repeat(6),
-      confidence: 15,
+      confidence: 0.15,
       lines: Array.from({ length: 18 }, (unused, i) => ({
         text: `noise line ${i} with plausible looking garbage`,
-        confidence: 15,
+        confidence: 0.15,
       })),
     }),
   })
@@ -499,6 +506,61 @@ test("scan: a hallucinated page is not treated as a result", async () => {
 
   assert.deepEqual(cloud.calls, ["/api/ocr-space/parse"], "the guess was not good enough to keep")
   assert.match(result.text, /no readable text/, "the provider's reading is what ships")
+})
+
+// A page a visitor can neither read here nor have read for them is explained, not
+// guessed at: the pixel reader underneath is weaker than the engine that declined, and
+// on a hard page it invents a dash or two and passes them off as the transcript.
+test("scan: a refused page with no reachable rescue tells the visitor what is needed", async () => {
+  const declined = {
+    isLocallySupported: () => true,
+    recognizePage: async () => ({
+      text: "rn 1",
+      confidence: 0.11,
+      lines: [{ text: "rn 1", confidence: 0.11 }],
+    }),
+  }
+  const services = loadServices(loadPolicy(), declined, { getSessionToken: () => null })
+  const cloud = stubCloud(
+    () => jsonResponse({ success: true, text: "never reached" }),
+    { id: "ocr-1", provider: "ocrspace" },
+  )
+  let error
+
+  try {
+    await services.scanOCR(scanImage(), {})
+  } catch (err) {
+    error = err
+  } finally {
+    cloud.restore()
+  }
+
+  assert.equal(cloud.calls.length, 0, "a signed-out visitor is never billed")
+  assert.match(error.message, /signed-in visitors/, "and is told what the page needs")
+})
+
+test("scan: an armed pool with no OCR engine is not reported as a sign-in problem", async () => {
+  const declined = {
+    isLocallySupported: () => true,
+    recognizePage: async () => ({ text: "", confidence: 0, lines: [], failed: true }),
+  }
+  const services = loadServices(loadPolicy(), declined)
+  const cloud = stubCloud(() => jsonResponse({ success: true, text: "never reached" }), {
+    id: "adobe-1",
+    provider: "adobe",
+  })
+  let error
+
+  try {
+    await services.scanOCR(scanImage(), {})
+  } catch (err) {
+    error = err
+  } finally {
+    cloud.restore()
+  }
+
+  assert.equal(cloud.calls.length, 0, "Adobe cannot read text, so nothing was spent")
+  assert.match(error.message, /none is available right now/, "the honest reason is the engine")
 })
 
 test("scan: a language the bundled model cannot spell goes straight to the provider", async () => {
