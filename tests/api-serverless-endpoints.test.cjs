@@ -81,7 +81,7 @@ function loadHandler(relPath, stubs = {}, extraGlobals = {}, stubPaths = null) {
 }
 
 /** Minimal stand-ins for the server-side helpers the handlers depend on. */
-function createStubs({ admin, rows = [], gateway = {} } = {}) {
+function createStubs({ admin, rows = [], prices = [], gateway = {} } = {}) {
   const calls = []
   const db = {
     cors: () => {},
@@ -93,6 +93,8 @@ function createStubs({ admin, rows = [], gateway = {} } = {}) {
     query: async (sql, params) => {
       calls.push({ sql, params })
       if (/from payment_gateways/i.test(sql)) return rows
+      // The plan prices the checkout is measured against.
+      if (/from tools/i.test(sql)) return prices
       return []
     },
   }
@@ -397,6 +399,143 @@ test("API Paystack: POST /api/paystack/verify-keys safely unmasks bullet charact
   // so a bullet character can never reach a Latin1 header value.
   assert.equal(sent.length, 1)
   assert.equal(sent[0].init.headers.Authorization, "Bearer sk_test_real_server_side_value_0632")
+})
+
+const BUYER = { id: "usr_buyer", role: "user", email: "buyer@example.com" }
+const PRICED = [{ price: 4.99 }]
+
+function paystackStubs({ user = null, prices = [] } = {}) {
+  const s = createStubs({ admin: user, prices, gateway: { secretKey: "sk_test_server_side" } })
+  return {
+    s,
+    stubs: {
+      "../server/_lib/db.ts": s.db,
+      "../server/_lib/auth.ts": s.auth,
+      "../server/_lib/providers.ts": s.providers,
+    },
+  }
+}
+
+test("API Paystack: /api/paystack refuses an anonymous checkout and an anonymous verify", async () => {
+  const { stubs } = paystackStubs({ user: null })
+  const handler = loadHandler("api/paystack.ts", stubs)
+  const net = stubOutboundFetch()
+
+  try {
+    const start = createMockReqRes({
+      method: "POST",
+      body: { amount: 499, tool: "pdf-to-word", email: "someone@else.com" },
+    })
+    await handler(start.req, start.res)
+    assert.equal(start.res._getStatus(), 401)
+
+    const check = createMockReqRes({ method: "GET", query: { action: "verify", reference: "ref_1" } })
+    await handler(check.req, check.res)
+    assert.equal(check.res._getStatus(), 401)
+    assert.deepEqual(net.seen, [], "no transaction is opened and no ledger row is written")
+  } finally {
+    net.restore()
+  }
+})
+
+test("API Paystack: a checkout cannot be started below the stored plan price", async () => {
+  const { s, stubs } = paystackStubs({ user: BUYER, prices: PRICED })
+  const handler = loadHandler("api/paystack.ts", stubs)
+  const net = stubOutboundFetch()
+
+  try {
+    const { req, res } = createMockReqRes({
+      method: "POST",
+      body: { amount: 1, tool: "pdf-to-word" },
+    })
+    await handler(req, res)
+
+    assert.equal(res._getStatus(), 400)
+    assert.match(res._getData().message, /below the listed price/)
+    assert.deepEqual(net.seen, [], "Paystack is not asked to take a penny for a subscription")
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(
+    s.calls.filter((c) => /insert into payments/i.test(c.sql)).length,
+    0,
+    "and nothing is booked in the ledger",
+  )
+})
+
+test("API Paystack: the charge is raised for the signed-in account, not the address in the body", async () => {
+  const sent = []
+  const { stubs } = paystackStubs({ user: BUYER, prices: PRICED })
+  const handler = loadHandler(
+    "api/paystack.ts",
+    stubs,
+    {
+      fetch: async (url, init) => {
+        sent.push({ url: String(url), init })
+        return {
+          status: 200,
+          json: async () => ({ status: true, data: { reference: "ref_paid_1", authorization_url: "https://checkout.paystack.com/x" } }),
+        }
+      },
+    },
+  )
+
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    body: { amount: 499, tool: "pdf-to-word", email: "someone@else.com", currency: "USD" },
+  })
+  await handler(req, res)
+
+  assert.equal(sent.length, 1)
+  const body = JSON.parse(sent[0].init.body)
+  assert.equal(body.email, "buyer@example.com", "the account being charged is the session's own")
+  assert.equal(body.amount, 499)
+  assert.deepEqual(body.metadata, { userId: "usr_buyer", tool: "pdf-to-word" })
+  assert.equal(res._getStatus(), 200)
+})
+
+test("API Paystack: a return address on another site is refused", async () => {
+  const { stubs } = paystackStubs({ user: BUYER, prices: PRICED })
+  const handler = loadHandler("api/paystack.ts", stubs)
+  const net = stubOutboundFetch()
+
+  try {
+    const { req, res } = createMockReqRes({
+      method: "POST",
+      body: { amount: 499, tool: "pdf-to-word", callback_url: "https://elsewhere.example.com/claim" },
+    })
+    await handler(req, res)
+
+    assert.equal(res._getStatus(), 400)
+    assert.match(res._getData().message, /return to this site/)
+    assert.deepEqual(net.seen, [], "a transaction is never opened toward an outside address")
+  } finally {
+    net.restore()
+  }
+})
+
+test("API Paystack: a verify only settles the caller's own payment row", async () => {
+  const { s, stubs } = paystackStubs({ user: BUYER })
+  const handler = loadHandler(
+    "api/paystack.ts",
+    stubs,
+    {
+      fetch: async () => ({
+        status: 200,
+        json: async () => ({ status: true, data: { status: "success", amount: 499, reference: "ref_paid_1" } }),
+      }),
+    },
+  )
+
+  const { req, res } = createMockReqRes({ method: "GET", query: { action: "verify", reference: "ref_paid_1" } })
+  await handler(req, res)
+
+  assert.equal(res._getStatus(), 200)
+  const update = s.calls.find((c) => /update payments/i.test(c.sql))
+  assert.match(update.sql, /user_id = \$5 or lower\(email\) = lower\(\$6\)/, "scoped to the caller")
+  assert.equal(update.params[4], "usr_buyer")
+  assert.equal(update.params[5], "buyer@example.com")
 })
 
 test("API Cloud APIs: POST /api/cloud-apis/ping blocks loopback and SSRF IP addresses", async () => {
