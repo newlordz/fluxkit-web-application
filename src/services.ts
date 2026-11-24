@@ -95,12 +95,12 @@ async function localOcrScan(
   isPdf: boolean,
 
   options: OCROptions,
-): Promise<{ result: OCRResult | null ; needsCloud: boolean }> {
+): Promise<{ result: OCRResult | null ; needsCloud: boolean ; pageLines: string[][] }> {
   const ocr = await getBrowserOcr()
 
   // Any other language stays with the engine that can spell it.
   if (!ocr?.recognizePage || !ocr.isLocallySupported(options.language)) {
-    return { result: null, needsCloud: false }
+    return { result: null, needsCloud: false, pageLines: [] }
   }
 
   const images: Blob[] = []
@@ -108,14 +108,14 @@ async function localOcrScan(
   if (isPdf) {
     const pdfDoc = await openRasterDocument(rawBytes)
 
-    if (!pdfDoc) return { result: null, needsCloud: false }
+    if (!pdfDoc) return { result: null, needsCloud: false, pageLines: [] }
 
     for (let i = 0; i < pdfDoc.numPages; i++) {
       ensureNotCancelled(options.signal)
 
       const image = await rasterizePageForOcr(pdfDoc, i)
 
-      if (!image) return { result: null, needsCloud: false }
+      if (!image) return { result: null, needsCloud: false, pageLines: [] }
 
       images.push(image)
     }
@@ -123,9 +123,13 @@ async function localOcrScan(
     images.push(new Blob([rawBytes as any]))
   }
 
-  if (images.length === 0) return { result: null, needsCloud: false }
+  if (images.length === 0) return { result: null, needsCloud: false, pageLines: [] }
 
   const ocrLines: OCRLine[] = []
+
+  // The converters write a page at a time, so the grouping the recognizer works in has
+  // to survive the scan rather than be flattened into one transcript.
+  const pageLines: string[][] = []
 
   let totalWords = 0
 
@@ -140,11 +144,13 @@ async function localOcrScan(
 
     // One unreadable page makes the whole transcript a lie. A page the engine timed out
     // on is a job the provider can still take; an environment with no engine is not.
-    if (!page) return { result: null, needsCloud: false }
+    if (!page) return { result: null, needsCloud: false, pageLines: [] }
 
-    if (page.failed) return { result: null, needsCloud: true }
+    if (page.failed) return { result: null, needsCloud: true, pageLines: [] }
 
     confidenceSum += page.confidence
+
+    pageLines.push(page.lines.map((l: { text: string }) => l.text))
 
     for (const line of page.lines) {
       ocrLines.push({ text: line.text, confidence: line.confidence })
@@ -171,11 +177,13 @@ async function localOcrScan(
       confidence: pageScore,
     }) === true
   ) {
-    return { result: null, needsCloud: true }
+    return { result: null, needsCloud: true, pageLines: [] }
   }
 
   return {
     needsCloud: false,
+
+    pageLines,
 
     result: {
       text: ocrLines.map((l) => l.text).join("\n"),
@@ -197,6 +205,29 @@ async function localOcrScan(
       sourceType: isPdf ? "pdf-scanned" : "image-raster",
     },
   }
+}
+
+/**
+ * A document with no text layer used to leave the converters with nothing to write, which
+ * made a paid engine the only answer. The reader bundled with this page can supply that
+ * layer instead, so the pages are filled in and the caller measures the result again before
+ * any credit is offered. True only when the browser genuinely read the whole document.
+ */
+async function fillPagesWithLocalOcr(
+  pages: Array<{ lines: string[] ; fullText: string }>,
+  bytes: Uint8Array,
+  options: { language?: string ; signal?: AbortSignal },
+): Promise<boolean> {
+  const scanned = await localOcrScan(bytes, true, options || {})
+
+  if (!scanned.result) return false
+
+  pages.forEach((page, index) => {
+    page.lines = scanned.pageLines[index] || []
+    page.fullText = page.lines.join("\n")
+  })
+
+  return true
 }
 
 async function localTableNeedsRescue(rows: string[][]): Promise<boolean> {
@@ -3832,15 +3863,31 @@ export async function pdfToWord(
     }
   }
 
-  let fullExtractedText = pages
+  const joinPages = () =>
+    pages
+      .map((p, idx) =>
+        pages.length > 1 ? `--- Page ${idx + 1} ---\n${p.fullText}` : p.fullText,
+      )
+      .join("\n\n")
+      .trim()
 
-    .map((p, idx) =>
-      pages.length > 1 ? `--- Page ${idx + 1} ---\n${p.fullText}` : p.fullText,
-    )
+  let fullExtractedText = joinPages()
 
-    .join("\n\n")
+  // A page with no text layer is not yet a paid job: the recognizer shipped with this
+  // app reads a scan in the tab, and what it reads never has to be uploaded.
+  if (
+    await localTextLooksMissing({
+      chars: fullExtractedText.length,
 
-    .trim()
+      pageCount: pages.length,
+    })
+  ) {
+    ensureNotCancelled(options?.signal)
+
+    if (await fillPagesWithLocalOcr(pages, bytes, options)) {
+      fullExtractedText = joinPages()
+    }
+  }
 
   // Nothing has been uploaded yet. A page of text the browser cannot read is the
   // only reason to spend a credit here, and the converter wins because it reads
@@ -4315,11 +4362,27 @@ export async function pdfToPPT(
   // from asking to repair the file.
   const pages = await extractPDFPages(bytes)
 
+  const pageChars = () => pages.reduce((n, pg) => n + (pg.fullText || "").length, 0)
+
+  // A slide deck made of scans is the same job the recognizer in this tab can do, and a
+  // slide it reads is one that never gets uploaded.
+  if (
+    await localTextLooksMissing({
+      chars: pageChars(),
+
+      pageCount: pages.length,
+    })
+  ) {
+    ensureNotCancelled(options?.signal)
+
+    await fillPagesWithLocalOcr(pages, bytes, options)
+  }
+
   // Nothing has been uploaded yet: a paid converter earns a credit only once the
   // free result is known to be weak.
   if (
     await localTextLooksMissing({
-      chars: pages.reduce((n, pg) => n + (pg.fullText || "").length, 0),
+      chars: pageChars(),
 
       pageCount: pages.length,
     })

@@ -9345,7 +9345,10 @@ export default function ToolPage({
               )}
             </div>
 
-            {textOutput ? (
+            {/* The OCR tool always fills textOutput, so without this exclusion the
+                generic card below wins the branch and the recognition metrics, which are
+                the one thing a scan has to report, never reach the screen. */}
+            {textOutput && !(tool.id === "ocr" && ocrResult) ? (
               <div className="result-ready">
                 {/* --- Tool-Specific Visual Cards --- */}
                 {tool.id === "summarize" && aiSummarizeResult && (
