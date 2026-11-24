@@ -3921,6 +3921,16 @@ export async function pdfToWord(
   let embeddedImageCount = 0
 
   if (format === "txt") {
+    // An empty file handed over as a finished conversion looks like success. Measured on a
+    // page of noise this returned zero characters with no explanation; a Word or image
+    // output at least carries the page itself, but a text file with nothing in it is not a
+    // result, so the visitor is told what the page actually was.
+    if (!fullExtractedText) {
+      throw new Error(
+        "No readable text was found in this PDF, so there is nothing to save as a text file. If it is a scan, run it through the OCR Scanner or convert it to Word instead.",
+      )
+    }
+
     return {
       name: `${baseName}-converted.txt`,
 

@@ -342,6 +342,34 @@ test("convert tools: an unreadable document asks for one rescue", async () => {
   assert.ok(cloud.calls.length >= 1, "the weak local result asked the pool for help")
 })
 
+test("convert: a text file with nothing in it is refused rather than delivered", async () => {
+  const doc = await PDFDocument.create()
+  doc.addPage([612, 792])
+  const blank = new File(
+    [new Uint8Array(await doc.save({ useObjectStreams: false }))],
+    "no-text.pdf",
+    { type: "application/pdf" },
+  )
+
+  const services = loadServices(loadPolicy())
+  const cloud = stubCloud(() => jsonResponse({ ok: false, error: "engine unavailable" }))
+
+  let error
+  try {
+    await services.pdfToWord(blank, { format: "txt" })
+  } catch (err) {
+    error = err
+  } finally {
+    cloud.restore()
+  }
+
+  assert.match(
+    error.message,
+    /No readable text/,
+    "a zero-character download is not a finished conversion",
+  )
+})
+
 test("pool: the offered engines are only the ones a tool can actually call", () => {
   const src = fs.readFileSync(path.resolve("src", "apiPoolService.ts"), "utf8")
   const compiled = ts.transpileModule(src, {
