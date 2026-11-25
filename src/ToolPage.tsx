@@ -881,7 +881,18 @@ export default function ToolPage({
 
   const [rawQrPayload, setRawQrPayload] = useState("")
 
-  const [kind, setKind] = useState("URL")
+  const [kind, setKind] = useState(() => {
+    if (tool.id === "qr" && typeof window !== "undefined") {
+      try {
+        const preset = window.sessionStorage?.getItem("fluxkit-qr-kind-preset")
+        if (preset) {
+          window.sessionStorage.removeItem("fluxkit-qr-kind-preset")
+          return preset
+        }
+      } catch {}
+    }
+    return "URL"
+  })
 
   const [value, setValue] = useState("")
 

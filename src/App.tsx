@@ -1712,6 +1712,91 @@ export default function App() {
                   />
                 ))}
               </div>
+              {(page === "qr-tools" || (!category && filter === "QR tools")) && (
+                <div style={{ marginTop: "28px" }}>
+                  <div className="directory-meta" style={{ marginBottom: "12px" }}>
+                    QR Studio Generators{" "}
+                    <span>Open QR Code Studio directly in any format</span>
+                  </div>
+                  <div className="tool-grid">
+                    {[
+                      {
+                        mode: "URL",
+                        name: "URL / Website QR",
+                        desc: "Link any website, menu, form, or landing page to a scannable QR code.",
+                        badge: "URL",
+                      },
+                      {
+                        mode: "Image / Photo Showcase",
+                        name: "Image / Photo Showcase QR",
+                        desc: "Design a mobile photo gallery landing page with an instant QR code.",
+                        badge: "SHOWCASE",
+                      },
+                      {
+                        mode: "Wi-Fi",
+                        name: "Wi-Fi Network QR",
+                        desc: "Let guests scan to join your Wi-Fi network without typing passwords.",
+                        badge: "WI-FI",
+                      },
+                      {
+                        mode: "WhatsApp",
+                        name: "WhatsApp Chat QR",
+                        desc: "Start a WhatsApp conversation with a pre-filled message on scan.",
+                        badge: "CHAT",
+                      },
+                      {
+                        mode: "Email",
+                        name: "Email QR",
+                        desc: "Open a pre-addressed email draft with subject and message.",
+                        badge: "EMAIL",
+                      },
+                      {
+                        mode: "Text",
+                        name: "Plain Text QR",
+                        desc: "Encode notes, serial numbers, instructions, or offline text.",
+                        badge: "TEXT",
+                      },
+                    ]
+                      .filter((q) =>
+                        `${q.name} ${q.desc}`
+                          .toLowerCase()
+                          .includes(query.toLowerCase()),
+                      )
+                      .map((q) => (
+                        <button
+                          key={q.mode}
+                          className="tool-card theme-teal"
+                          onClick={() => {
+                            try {
+                              window.sessionStorage?.setItem(
+                                "fluxkit-qr-kind-preset",
+                                q.mode,
+                              )
+                            } catch {}
+                            navigate("qr")
+                          }}
+                        >
+                          <div className="tool-card-top">
+                            <span className="tool-badge-box color-teal">
+                              <QrCode size={18} />
+                            </span>
+                            <span className="badge-live">{q.badge}</span>
+                          </div>
+                          <h3>{q.name}</h3>
+                          <p>{q.desc}</p>
+                          <div className="tool-card-bottom">
+                            <span className="category-label">
+                              QR Code Studio
+                            </span>
+                            <span className="tool-action">
+                              Open <ArrowUpRight size={14} />
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
               {!filtered.length && (
                 <div className="panel coming-soon">
                   <Search size={32} />

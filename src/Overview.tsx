@@ -594,7 +594,7 @@ export default function Overview({
       if (activeTab === "QR & Sharing") {
         return (
           t.category === "QR tools" ||
-          ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id)
+          ["visitor-pass", "ocr", "zip", "merge-compress", "split-compress"].includes(t.id)
         )
       }
 
@@ -644,7 +644,7 @@ export default function Overview({
       "QR & Sharing": tools.filter(
         (t) =>
           t.category === "QR tools" ||
-          ["ocr", "zip", "merge-compress", "split-compress"].includes(t.id),
+          ["visitor-pass", "ocr", "zip", "merge-compress", "split-compress"].includes(t.id),
       ).length,
       Favorites: tools.filter((t) => favorites.includes(t.id)).length,
     }),

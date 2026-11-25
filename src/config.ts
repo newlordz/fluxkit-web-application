@@ -745,7 +745,7 @@ export const tools: Tool[] = [
     "visitor-pass",
     "Visitor Pass & Badges",
     "Generate branded visitor ID cards, adhesive badges, and digital mobile passes with scannable QR security.",
-    "Workspace",
+    "QR tools",
     IdCard,
     true,
     true,

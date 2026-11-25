@@ -5,7 +5,7 @@ const path = require("node:path")
 const vm = require("node:vm")
 const ts = require("typescript")
 
-function createHarness() {
+function createHarness(fetchImpl) {
   const store = {}
   const mockStorage = {
     getItem: (k) => store[k] || null,
@@ -37,6 +37,7 @@ function createHarness() {
         localStorage: mockStorage,
         window: { localStorage: mockStorage },
         document: {},
+        fetch: fetchImpl,
         setTimeout,
         clearTimeout,
       },
@@ -155,4 +156,32 @@ test("Gateways: set and get active gateway", () => {
   const active = svc.getActiveGateway()
   assert.ok(active)
   assert.equal(active.id, "stripe")
+})
+
+test("Gateways: testGatewayConnection sends admin Authorization header to /api/paystack/verify-keys", async () => {
+  const calls = []
+  const mockFetch = async (url, init = {}) => {
+    calls.push({ url, init })
+    return {
+      ok: true,
+      json: async () => ({ ok: true, latencyMs: 42, message: "Paystack API connected successfully (42ms)." }),
+    }
+  }
+
+  const harness = createHarness(mockFetch)
+  harness.store["masterfilepro-session-token"] = "admin-token-123"
+  const svc = harness.load("paymentIntegrationService")
+
+  svc.saveGateway({
+    ...svc.getGateway("paystack"),
+    publicKey: "pk_test_87fb0c5a46528ef690abe24123c62476ea8d996e",
+    secretKey: "sk_test_1234567890abcdef",
+  })
+
+  const res = await svc.testGatewayConnection("paystack")
+  assert.equal(res.success, true)
+
+  const verifyCall = calls.find((c) => c.url === "/api/paystack/verify-keys")
+  assert.ok(verifyCall, "expected /api/paystack/verify-keys to be called")
+  assert.equal(verifyCall.init.headers.Authorization, "Bearer admin-token-123")
 })
