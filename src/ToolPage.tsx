@@ -1239,6 +1239,32 @@ export default function ToolPage({
 
   const [sigInkColor, setSigInkColor] = useState("#0f172a")
 
+  const SIGNATURE_INK_COLORS = [
+    { hex: "#0f172a", label: "Black" },
+    { hex: "#1d4ed8", label: "Royal Blue" },
+    { hex: "#0284c7", label: "Sky Blue" },
+    { hex: "#4338ca", label: "Indigo" },
+    { hex: "#7c3aed", label: "Purple" },
+    { hex: "#dc2626", label: "Red" },
+    { hex: "#059669", label: "Green" },
+    { hex: "#d97706", label: "Amber" },
+    { hex: "#be185d", label: "Pink" },
+    { hex: "#475569", label: "Slate" },
+  ]
+
+  const handleSelectSigInkColor = (newColor: string) => {
+    setSigInkColor(newColor)
+    const canvas = sigCanvasRef.current
+    if (!canvas || !sigHasDrawn) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    ctx.save()
+    ctx.globalCompositeOperation = "source-in"
+    ctx.fillStyle = newColor
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.restore()
+  }
+
   // Interactive Meetings state
 
   const [inMeeting, setInMeeting] = useState(false)
@@ -8094,6 +8120,10 @@ export default function ToolPage({
 
                           alignItems: "center",
 
+                          flexWrap: "wrap",
+
+                          gap: "8px",
+
                           marginBottom: "6px",
                         }}
                       >
@@ -8104,40 +8134,77 @@ export default function ToolPage({
                             gap: "6px",
 
                             alignItems: "center",
+
+                            flexWrap: "wrap",
                           }}
                         >
                           <span style={{ fontSize: "11px", color: "#475569" }}>
                             Ink:
                           </span>
-                          {["#0f172a", "#1d4ed8", "#4338ca"].map((c) => (
+                          {SIGNATURE_INK_COLORS.map(({ hex, label }) => (
                             <button
-                              key={c}
+                              key={hex}
                               type="button"
-                              aria-label={`Ink color ${c}`}
+                              title={`${label} (${hex})`}
+                              aria-label={`Ink color ${hex}`}
+                              aria-pressed={sigInkColor.toLowerCase() === hex.toLowerCase()}
                               style={{
                                 width: "20px",
 
                                 height: "20px",
 
+                                padding: 0,
+
                                 borderRadius: "50%",
 
-                                background: c,
+                                background: hex,
 
                                 border:
-                                  sigInkColor === c
+                                  sigInkColor.toLowerCase() === hex.toLowerCase()
                                     ? "2px solid #ffffff"
                                     : "2px solid transparent",
 
                                 outline:
-                                  sigInkColor === c
+                                  sigInkColor.toLowerCase() === hex.toLowerCase()
                                     ? "2px solid var(--accent)"
                                     : "none",
 
                                 cursor: "pointer",
+
+                                flexShrink: 0,
                               }}
-                              onClick={() => setSigInkColor(c)}
+                              onClick={() => handleSelectSigInkColor(hex)}
                             />
                           ))}
+                          <label
+                            title="Custom ink color"
+                            aria-label="Custom ink color"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              fontSize: "11px",
+                              color: "#475569",
+                              cursor: "pointer",
+                              marginLeft: "2px",
+                            }}
+                          >
+                            <input
+                              type="color"
+                              value={sigInkColor}
+                              aria-label="Pick custom ink color"
+                              onChange={(e) => handleSelectSigInkColor(e.target.value)}
+                              style={{
+                                width: "22px",
+                                height: "22px",
+                                padding: 0,
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "50%",
+                                background: "transparent",
+                                cursor: "pointer",
+                              }}
+                            />
+                          </label>
                         </div>
                         <button
                           type="button"
@@ -8186,6 +8253,10 @@ export default function ToolPage({
                         onPointerDown={(e) => {
                           isSigDrawingRef.current = true
 
+                          try {
+                            e.currentTarget.setPointerCapture?.(e.pointerId)
+                          } catch {}
+
                           const canvas = sigCanvasRef.current
 
                           if (!canvas) return
@@ -8198,19 +8269,31 @@ export default function ToolPage({
 
                           ctx.lineJoin = "round"
 
+                          ctx.strokeStyle = sigInkColor
+
+                          ctx.fillStyle = sigInkColor
+
                           const rect = canvas.getBoundingClientRect()
 
-                          const scaleX = canvas.width / rect.width
+                          const scaleX = rect.width ? canvas.width / rect.width : 1
 
-                          const scaleY = canvas.height / rect.height
+                          const scaleY = rect.height ? canvas.height / rect.height : 1
+
+                          const x = (e.clientX - rect.left) * scaleX
+
+                          const y = (e.clientY - rect.top) * scaleY
 
                           ctx.beginPath()
 
-                          ctx.moveTo(
-                            (e.clientX - rect.left) * scaleX,
+                          ctx.arc(x, y, 1.25 * scaleX, 0, Math.PI * 2)
 
-                            (e.clientY - rect.top) * scaleY,
-                          )
+                          ctx.fill()
+
+                          ctx.beginPath()
+
+                          ctx.moveTo(x, y)
+
+                          if (!sigHasDrawn) setSigHasDrawn(true)
                         }}
                         onPointerMove={(e) => {
                           if (!isSigDrawingRef.current) return
@@ -8229,9 +8312,9 @@ export default function ToolPage({
 
                           const rect = canvas.getBoundingClientRect()
 
-                          const scaleX = canvas.width / rect.width
+                          const scaleX = rect.width ? canvas.width / rect.width : 1
 
-                          const scaleY = canvas.height / rect.height
+                          const scaleY = rect.height ? canvas.height / rect.height : 1
 
                           ctx.strokeStyle = sigInkColor
 
@@ -8248,6 +8331,9 @@ export default function ToolPage({
                           if (!sigHasDrawn) setSigHasDrawn(true)
                         }}
                         onPointerUp={() => {
+                          isSigDrawingRef.current = false
+                        }}
+                        onPointerCancel={() => {
                           isSigDrawingRef.current = false
                         }}
                         onPointerLeave={() => {
