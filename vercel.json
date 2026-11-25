@@ -66,6 +66,10 @@
       "destination": "/api/ocr-space?action=$1"
     },
     {
+      "source": "/api/image-table/extract",
+      "destination": "/api/image-table?action=extract"
+    },
+    {
       "source": "/api/paystack/verify-keys",
       "destination": "/api/paystack/verify-keys"
     },

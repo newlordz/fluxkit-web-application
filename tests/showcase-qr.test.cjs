@@ -60,9 +60,9 @@ test("Showcase encode and decode preserves metadata without loss", () => {
   assert.deepStrictEqual(decoded.downloadAllowed, true)
 })
 
-test("Showcase themes include all 6 calibrated aesthetics", () => {
+test("Showcase themes include all presets and the custom blend", () => {
   const service = loadShowcaseService()
-  const themes = ["glassmorphism", "polaroid", "obsidian", "editorial", "vibrant", "billboard"]
+  const themes = ["glassmorphism", "polaroid", "obsidian", "editorial", "vibrant", "billboard", "custom"]
   for (const t of themes) {
     const data = {
       id: `sh_${t}`,
@@ -77,4 +77,42 @@ test("Showcase themes include all 6 calibrated aesthetics", () => {
     const decoded = service.decodeShowcaseFromHash(hash)
     assert.strictEqual(decoded.theme, t)
   }
+})
+
+test("Custom showcase colors survive portable payloads", () => {
+  const service = loadShowcaseService()
+  const customColors = { startColor: "#123456", endColor: "#fedcba" }
+  const original = {
+    id: "sh_custom_colors",
+    title: "Custom blend",
+    theme: "custom",
+    customColors,
+    imageDataUrl: "data:image/png;base64,test",
+    downloadAllowed: true,
+    ctaEnabled: false,
+    createdAt: new Date().toISOString(),
+  }
+
+  const decoded = service.decodeShowcaseFromHash(service.encodeShowcaseToHash(original))
+  assert.deepStrictEqual(decoded.customColors, customColors)
+})
+
+test("Custom palette defaults missing or unsafe colors and selects readable text", () => {
+  const service = loadShowcaseService()
+  const defaults = service.getShowcaseCustomPalette()
+  assert.strictEqual(defaults.startColor, "#4f46e5")
+  assert.strictEqual(defaults.endColor, "#ec4899")
+  assert.strictEqual(defaults.textColor, "#ffffff")
+  assert.strictEqual(defaults.gradient, "linear-gradient(135deg, #4f46e5, #ec4899)")
+
+  const light = service.getShowcaseCustomPalette({ startColor: "#ffffff", endColor: "#fef08a" })
+  assert.strictEqual(light.textColor, "#0f172a")
+  assert.strictEqual(light.isLight, true)
+
+  const safe = service.getShowcaseCustomPalette({
+    startColor: "url(javascript:alert(1))",
+    endColor: "#123",
+  })
+  assert.strictEqual(safe.startColor, defaults.startColor)
+  assert.strictEqual(safe.endColor, defaults.endColor)
 })

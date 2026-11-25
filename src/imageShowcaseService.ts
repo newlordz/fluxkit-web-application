@@ -7,7 +7,24 @@
  * 3. Base64 URL payload hash fallback for 100% standalone cross-device resilience
  */
 
-export type ShowcaseTheme = "glassmorphism" | "polaroid" | "obsidian" | "editorial" | "vibrant" | "billboard"
+export type ShowcaseTheme =
+  | "glassmorphism"
+  | "polaroid"
+  | "obsidian"
+  | "editorial"
+  | "vibrant"
+  | "billboard"
+  | "custom"
+
+export interface ShowcaseCustomColors {
+  startColor: string
+  endColor: string
+}
+
+export const DEFAULT_SHOWCASE_CUSTOM_COLORS: ShowcaseCustomColors = {
+  startColor: "#4f46e5",
+  endColor: "#ec4899",
+}
 
 export interface ImageShowcaseData {
   id: string
@@ -32,6 +49,8 @@ export interface ImageShowcaseData {
 
   accentColor?: string
 
+  customColors?: ShowcaseCustomColors
+
   aspectRatio?: "square" | "portrait" | "landscape" | "auto"
 
   createdAt: string
@@ -40,6 +59,55 @@ export interface ImageShowcaseData {
 const STORAGE_PREFIX = "masterfilepro-showcase-"
 
 const inMemoryCache = new Map<string, ImageShowcaseData>()
+
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
+
+function normalizeShowcaseColor(value: unknown, fallback: string): string {
+  return typeof value === "string" && HEX_COLOR_PATTERN.test(value.trim())
+    ? value.trim()
+    : fallback
+}
+
+function getRelativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((offset) => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+}
+
+export function getShowcaseCustomPalette(
+  colors?: Partial<ShowcaseCustomColors>,
+) {
+  const startColor = normalizeShowcaseColor(
+    colors?.startColor,
+    DEFAULT_SHOWCASE_CUSTOM_COLORS.startColor,
+  )
+  const endColor = normalizeShowcaseColor(
+    colors?.endColor,
+    DEFAULT_SHOWCASE_CUSTOM_COLORS.endColor,
+  )
+  const startLuminance = getRelativeLuminance(startColor)
+  const endLuminance = getRelativeLuminance(endColor)
+  const whiteContrast = Math.min(
+    1.05 / (startLuminance + 0.05),
+    1.05 / (endLuminance + 0.05),
+  )
+  const darkContrast = Math.min(
+    (startLuminance + 0.05) / 0.05,
+    (endLuminance + 0.05) / 0.05,
+  )
+  const textColor = whiteContrast >= darkContrast ? "#ffffff" : "#0f172a"
+
+  return {
+    startColor,
+    endColor,
+    textColor,
+    isLight: textColor === "#0f172a",
+    gradient: `linear-gradient(135deg, ${startColor}, ${endColor})`,
+  }
+}
 
 /**
  * Compresses an uploaded image file into an optimized Data URL for instant mobile loading.

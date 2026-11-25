@@ -98,6 +98,8 @@ import {
 
 import ForcedPasswordResetModal from "./ForcedPasswordResetModal"
 
+import QuickFeedback from "./QuickFeedback"
+
 import { GoogleIcon } from "./GoogleAuth"
 
 const ToolPage = lazy(() => import("./ToolPage"))
@@ -362,6 +364,16 @@ export default function App() {
 
   const [mobile, setMobile] = useState(false)
 
+  const [mobileViewport, setMobileViewport] = useState(() =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 960px)").matches
+      : false,
+  )
+
+  const [stagingToken, setStagingToken] = useState(0)
+
+  const previousPageRef = useRef(page)
+
   const [query, setQuery] = useState("")
 
   const [filter, setFilter] = useState<Category | "All tools">("All tools")
@@ -501,6 +513,72 @@ export default function App() {
 
     return () => window.removeEventListener("hashchange", change)
   }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return
+
+    const media = window.matchMedia("(max-width: 960px)")
+    const update = () => {
+      setMobileViewport(media.matches)
+      if (!media.matches) setMobile(false)
+    }
+    update()
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [])
+
+  useEffect(() => {
+    if (!mobile || !mobileViewport) return
+
+    const previousFocus = document.activeElement as HTMLElement | null
+    const previousOverflow = document.body.style.overflow
+    const sidebar = document.getElementById("workspace-sidebar")
+    document.body.style.overflow = "hidden"
+
+    const getControls = () =>
+      Array.from(
+        sidebar?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((element) => element.getClientRects().length > 0)
+
+    const frame = requestAnimationFrame(() => {
+      const close = sidebar?.querySelector<HTMLElement>(".sidebar-close")
+      ;(close || getControls()[0])?.focus()
+    })
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return
+      const controls = getControls()
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (!first || !last) return
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener("keydown", trapFocus)
+    return () => {
+      cancelAnimationFrame(frame)
+      document.removeEventListener("keydown", trapFocus)
+      document.body.style.overflow = previousOverflow
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+  }, [mobile, mobileViewport])
+
+  useEffect(() => {
+    if (previousPageRef.current === page) return
+    previousPageRef.current = page
+    const frame = requestAnimationFrame(() => {
+      document.getElementById("main-content")?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [page])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -738,6 +816,7 @@ export default function App() {
 
     if (initialFiles && initialFiles.length > 0) {
       setStagedFiles(initialFiles)
+      setStagingToken((value) => value + 1)
     } else {
       setStagedFiles([])
     }
@@ -923,11 +1002,23 @@ export default function App() {
         />
       )}
       <aside
+        id="workspace-sidebar"
         className={`sidebar ${mobile ? "mobile-open" : ""}`}
         role={mobile ? "dialog" : undefined}
         aria-modal={mobile || undefined}
         aria-label="Workspace navigation"
+        inert={mobileViewport && !mobile ? true : undefined}
       >
+        {mobile && (
+          <button
+            type="button"
+            className="sidebar-close icon-button"
+            aria-label="Close navigation"
+            onClick={() => setMobile(false)}
+          >
+            <X size={19} />
+          </button>
+        )}
         <div className="sidebar-scroll">
           <button
             className="brand"
@@ -1028,6 +1119,7 @@ export default function App() {
                       : ""
                   }
                   onClick={() => navigate("admin")}
+                  aria-current={page === "admin" || page.startsWith("admin-") ? "page" : undefined}
                   style={{ color: "var(--accent)", fontWeight: 600 }}
                 >
                   <ShieldCheck size={18} />
@@ -1052,6 +1144,7 @@ export default function App() {
                       : n.name
                 }
                 className={page === n.id ? "active" : ""}
+                aria-current={page === n.id ? "page" : undefined}
                 onClick={() => navigate(n.id)}
               >
                 {/* The trailing space keeps textContent ("All tools 41") aligned with
@@ -1072,6 +1165,7 @@ export default function App() {
                 key={n.id}
                 aria-label={n.name}
                 className={page === n.id ? "active" : ""}
+                aria-current={page === n.id ? "page" : undefined}
                 onClick={() => navigate(n.id)}
               >
                 <n.icon size={18} />
@@ -1114,6 +1208,7 @@ export default function App() {
             <button
               className="bottom-nav"
               aria-label="Settings"
+              aria-current={page === "settings" ? "page" : undefined}
               onClick={() => navigate("settings")}
             >
               <Settings size={18} />
@@ -1122,6 +1217,7 @@ export default function App() {
             <button
               className="bottom-nav"
               aria-label="Help & resources"
+              aria-current={page === "help" ? "page" : undefined}
               onClick={() => navigate("help")}
             >
               <HelpCircle size={18} />
@@ -1194,13 +1290,14 @@ export default function App() {
           <PanelLeftClose size={15} />
         </button>
       </aside>
-      <div className="main-shell">
+      <div className="main-shell" inert={mobileViewport && mobile ? true : undefined}>
         <header className="topbar">
           <div className="breadcrumbs" aria-label="Breadcrumb navigation">
             <button
               className="mobile-menu icon-button"
               aria-label="Open navigation"
               aria-expanded={mobile}
+              aria-controls="workspace-sidebar"
               onClick={() => setMobile(true)}
             >
               <Menu size={20} />
@@ -2466,7 +2563,7 @@ export default function App() {
                 />
               ) : (
                 <AudioToText
-                  key={`${page}-${stagedFiles[0]?.name || "empty"}`}
+                  key={`${page}-${stagingToken}`}
                   initialFile={stagedFiles[0]}
                   currentUser={currentUser}
                   onComplete={() =>
@@ -2533,7 +2630,7 @@ export default function App() {
                 />
               ) : (
                 <ToolPage
-                  key={`${page}-${stagedFiles.map((f) => f.name).join(",") || "empty"}`}
+                  key={`${page}-${stagingToken}`}
                   tool={selected}
                   initialFiles={stagedFiles}
                   navigate={navigate}
@@ -2568,25 +2665,16 @@ export default function App() {
                 <span className="eyebrow">A LITTLE GUIDANCE</span>
                 <h1>Help & resources</h1>
                 <p>
-                  QR generation, PDF merging, and text-to-PDF run in your
-                  browser. Audio to Text requires a transcription backend. PDF
-                  uploads are limited to 25 MB each; encrypted or damaged PDFs
-                  may not be supported. Authentication and document storage are
-                  not connected.
+                  Most file tools run in your browser. Some signed-in jobs can
+                  use a cloud engine after the tool explains the upload. PDF and
+                  image uploads are limited to 25 MB each. Anonymous product
+                  metrics record only the tool, funnel stage, and a random visit
+                  ID — never file names, document contents, or account details.
                 </p>
                 <button className="primary" onClick={() => navigate("all")}>
                   Explore tools <ArrowRight size={16} />
                 </button>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    notify(
-                      "Feedback delivery is not connected yet. No message has been sent.",
-                    )
-                  }
-                >
-                  Share feedback <HelpCircle size={15} />
-                </button>
+                <QuickFeedback compact />
               </section>
             </div>
           ) : (

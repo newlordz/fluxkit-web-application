@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require("react-dom/server")
 const { PDFDocument } = require("pdf-lib")
 const QRCode = require("qrcode")
 
-// Global transpile cache for rapid execution of all 37 tool suites
+// Global transpile cache for rapid execution of all tool suites
 const transpileCache = new Map()
 
 function getTranspiled(full) {
@@ -125,10 +125,10 @@ function createLoader(hash = "overview", initialStorage = {}) {
 }
 
 // ============================================================================
-// TIER 1: Feature Coverage — 37 Tools Route Rendering & Active UI Structure
+// TIER 1: Feature Coverage — Registered Tool Route Rendering & Active UI Structure
 // ============================================================================
 
-test("Tier 1: Catalog Integrity — all 37 tools are registered with complete metadata and active availability", () => {
+test("Tier 1: Catalog Integrity — registered tools have complete metadata and active availability", () => {
   const { load } = createLoader()
   const { tools, categories } = load("config")
 
@@ -155,7 +155,26 @@ test("Tier 1: Catalog Integrity — all 37 tools are registered with complete me
   }
 })
 
-// Iterate through each of the 37 tools and verify route rendering
+test("Tier 1: Passport Photo Studio accepts one supported image and opens its local editor", () => {
+  const { load } = createLoader("passport-photo")
+  const { tools } = load("config")
+  const passport = tools.find((tool) => tool.id === "passport-photo")
+
+  assert.ok(passport, "Passport Photo Studio must be registered")
+  assert.equal(passport.category, "File tools")
+  assert.equal(passport.available, true)
+  assert.notEqual(passport.integrationRequired, true)
+
+  const App = load("App").default
+  const html = renderToStaticMarkup(React.createElement(App))
+  assert.match(html, /Passport Photo Studio/i)
+  assert.match(html, /Add a Passport Photo/i)
+  assert.match(html, /accept="[^"]*\.avif[^"]*image\/avif/i)
+  assert.doesNotMatch(html, /accept="[^"]*application\/pdf/i)
+  assert.doesNotMatch(html, /Run Passport Photo Studio/i)
+})
+
+// Iterate through every registered tool and verify route rendering
 const { load: catalogLoader } = createLoader()
 const allTools = catalogLoader("config").tools
 
@@ -305,6 +324,30 @@ test("Tier 2 [QR Code Studio]: Wi-Fi WPA format and escaping of special characte
   const adversarialPass = 'P@ss:w;ord\\"'
   const expectedWiFi = 'WIFI:T:WPA;S:My\\;Wifi\\:Room\\\\4\\"Special;P:P@ss\\:w\\;ord\\\\\\";;'
   assert.equal(formatWiFi(adversarialSSID, adversarialPass), expectedWiFi)
+})
+
+test("Tier 2 [QR Code Studio]: every preset renders distinct standalone SVG artwork", () => {
+  const { LOGO_PRESETS, presetIconDataUri } = createLoader().load("QRCodeStudioModal")
+  const artwork = new Set()
+
+  assert.equal(LOGO_PRESETS.length, 10)
+  for (const preset of LOGO_PRESETS) {
+    const dataUri = presetIconDataUri(preset.id, 64, "#123456")
+    assert.ok(dataUri.startsWith("data:image/svg+xml;charset=utf-8,"))
+    const markup = decodeURIComponent(dataUri.slice(dataUri.indexOf(",") + 1))
+    assert.match(markup, /^<svg\b/)
+    assert.match(markup, /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+    assert.match(markup, /<(path|circle|line|rect|polyline|polygon)\b/)
+    artwork.add(markup)
+  }
+
+  assert.equal(artwork.size, LOGO_PRESETS.length)
+  const whatsapp = decodeURIComponent(
+    presetIconDataUri("whatsapp", 64, "#123456").split(",")[1],
+  )
+  assert.match(whatsapp, /fill="#25D366"/)
+  assert.match(whatsapp, /<path d="M17\.472/)
+  assert.doesNotMatch(whatsapp, /MessageCircle/)
 })
 
 test("Tier 2 [QR Code Studio]: Email address format validation and URL escaping", () => {

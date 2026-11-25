@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import QRCode from "qrcode"
 import {
   X,
@@ -18,7 +19,6 @@ import {
   Link as LinkIcon,
   Wifi,
   Mail,
-  MessageCircle,
   Star,
   Heart,
   Phone,
@@ -65,10 +65,34 @@ const BG_PRESETS = [
   { name: "Subtle Cream", color: "#fefce8" },
 ]
 
-const LOGO_PRESETS = [
+const WHATSAPP_PATH =
+  "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"
+
+export function WhatsAppIcon({
+  size = 24,
+  color = "#25D366",
+}: {
+  size?: number
+  color?: string
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      fill={color}
+      aria-hidden="true"
+    >
+      <path d={WHATSAPP_PATH} />
+    </svg>
+  )
+}
+
+export const LOGO_PRESETS = [
   { id: "link", label: "Link", icon: LinkIcon },
   { id: "wifi", label: "Wi-Fi", icon: Wifi },
-  { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { id: "whatsapp", label: "WhatsApp", icon: WhatsAppIcon },
   { id: "email", label: "Email", icon: Mail },
   { id: "phone", label: "Phone", icon: Phone },
   { id: "globe", label: "Website", icon: Globe },
@@ -77,6 +101,28 @@ const LOGO_PRESETS = [
   { id: "heart", label: "Heart", icon: Heart },
   { id: "cart", label: "Shop", icon: ShoppingCart },
 ]
+
+export function presetIconDataUri(id: string, size: number, color: string): string {
+  const preset = LOGO_PRESETS.find((item) => item.id === id)
+  if (!preset) throw new Error("Unknown QR icon preset.")
+  const Icon = preset.icon
+  const markup = renderToStaticMarkup(
+    <Icon
+      size={size}
+      color={id === "whatsapp" ? "#25D366" : color}
+    />,
+  )
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+}
+
+function loadCanvasImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new window.Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
 
 export default function QRCodeStudioModal({
   value,
@@ -130,6 +176,7 @@ export default function QRCodeStudioModal({
   const [currentDataUrl, setCurrentDataUrl] = useState<string>("")
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const renderVersionRef = useRef(0)
 
   // Auto-switch to High error correction if logo is enabled to ensure 100% scan integrity
   useEffect(() => {
@@ -141,7 +188,11 @@ export default function QRCodeStudioModal({
   // Draw the custom QR code
   useEffect(() => {
     if (!isOpen || !value) return
-    renderCustomQR()
+    const renderVersion = ++renderVersionRef.current
+    renderCustomQR(renderVersion)
+    return () => {
+      renderVersionRef.current++
+    }
   }, [
     isOpen,
     value,
@@ -255,7 +306,7 @@ export default function QRCodeStudioModal({
   }
 
   // Main Render Function
-  async function renderCustomQR() {
+  async function renderCustomQR(renderVersion: number) {
     try {
       const qrData = QRCode.create(value, {
         errorCorrectionLevel: ecl,
@@ -480,133 +531,39 @@ export default function QRCodeStudioModal({
         ctx.restore()
 
         // Draw Image / Icon inside badge
-        if (uploadedLogo && uploadedLogo.src) {
-          await new Promise<void>((resolve) => {
-            const img = new window.Image()
-            img.crossOrigin = "anonymous"
-            img.onload = () => {
-              ctx.save()
-              ctx.beginPath()
-              if (logoShape === "circle") {
-                ctx.arc(
-                  logoX + logoSizePx / 2,
-                  logoY + logoSizePx / 2,
-                  logoSizePx / 2,
-                  0,
-                  Math.PI * 2,
-                )
-              } else if (logoShape === "rounded") {
-                drawRoundRect(
-                  ctx,
-                  logoX,
-                  logoY,
-                  logoSizePx,
-                  logoSizePx,
-                  logoSizePx * 0.2,
-                )
-              } else {
-                ctx.rect(logoX, logoY, logoSizePx, logoSizePx)
-              }
-              ctx.clip()
-              ctx.drawImage(img, logoX, logoY, logoSizePx, logoSizePx)
-              ctx.restore()
-              resolve()
-            }
-            img.onerror = () => resolve()
-            img.src = uploadedLogo.src
-          })
+        const iconSource = uploadedLogo?.src || presetIconDataUri(
+          selectedPresetLogo,
+          logoSizePx,
+          fgColor,
+        )
+        const iconImage = await loadCanvasImage(iconSource)
+        if (!iconImage || renderVersion !== renderVersionRef.current) return
+
+        ctx.save()
+        ctx.beginPath()
+        if (logoShape === "circle") {
+          ctx.arc(
+            logoX + logoSizePx / 2,
+            logoY + logoSizePx / 2,
+            logoSizePx / 2,
+            0,
+            Math.PI * 2,
+          )
+        } else if (logoShape === "rounded") {
+          drawRoundRect(
+            ctx,
+            logoX,
+            logoY,
+            logoSizePx,
+            logoSizePx,
+            logoSizePx * 0.2,
+          )
         } else {
-          // Draw Preset Vector Icon
-          ctx.save()
-          ctx.fillStyle = fgColor
-          ctx.strokeStyle = fgColor
-          ctx.lineWidth = logoSizePx * 0.08
-          ctx.lineCap = "round"
-          ctx.lineJoin = "round"
-
-          const cx = logoX + logoSizePx / 2
-          const cy = logoY + logoSizePx / 2
-          const iconR = logoSizePx * 0.35
-
-          // Simplified Crisp Shapes for Common Presets
-          ctx.beginPath()
-          if (selectedPresetLogo === "link" || selectedPresetLogo === "globe") {
-            ctx.arc(cx, cy, iconR, 0, Math.PI * 2)
-            ctx.stroke()
-            ctx.beginPath()
-            ctx.ellipse(cx, cy, iconR * 0.45, iconR, 0, 0, Math.PI * 2)
-            ctx.stroke()
-            ctx.beginPath()
-            ctx.moveTo(cx - iconR, cy)
-            ctx.lineTo(cx + iconR, cy)
-            ctx.stroke()
-          } else if (selectedPresetLogo === "star") {
-            const spikes = 5
-            const outerR = iconR
-            const innerR = iconR * 0.45
-            let rot = (Math.PI / 2) * 3
-            let step = Math.PI / spikes
-            ctx.beginPath()
-            ctx.moveTo(cx, cy - outerR)
-            for (let i = 0; i < spikes; i++) {
-              ctx.lineTo(
-                cx + Math.cos(rot) * outerR,
-                cy + Math.sin(rot) * outerR,
-              )
-              rot += step
-              ctx.lineTo(
-                cx + Math.cos(rot) * innerR,
-                cy + Math.sin(rot) * innerR,
-              )
-              rot += step
-            }
-            ctx.lineTo(cx, cy - outerR)
-            ctx.closePath()
-            ctx.fill()
-          } else if (selectedPresetLogo === "heart") {
-            ctx.beginPath()
-            const topY = cy - iconR * 0.5
-            ctx.moveTo(cx, topY + iconR * 0.8)
-            ctx.bezierCurveTo(
-              cx - iconR,
-              topY,
-              cx - iconR * 1.1,
-              topY - iconR * 0.6,
-              cx,
-              topY - iconR * 0.2,
-            )
-            ctx.bezierCurveTo(
-              cx + iconR * 1.1,
-              topY - iconR * 0.6,
-              cx + iconR,
-              topY,
-              cx,
-              topY + iconR * 0.8,
-            )
-            ctx.fill()
-          } else if (selectedPresetLogo === "wifi") {
-            for (let i = 1; i <= 3; i++) {
-              ctx.beginPath()
-              ctx.arc(
-                cx,
-                cy + iconR * 0.5,
-                iconR * (i * 0.38),
-                Math.PI * 1.25,
-                Math.PI * 1.75,
-              )
-              ctx.stroke()
-            }
-            ctx.beginPath()
-            ctx.arc(cx, cy + iconR * 0.5, iconR * 0.16, 0, Math.PI * 2)
-            ctx.fill()
-          } else {
-            // Default elegant QR Mark
-            ctx.beginPath()
-            ctx.arc(cx, cy, iconR * 0.75, 0, Math.PI * 2)
-            ctx.fill()
-          }
-          ctx.restore()
+          ctx.rect(logoX, logoY, logoSizePx, logoSizePx)
         }
+        ctx.clip()
+        ctx.drawImage(iconImage, logoX, logoY, logoSizePx, logoSizePx)
+        ctx.restore()
       }
 
       // 7. Draw Frame & Banner Call-To-Action (if enabled)
@@ -658,6 +615,7 @@ export default function QRCodeStudioModal({
       }
 
       // 8. Output DataURL and update state
+      if (renderVersion !== renderVersionRef.current) return
       const url = canvas.toDataURL("image/png")
       setCurrentDataUrl(url)
     } catch (err) {
@@ -714,39 +672,191 @@ export default function QRCodeStudioModal({
   }
 
   // Download Vector SVG
-  async function handleDownloadSVG() {
+  function handleDownloadSVG() {
     try {
       const qrData = QRCode.create(value, { errorCorrectionLevel: ecl })
       const modules = qrData.modules
-      const size = modules.size
-      const svgPadding = margin * 2
-      const totalSize = size + svgPadding
+      const moduleCount = modules.size
+      const canvasSize = resolution
+      const hasFrameBanner = frameStyle === "banner-bottom"
+      const hasPolaroid = frameStyle === "polaroid"
+      const hasMinimalPill = frameStyle === "minimal-pill"
+      const bannerHeight = hasFrameBanner
+        ? canvasSize * 0.18
+        : hasPolaroid
+          ? canvasSize * 0.24
+          : hasMinimalPill
+            ? canvasSize * 0.15
+            : 0
+      const totalHeight = canvasSize + bannerHeight
+      const qrPadding = margin * (canvasSize / (moduleCount + margin * 2))
+      const qrDrawSize = canvasSize - qrPadding * 2
+      const cellSize = qrDrawSize / moduleCount
+      const centerModule = moduleCount / 2
+      const logoModuleRadius = hasLogo
+        ? Math.ceil((moduleCount * (logoSizePercent / 100)) / 2) + 0.5
+        : 0
+      const fontFamily =
+        "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
-      let paths = ""
-      for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
-          if (modules.get(r, c)) {
-            const x = c + margin
-            const y = r + margin
-            if (dotStyle === "dots") {
-              paths += `<circle cx="${x + 0.5}" cy="${y + 0.5}" r="0.46" fill="${fgColor}" />`
-            } else if (dotStyle === "rounded") {
-              paths += `<rect x="${x}" y="${y}" width="0.96" height="0.96" rx="0.32" fill="${fgColor}" />`
-            } else {
-              paths += `<rect x="${x}" y="${y}" width="1" height="1" fill="${fgColor}" />`
-            }
+      const escapeXml = (input: string) =>
+        input.replace(
+          /[<>&"']/g,
+          (character) =>
+            ({
+              "<": "&lt;",
+              ">": "&gt;",
+              "&": "&amp;",
+              '"': "&quot;",
+              "'": "&apos;",
+            })[character] ?? character,
+        )
+
+      const roundedRectPath = (
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        radius: number,
+      ) => {
+        const r = Math.max(0, Math.min(radius, width / 2, height / 2))
+        if (r === 0) {
+          return `M${x} ${y}H${x + width}V${y + height}H${x}Z`
+        }
+        return `M${x + r} ${y}H${x + width - r}A${r} ${r} 0 0 1 ${x + width} ${y + r}V${y + height - r}A${r} ${r} 0 0 1 ${x + width - r} ${y + height}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + height - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`
+      }
+
+      let gradientDefs = ""
+      let fgFill: string = fgColor
+      if (colorMode === "linear-gradient") {
+        fgFill = "url(#qr-foreground)"
+        gradientDefs = `<linearGradient id="qr-foreground" gradientUnits="userSpaceOnUse" x1="${qrPadding}" y1="${qrPadding}" x2="${qrPadding + qrDrawSize}" y2="${qrPadding + qrDrawSize}"><stop offset="0" stop-color="${escapeXml(fgColor)}" /><stop offset="1" stop-color="${escapeXml(fgColor2)}" /></linearGradient>`
+      } else if (colorMode === "radial-gradient") {
+        const center = qrPadding + qrDrawSize / 2
+        fgFill = "url(#qr-foreground)"
+        gradientDefs = `<radialGradient id="qr-foreground" gradientUnits="userSpaceOnUse" cx="${center}" cy="${center}" r="${qrDrawSize * 0.7}"><stop offset="0" stop-color="${escapeXml(fgColor)}" /><stop offset="1" stop-color="${escapeXml(fgColor2)}" /></radialGradient>`
+      }
+      const eyeFill = customEyeColor ? eyeColor : fgFill
+
+      let moduleMarkup = ""
+      for (let row = 0; row < moduleCount; row++) {
+        for (let column = 0; column < moduleCount; column++) {
+          if (!modules.get(row, column)) continue
+          if (isCornerEye(row, column, moduleCount)) continue
+          if (
+            hasLogo &&
+            Math.max(
+              Math.abs(row - centerModule),
+              Math.abs(column - centerModule),
+            ) <= logoModuleRadius
+          ) {
+            continue
+          }
+
+          const x = qrPadding + column * cellSize
+          const y = qrPadding + row * cellSize
+          if (dotStyle === "dots") {
+            moduleMarkup += `<circle cx="${x + cellSize / 2}" cy="${y + cellSize / 2}" r="${cellSize * 0.46}" />`
+          } else if (dotStyle === "rounded") {
+            moduleMarkup += `<rect x="${x + 0.5}" y="${y + 0.5}" width="${cellSize - 1}" height="${cellSize - 1}" rx="${cellSize * 0.36}" />`
+          } else if (dotStyle === "classy") {
+            moduleMarkup += `<rect x="${x + 0.5}" y="${y + 0.5}" width="${cellSize - 1}" height="${cellSize - 1}" rx="${cellSize * 0.45}" />`
+          } else {
+            moduleMarkup += `<rect x="${x}" y="${y}" width="${cellSize + 0.2}" height="${cellSize + 0.2}" />`
           }
         }
       }
 
-      const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSize} ${totalSize}" width="1000" height="1000">
-  ${
-    !isTransparent
-      ? `<rect width="${totalSize}" height="${totalSize}" fill="${bgColor}" />`
-      : ""
-  }
-  ${paths}
-</svg>`
+      const eyeSize = cellSize * 7
+      const eyeCellSize = eyeSize / 7
+      const cornerEyeMarkup = (startX: number, startY: number) => {
+        const outerRadius =
+          cornerOuterStyle === "circle"
+            ? eyeSize / 2
+            : cornerOuterStyle === "rounded"
+              ? eyeCellSize * 1.8
+              : 0
+        const cutX = startX + eyeCellSize
+        const cutY = startY + eyeCellSize
+        const cutSize = eyeCellSize * 5
+        const cutRadius =
+          cornerOuterStyle === "circle"
+            ? cutSize / 2
+            : cornerOuterStyle === "rounded"
+              ? eyeCellSize * 1.2
+              : 0
+        const dotX = startX + eyeCellSize * 2
+        const dotY = startY + eyeCellSize * 2
+        const dotSize = eyeCellSize * 3
+        const dotRadius =
+          cornerInnerStyle === "circle"
+            ? dotSize / 2
+            : cornerInnerStyle === "rounded"
+              ? eyeCellSize * 1.2
+              : 0
+        return `<path d="${roundedRectPath(startX, startY, eyeSize, eyeSize, outerRadius)} ${roundedRectPath(cutX, cutY, cutSize, cutSize, cutRadius)}" fill="${eyeFill}" fill-rule="evenodd" /><rect x="${dotX}" y="${dotY}" width="${dotSize}" height="${dotSize}" rx="${dotRadius}" fill="${eyeFill}" />`
+      }
+      const finderMarkup = [
+        cornerEyeMarkup(qrPadding, qrPadding),
+        cornerEyeMarkup(
+          qrPadding + (moduleCount - 7) * cellSize,
+          qrPadding,
+        ),
+        cornerEyeMarkup(
+          qrPadding,
+          qrPadding + (moduleCount - 7) * cellSize,
+        ),
+      ].join("")
+
+      let logoDefs = ""
+      let logoMarkup = ""
+      if (hasLogo) {
+        const logoSize = qrDrawSize * (logoSizePercent / 100)
+        const logoX = qrPadding + (qrDrawSize - logoSize) / 2
+        const logoY = qrPadding + (qrDrawSize - logoSize) / 2
+        const badgePadding = logoSize * 0.16
+        const badgeX = logoX - badgePadding / 2
+        const badgeY = logoY - badgePadding / 2
+        const badgeSize = logoSize + badgePadding
+        const badgeShape =
+          logoShape === "circle"
+            ? `<circle cx="${badgeX + badgeSize / 2}" cy="${badgeY + badgeSize / 2}" r="${badgeSize / 2}" />`
+            : `<rect x="${badgeX}" y="${badgeY}" width="${badgeSize}" height="${badgeSize}" rx="${logoShape === "rounded" ? badgeSize * 0.24 : 0}" />`
+        const clipShape =
+          logoShape === "circle"
+            ? `<circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="${logoSize / 2}" />`
+            : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="${logoShape === "rounded" ? logoSize * 0.2 : 0}" />`
+        const iconSource =
+          uploadedLogo?.src ||
+          presetIconDataUri(selectedPresetLogo, logoSize, fgColor)
+        logoDefs = `<filter id="qr-logo-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="${canvasSize * 0.005}" stdDeviation="${canvasSize * 0.0075}" flood-color="#000000" flood-opacity="0.14" /></filter><clipPath id="qr-logo-clip" clipPathUnits="userSpaceOnUse">${clipShape}</clipPath>`
+        logoMarkup = `<g fill="${escapeXml(logoBgColor)}" filter="url(#qr-logo-shadow)">${badgeShape}</g><image href="${escapeXml(iconSource)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="none" clip-path="url(#qr-logo-clip)" />`
+      }
+
+      let frameMarkup = ""
+      if (hasFrameBanner || hasPolaroid || hasMinimalPill) {
+        const text = escapeXml(frameText.trim() || "SCAN ME")
+        if (hasFrameBanner) {
+          const bannerY = canvasSize - qrPadding * 0.5
+          const bannerH = bannerHeight * 0.85
+          const bannerW = canvasSize * 0.82
+          const bannerX = (canvasSize - bannerW) / 2
+          frameMarkup = `<rect x="${bannerX}" y="${bannerY}" width="${bannerW}" height="${bannerH}" rx="${bannerH * 0.3}" fill="${escapeXml(frameColor)}" /><text x="${canvasSize / 2}" y="${bannerY + bannerH / 2}" fill="${escapeXml(frameTextColor)}" font-family="${fontFamily}" font-size="${Math.round(bannerH * 0.42)}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${text}</text>`
+        } else if (hasPolaroid) {
+          frameMarkup = `<text x="${canvasSize / 2}" y="${canvasSize + bannerHeight * 0.45}" fill="${escapeXml(frameTextColor)}" font-family="${fontFamily}" font-size="${Math.round(bannerHeight * 0.35)}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${text}</text>`
+        } else {
+          const pillH = bannerHeight * 0.7
+          const pillW = Math.min(
+            canvasSize * 0.65,
+            (frameText.trim() || "SCAN ME").length * pillH * 0.6 + pillH * 1.5,
+          )
+          const pillX = (canvasSize - pillW) / 2
+          const pillY = canvasSize
+          frameMarkup = `<rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${escapeXml(frameColor)}" /><text x="${canvasSize / 2}" y="${pillY + pillH / 2}" fill="${escapeXml(frameTextColor)}" font-family="${fontFamily}" font-size="${Math.round(pillH * 0.45)}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${text}</text>`
+        }
+      }
+
+      const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasSize} ${totalHeight}" width="${canvasSize}" height="${totalHeight}"><defs>${gradientDefs}${logoDefs}</defs>${!isTransparent ? `<rect width="${canvasSize}" height="${totalHeight}" fill="${escapeXml(bgColor)}" />` : ""}<g fill="${fgFill}">${moduleMarkup}</g>${finderMarkup}${logoMarkup}${frameMarkup}</svg>`
 
       const blob = new Blob([svgContent], {
         type: "image/svg+xml;charset=utf-8",
@@ -795,15 +905,23 @@ export default function QRCodeStudioModal({
     setBgColor("#ffffff")
     setIsTransparent(false)
     setCustomEyeColor(false)
+    setEyeColor("#06204D")
     setDotStyle("rounded")
     setCornerOuterStyle("rounded")
     setCornerInnerStyle("circle")
     setHasLogo(false)
+    setSelectedPresetLogo("link")
     setUploadedLogo(null)
+    setLogoShape("circle")
+    setLogoSizePercent(22)
+    setLogoBgColor("#ffffff")
     setFrameStyle("none")
     setFrameText("SCAN ME")
+    setFrameColor("#0f172a")
+    setFrameTextColor("#ffffff")
     setEcl("H")
     setMargin(2)
+    setResolution(1000)
   }
 
   if (!isOpen) return null
@@ -2103,9 +2221,11 @@ export default function QRCodeStudioModal({
                                   <Icon
                                     size={20}
                                     color={
-                                      isSelected
-                                        ? "var(--accent)"
-                                        : "var(--text)"
+                                      p.id === "whatsapp"
+                                        ? "#25D366"
+                                        : isSelected
+                                          ? fgColor
+                                          : "var(--text)"
                                     }
                                   />
                                   <span

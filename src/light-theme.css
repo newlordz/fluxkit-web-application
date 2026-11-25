@@ -1064,7 +1064,7 @@
 :root[data-theme='light'] .tool-page button.primary:hover,
 :root[data-theme='light'] .primary:focus-visible {
   background: var(--accent-hover);
-  color: var(--accent-ink);
+  color: #ffffff !important;
   transform: translateY(-1px);
   box-shadow: 0 4px 14px -1px rgba(var(--accent-rgb), 0.4);
 }
@@ -1072,13 +1072,13 @@
 :root[data-theme='light'] .primary:hover *,
 :root[data-theme='light'] .tool-page button.primary:hover *,
 :root[data-theme='light'] .primary:focus-visible * {
-  color: #ffffff;
+  color: #ffffff !important;
 }
 
 :root[data-theme='light'] .primary:hover svg,
 :root[data-theme='light'] .tool-page button.primary:hover svg,
 :root[data-theme='light'] .primary:focus-visible svg {
-  color: #ffffff;
+  color: #ffffff !important;
   stroke: currentColor;
 }
 

@@ -53,6 +53,26 @@ function sourceLoader(hash = "overview") {
   }
   return load
 }
+test("Vercel stays within 12 functions and routes image table extraction", () => {
+  const functionFiles = []
+  function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith(".ts")) functionFiles.push(full)
+    }
+  }
+  walk(path.resolve("api"))
+  assert.equal(functionFiles.length, 12)
+  const vercel = JSON.parse(fs.readFileSync(path.resolve("vercel.json"), "utf8"))
+  assert.ok(
+    vercel.rewrites.some(
+      (rewrite) =>
+        rewrite.source === "/api/image-table/extract" &&
+        rewrite.destination === "/api/image-table?action=extract",
+    ),
+  )
+})
 test("authentication cannot succeed without a server adapter", () => {
   const auth = sourceLoader()("authService")
   assert.equal(auth.authConnected, false)
@@ -85,6 +105,10 @@ test("catalog routes are unique and audio is a distinct backend-dependent catego
   const audio = tools.find((t) => t.id === "audio-text")
   assert.equal(audio.category, "Audio tools")
   assert.equal(audio.integrationRequired, true)
+  const passport = tools.find((t) => t.id === "passport-photo")
+  assert.equal(passport.category, "File tools")
+  assert.equal(passport.available, true)
+  assert.notEqual(passport.integrationRequired, true)
   assert.equal(
     tools.filter(
       (t) =>
@@ -106,6 +130,8 @@ for (const route of [
   "help",
   "qr",
   "merge-pdf",
+  "image-to-excel",
+  "passport-photo",
   "text-pdf",
   "audio-text",
   "sign-in",

@@ -720,6 +720,195 @@ test("API Cloud: a body larger than the cap is refused with 413 before any provi
 })
 
 // ---------------------------------------------------------------------------
+// Image to Excel cloud assist: consent, validation, quota, and safe failures
+// ---------------------------------------------------------------------------
+
+const IMAGE_TABLE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+)
+const IMAGE_TABLE_BODY = {
+  imageBase64: IMAGE_TABLE_PNG.toString("base64"),
+  mimeType: "image/png",
+  consent: true,
+}
+const IMAGE_TABLE_RESULT = {
+  columns: [
+    { label: "Date", kind: "date" },
+    { label: "Amount", kind: "amount" },
+  ],
+  rows: [
+    {
+      cells: [
+        { value: "01/02/2026", confidence: 0.99 },
+        { value: "2,500.00", confidence: 0.98 },
+      ],
+    },
+  ],
+}
+
+function imageTableStubs({ user = MEMBER, userCalls = 0, totalCalls = 0, apiKey = "server-test-key", error = null } = {}) {
+  const usage = []
+  const recorded = []
+  const extracted = []
+  const db = {
+    cors: () => {},
+    json: (res, status, data) => res.status(status).json(data),
+    readBody: async (req) => req.body ?? {},
+  }
+  const providers = {
+    countApiUsage: async (_provider, options) => {
+      usage.push(options)
+      return options.userId ? userCalls : totalCalls
+    },
+    getProviderSecret: async () => apiKey,
+    recordApiCall: async (...args) => recorded.push(args),
+  }
+  class StubGeminiError extends Error {
+    constructor(message, status, code) {
+      super(message)
+      this.status = status
+      this.code = code
+    }
+  }
+  const gemini = {
+    GeminiImageError: StubGeminiError,
+    extractImageTableWithGemini: async (input, options) => {
+      extracted.push(input)
+      await options.onCall("success")
+      if (error) throw error
+      return { table: IMAGE_TABLE_RESULT, model: "test-model", attempts: 1 }
+    },
+  }
+  const gateway = {
+    requirePaidAccess: async (_req, res) => {
+      if (!user) {
+        db.json(res, 401, { ok: false, code: "sign_in_required" })
+        return null
+      }
+      return user
+    },
+    readPaidBody: async (req) => db.readBody(req),
+  }
+  return {
+    usage,
+    recorded,
+    extracted,
+    stubs: {
+      "../server/_lib/db.ts": db,
+      "../server/_lib/gateway.ts": gateway,
+      "../server/_lib/providers.ts": providers,
+      "../server/_lib/geminiImageTable.ts": gemini,
+    },
+  }
+}
+
+async function postImageTable(body = IMAGE_TABLE_BODY, stubs = imageTableStubs().stubs) {
+  const handler = loadHandler("api/image-table.ts", stubs)
+  const { req, res } = createMockReqRes({ method: "POST", body, query: { action: "extract" } })
+  await handler(req, res)
+  return res
+}
+
+test("Image to Excel cloud API refuses anonymous callers before reading the image", async () => {
+  const harness = imageTableStubs({ user: null })
+  const res = await postImageTable(IMAGE_TABLE_BODY, harness.stubs)
+  assert.equal(res._getStatus(), 401)
+  assert.equal(res._getData().code, "sign_in_required")
+  assert.equal(harness.extracted.length, 0)
+  assert.equal(harness.usage.length, 0)
+})
+
+test("Image to Excel cloud API requires explicit consent", async () => {
+  const harness = imageTableStubs()
+  const res = await postImageTable({ ...IMAGE_TABLE_BODY, consent: false }, harness.stubs)
+  assert.equal(res._getStatus(), 400)
+  assert.match(res._getData().error, /Explicit consent/)
+  assert.equal(res._getData().code, "invalid_image")
+  assert.equal(harness.extracted.length, 0)
+})
+
+test("Image to Excel cloud API rejects invalid base64, MIME, and magic bytes", async () => {
+  const harness = imageTableStubs()
+  for (const body of [
+    { ...IMAGE_TABLE_BODY, imageBase64: "not base64" },
+    { ...IMAGE_TABLE_BODY, mimeType: "image/gif" },
+    { ...IMAGE_TABLE_BODY, mimeType: "image/jpeg" },
+  ]) {
+    const res = await postImageTable(body, harness.stubs)
+    assert.equal(res._getStatus(), 400)
+    assert.equal(res._getData().code, "invalid_image")
+  }
+  assert.equal(harness.extracted.length, 0)
+})
+
+test("Image to Excel cloud API enforces per-user and service daily attempt limits", async () => {
+  const userLimit = imageTableStubs({ userCalls: 9 })
+  const userRes = await postImageTable(IMAGE_TABLE_BODY, userLimit.stubs)
+  assert.equal(userRes._getStatus(), 429)
+  assert.equal(userRes._getData().code, "daily_user_limit")
+  assert.equal(userLimit.extracted.length, 0)
+
+  const serviceLimit = imageTableStubs({ totalCalls: 40 })
+  const serviceRes = await postImageTable(IMAGE_TABLE_BODY, serviceLimit.stubs)
+  assert.equal(serviceRes._getStatus(), 429)
+  assert.equal(serviceRes._getData().code, "daily_service_limit")
+  assert.equal(serviceLimit.extracted.length, 0)
+})
+
+test("Image to Excel cloud API refuses to call Gemini without a server key", async () => {
+  const harness = imageTableStubs({ apiKey: "" })
+  const res = await postImageTable(IMAGE_TABLE_BODY, harness.stubs)
+  assert.equal(res._getStatus(), 503)
+  assert.equal(res._getData().code, "cloud_not_configured")
+  assert.equal(harness.extracted.length, 0)
+})
+
+test("Image to Excel cloud API returns only the table and records actual usage", async () => {
+  const harness = imageTableStubs()
+  const res = await postImageTable(IMAGE_TABLE_BODY, harness.stubs)
+  const data = res._getData()
+
+  assert.equal(res._getStatus(), 200)
+  assert.equal(data.ok, true)
+  assert.deepEqual(data.table, IMAGE_TABLE_RESULT)
+  assert.equal(data.model, undefined)
+  assert.equal(data.imageBase64, undefined)
+  assert.equal(harness.extracted.length, 1)
+  assert.equal(harness.extracted[0].apiKey, "server-test-key")
+  assert.deepEqual(harness.recorded, [["google", "image-to-excel", MEMBER.id, "success"]])
+  assert.equal(harness.usage.length, 2)
+  assert.equal(harness.usage[0].tool, "image-to-excel")
+  assert.equal(harness.usage[0].userId, MEMBER.id)
+  assert.equal(harness.usage[0].since.getUTCHours(), 0)
+})
+
+test("Image to Excel cloud API maps quota and busy errors to local-first recovery messages", async () => {
+  for (const [status, code, expectedStatus] of [
+    [429, "provider_quota", 429],
+    [503, "provider_busy", 503],
+    [504, "provider_timeout", 504],
+  ]) {
+    class TestGeminiError extends Error {
+      constructor(message, errorStatus, errorCode) {
+        super(message)
+        this.status = errorStatus
+        this.code = errorCode
+      }
+    }
+    const harness = imageTableStubs({
+      error: new TestGeminiError("upstream detail must stay private", status, code),
+    })
+    harness.stubs["../server/_lib/geminiImageTable.ts"].GeminiImageError = TestGeminiError
+    const res = await postImageTable(IMAGE_TABLE_BODY, harness.stubs)
+    assert.equal(res._getStatus(), expectedStatus)
+    assert.equal(res._getData().code, code)
+    assert.match(res._getData().error, /local result is still available/i)
+    assert.doesNotMatch(JSON.stringify(res._getData()), /upstream detail|server-test-key/)
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Password hashing: scrypt for new credentials, sha256 honoured until next sign-in
 // ---------------------------------------------------------------------------
 

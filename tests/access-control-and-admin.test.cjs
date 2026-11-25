@@ -232,6 +232,26 @@ test("Tier 1 - F3: Standard tools are immediately accessible to users without ga
   assert.doesNotMatch(html, /Pro subscription required|Upgrade to Pro to unlock/i)
 })
 
+test("Tier 1 - F3b: Passport Photo Studio is available to guests without cloud access", () => {
+  const harness = createHarness({ hash: "passport-photo" })
+  const { tools } = harness.load("config")
+  const passportTool = tools.find((t) => t.id === "passport-photo")
+  assert.ok(passportTool, "Passport Photo Studio must be present in config.ts")
+  assert.equal(passportTool.available, true)
+
+  if (hasModule("adminService")) {
+    const admin = harness.load("adminService")
+    assert.equal(admin.getToolTier("passport-photo"), "standard")
+    assert.equal(admin.canUserAccessTool("passport-photo", null), true)
+  }
+
+  const App = harness.load("App").default
+  const html = renderToStaticMarkup(React.createElement(App))
+  assert.match(html, /Passport Photo Studio/i)
+  assert.match(html, /Processed locally/i)
+  assert.doesNotMatch(html, /Pro subscription required|Upgrade to Pro to unlock/i)
+})
+
 test("Tier 1 - F4: Tool Tier Registry accurately identifies tool as Standard or Pro", (t) => {
   if (!hasModule("adminService")) {
     t.skip("Module src/adminService.ts not yet implemented (Milestone 2)")

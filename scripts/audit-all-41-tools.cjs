@@ -249,7 +249,7 @@ function createSampleWavFile() {
 
 async function runComprehensiveAudit() {
   console.log("=================================================================")
-  console.log("   MASTERFILEPRO / MASTERFILEPRO 41 TOOLS COMPREHENSIVE AUDIT SUITE    ")
+  console.log("   MASTERFILEPRO / MASTERFILEPRO TOOL CATALOG COMPREHENSIVE AUDIT SUITE    ")
   console.log("=================================================================\n")
 
   const { load: configLoader } = createDOMEnv("overview")
@@ -629,7 +629,7 @@ IEA*1*000000001~`
 
     const uiBadge = toolInfo.uiRender === "PASS" ? "✓ UI:PASS" : "✗ UI:FAIL"
     const engBadge = toolInfo.engineTest === "PASS" ? "✓ ENG:PASS" : "✗ ENG:FAIL"
-    console.log(`[${idx}/41] #${t.id.padEnd(16)} | ${t.name.padEnd(25)} | ${uiBadge} | ${engBadge} (${toolInfo.engineLatencyMs}ms) | ${toolInfo.notes}`)
+    console.log(`[${idx}/${tools.length}] #${t.id.padEnd(16)} | ${t.name.padEnd(25)} | ${uiBadge} | ${engBadge} (${toolInfo.engineLatencyMs}ms) | ${toolInfo.notes}`)
     if (toolInfo.error) {
       console.log(`      ERROR: ${toolInfo.error}`)
     }

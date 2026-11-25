@@ -21,12 +21,17 @@ import {
   optimizeShowcaseImage,
   generateShowcaseId,
   saveShowcase,
+  DEFAULT_SHOWCASE_CUSTOM_COLORS,
+  getShowcaseCustomPalette,
   type ImageShowcaseData,
+  type ShowcaseCustomColors,
   type ShowcaseTheme,
 } from "./imageShowcaseService"
 
 export interface ShowcaseMobileMockupProps {
   theme?: ShowcaseTheme
+
+  customColors?: Partial<ShowcaseCustomColors>
 
   imageDataUrl?: string
 
@@ -48,6 +53,8 @@ export interface ShowcaseMobileMockupProps {
 export function ShowcaseMobileMockup({
   theme = "glassmorphism",
 
+  customColors,
+
   imageDataUrl = "",
 
   title = "",
@@ -62,6 +69,11 @@ export function ShowcaseMobileMockup({
 
   downloadAllowed = true,
 }: ShowcaseMobileMockupProps) {
+  const customPalette = getShowcaseCustomPalette(customColors)
+  const customControlClass = customPalette.isLight
+    ? "bg-black/10 hover:bg-black/15"
+    : "bg-white/10 hover:bg-white/15"
+
   return (
     <div className="w-full max-w-[320px] aspect-[9/18.5] bg-slate-900 rounded-[44px] p-3 shadow-2xl ring-1 ring-white/10 relative overflow-hidden flex flex-col mx-auto select-none">
       {/* Phone Speaker & Camera Island */}
@@ -84,14 +96,32 @@ export function ShowcaseMobileMockup({
                     ? "bg-black text-white"
                     : "bg-gradient-to-b from-slate-900 via-slate-950 to-indigo-950 text-white"
         }`}
+        style={
+          theme === "custom"
+            ? {
+                background: customPalette.gradient,
+                color: customPalette.textColor,
+              }
+            : undefined
+        }
       >
         {/* Header inside phone */}
         <div className="flex items-center justify-between pt-1 pb-2">
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 font-bold tracking-tight">
+          <span
+            className={`text-[9px] px-2 py-0.5 rounded-full font-bold tracking-tight ${
+              theme === "custom" ? customControlClass : "bg-white/10"
+            }`}
+          >
             Masterfile<span className="text-teal-400">pro</span>
           </span>
           {badgeText && (
-            <span className="text-[8px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            <span
+              className={`text-[8px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border ${
+                theme === "custom" && customPalette.isLight
+                  ? "bg-black/10 text-indigo-950 border-indigo-950/20"
+                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+              }`}
+            >
               {badgeText}
             </span>
           )}
@@ -110,9 +140,13 @@ export function ShowcaseMobileMockup({
                     ? "rounded-none border border-neutral-300 p-1 bg-neutral-50 shadow-sm"
                     : theme === "vibrant"
                       ? "rounded-xl overflow-hidden ring-2 ring-orange-500/30 shadow-lg bg-slate-900"
-                      : theme === "billboard"
-                        ? "rounded-2xl overflow-hidden shadow-xl"
-                        : "rounded-xl overflow-hidden backdrop-blur-md bg-white/[0.05] ring-1 ring-white/20 shadow-lg"
+                      : theme === "custom"
+                        ? customPalette.isLight
+                          ? "rounded-xl overflow-hidden bg-white/30 ring-1 ring-black/15 shadow-xl"
+                          : "rounded-xl overflow-hidden bg-white/[0.05] ring-1 ring-white/20 shadow-xl"
+                        : theme === "billboard"
+                          ? "rounded-2xl overflow-hidden shadow-xl"
+                          : "rounded-xl overflow-hidden backdrop-blur-md bg-white/[0.05] ring-1 ring-white/20 shadow-lg"
             }`}
           >
             {imageDataUrl ? (
@@ -164,7 +198,13 @@ export function ShowcaseMobileMockup({
               </div>
             )}
             {downloadAllowed && (
-              <div className="w-full py-1.5 rounded-lg bg-white/10 border border-white/10 text-[9.5px] font-semibold flex items-center justify-center gap-1">
+              <div
+                className={`w-full py-1.5 rounded-lg border text-[9.5px] font-semibold flex items-center justify-center gap-1 ${
+                  theme === "custom"
+                    ? `${customControlClass} ${customPalette.isLight ? "border-black/10" : "border-white/10"}`
+                    : "bg-white/10 border-white/10"
+                }`}
+              >
                 <Download size={10} />
                 <span>Save Photo</span>
               </div>
@@ -173,7 +213,15 @@ export function ShowcaseMobileMockup({
         </div>
 
         {/* Bottom simulated home bar */}
-        <div className="w-16 h-1 bg-white/30 rounded-full mx-auto mt-2" />
+        <div
+          className={`w-16 h-1 rounded-full mx-auto mt-2 ${
+            theme === "custom"
+              ? customPalette.isLight
+                ? "bg-black/30"
+                : "bg-white/30"
+              : "bg-white/30"
+          }`}
+        />
       </div>
     </div>
   )
@@ -263,6 +311,16 @@ const THEME_OPTIONS: Array<{
 
     bgPreview: "#000000",
   },
+
+  {
+    id: "custom",
+
+    name: "Custom Color Blend",
+
+    desc: "Mix your own two colors for a one-of-a-kind backdrop",
+
+    bgPreview: getShowcaseCustomPalette().gradient,
+  },
 ]
 
 export default function ImageShowcaseDesigner({
@@ -288,6 +346,19 @@ export default function ImageShowcaseDesigner({
 
   const [theme, setTheme] = useState<ShowcaseTheme>("glassmorphism")
 
+  const [customStartColor, setCustomStartColor] = useState(
+    DEFAULT_SHOWCASE_CUSTOM_COLORS.startColor,
+  )
+
+  const [customEndColor, setCustomEndColor] = useState(
+    DEFAULT_SHOWCASE_CUSTOM_COLORS.endColor,
+  )
+
+  const customPalette = getShowcaseCustomPalette({
+    startColor: customStartColor,
+    endColor: customEndColor,
+  })
+
   const [downloadAllowed, setDownloadAllowed] = useState(true)
 
   const [ctaEnabled, setCtaEnabled] = useState(false)
@@ -310,6 +381,11 @@ export default function ImageShowcaseDesigner({
     onPreviewChange?.({
       theme,
 
+      customColors: {
+        startColor: customStartColor,
+        endColor: customEndColor,
+      },
+
       imageDataUrl,
 
       title,
@@ -328,6 +404,10 @@ export default function ImageShowcaseDesigner({
     })
   }, [
     theme,
+
+    customStartColor,
+
+    customEndColor,
 
     imageDataUrl,
 
@@ -408,6 +488,15 @@ export default function ImageShowcaseDesigner({
         badgeText: badgeText.trim() || undefined,
 
         theme,
+
+        ...(theme === "custom"
+          ? {
+              customColors: {
+                startColor: customStartColor,
+                endColor: customEndColor,
+              },
+            }
+          : {}),
 
         imageDataUrl,
 
@@ -572,8 +661,9 @@ export default function ImageShowcaseDesigner({
                 <button
                   key={opt.id}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => setTheme(opt.id)}
-                  className={`flex flex-col text-left p-3 rounded-xl border transition-all text-xs ${
+                  className={`flex flex-col text-left p-3 rounded-xl border transition-all text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                     isSelected
                       ? "border-[var(--accent)] bg-[var(--accent)]/10 ring-2 ring-[var(--accent)]/20"
                       : "border-[var(--border)] bg-[var(--bg)] hover:border-[var(--border-hover)]"
@@ -582,12 +672,17 @@ export default function ImageShowcaseDesigner({
                   <div
                     className="w-full h-8 rounded-md mb-2 border border-black/10 shadow-inner flex items-center justify-center font-bold text-[10px]"
                     style={{
-                      background: opt.bgPreview,
+                      background:
+                        opt.id === "custom"
+                          ? customPalette.gradient
+                          : opt.bgPreview,
 
                       color:
-                        opt.id === "editorial" || opt.id === "polaroid"
-                          ? "#0f172a"
-                          : "#ffffff",
+                        opt.id === "custom"
+                          ? customPalette.textColor
+                          : opt.id === "editorial" || opt.id === "polaroid"
+                            ? "#0f172a"
+                            : "#ffffff",
                     }}
                   >
                     {opt.name.slice(0, 3)}
@@ -602,6 +697,63 @@ export default function ImageShowcaseDesigner({
               )
             })}
           </div>
+
+          {theme === "custom" && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-3 flex items-center gap-3">
+                <div
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-black/10 shadow-inner"
+                  style={{ background: customPalette.gradient }}
+                  aria-hidden="true"
+                />
+                <span className="text-[11px] text-[var(--muted)]">
+                  Diagonal blend · updates instantly
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor="showcase-custom-start-color"
+                    className="flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text)]"
+                  >
+                    Start color
+                    <span className="font-mono text-[10px] font-normal uppercase text-[var(--muted)]">
+                      {customStartColor}
+                    </span>
+                  </label>
+                  <input
+                    id="showcase-custom-start-color"
+                    aria-label="Custom blend start color"
+                    type="color"
+                    value={customStartColor}
+                    onChange={(e) => setCustomStartColor(e.target.value)}
+                    className="h-11 w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--card-bg)] p-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor="showcase-custom-end-color"
+                    className="flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text)]"
+                  >
+                    End color
+                    <span className="font-mono text-[10px] font-normal uppercase text-[var(--muted)]">
+                      {customEndColor}
+                    </span>
+                  </label>
+                  <input
+                    id="showcase-custom-end-color"
+                    aria-label="Custom blend end color"
+                    type="color"
+                    value={customEndColor}
+                    onChange={(e) => setCustomEndColor(e.target.value)}
+                    className="h-11 w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--card-bg)] p-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Step 4: Visitor Actions & Buttons */}
@@ -689,6 +841,7 @@ export default function ImageShowcaseDesigner({
         <div className="w-full flex flex-col items-center mt-4">
           <ShowcaseMobileMockup
             theme={theme}
+            customColors={customPalette}
             imageDataUrl={imageDataUrl}
             title={title}
             description={description}

@@ -1713,3 +1713,38 @@
     gap: 24px !important;
   }
 }
+
+.overview-dropzone-bar[role="button"]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.card-bottom-action {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.category-tab-btn {
+  min-height: 44px;
+}
+
+.quick-action-card:focus-visible,
+.quick-action-modal button:focus-visible,
+.quick-action-modal a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 650px) {
+  .card-bottom-action {
+    min-width: 44px;
+    justify-content: flex-end;
+  }
+
+  .overview-dropzone-bar[role="button"] {
+    min-height: 44px;
+  }
+}

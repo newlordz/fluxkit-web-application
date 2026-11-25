@@ -198,6 +198,28 @@ test("ToolPage pre-loading: accepts initialFiles and renders them into the tool 
   assert.match(html, /contract\.pdf/, "ToolPage must immediately display the pre-loaded file name")
 })
 
+test("ToolPage pre-loading: passport studio receives only the first staged image", () => {
+  const load = createLoader("passport-photo")
+  const ToolPage = load("ToolPage").default
+  const { tools } = load("config")
+  const passportTool = tools.find((t) => t.id === "passport-photo")
+  assert.ok(passportTool, "passport-photo tool must exist in config")
+
+  const firstFile = new File(["first-image"], "portrait.png", { type: "image/png" })
+  const secondFile = new File(["second-image"], "extra.png", { type: "image/png" })
+  const element = React.createElement(ToolPage, {
+    tool: passportTool,
+    navigate: () => {},
+    initialFiles: [firstFile, secondFile],
+  })
+
+  const html = renderToStaticMarkup(element)
+  assert.match(html, /portrait\.png/)
+  assert.match(html, /Opening your photo locally/i)
+  assert.match(html, /Change photo/i)
+  assert.doesNotMatch(html, /extra\.png/)
+})
+
 test("AudioToText pre-loading: accepts initialFile prop and mounts audio workspace", () => {
   const load = createLoader("audio-text")
   const AudioToText = load("AudioToText").default

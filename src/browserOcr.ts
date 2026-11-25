@@ -31,10 +31,32 @@ const SUPPORTED_LANGUAGES = new Set(["en", "eng"]);
 // page is abandoned, the worker is discarded, and the billed engine takes the job.
 const PAGE_DEADLINE_MS = 15_000;
 
+export interface OcrBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface LocalOcrWord {
+  text: string;
+  confidence: number;
+  boundingBox?: OcrBoundingBox;
+  baseline?: number;
+}
+
+export interface LocalOcrLine {
+  text: string;
+  confidence: number;
+  boundingBox?: OcrBoundingBox;
+  words?: LocalOcrWord[];
+  baseline?: number;
+}
+
 export interface LocalOcrPage {
   text: string;
   confidence: number;
-  lines: Array<{ text: string ; confidence: number }>;
+  lines: LocalOcrLine[];
 
   // Set when the engine ran on this page and could not finish it, which is a different
   // answer from the null this module returns when there is no engine to run at all: one
@@ -48,6 +70,82 @@ export interface LocalOcrPage {
 // "9600% confidence".
 function toAppScale(score: number): number {
   return Math.round(score || 0) / 100;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readBoundingBox(value: any): OcrBoundingBox | undefined {
+  if (!value || typeof value !== "object") return undefined
+
+  const x = finiteNumber(value.x0 ?? value.x)
+  const y = finiteNumber(value.y0 ?? value.y)
+  const x1 = finiteNumber(value.x1)
+  const y1 = finiteNumber(value.y1)
+  const width = finiteNumber(value.width) ?? (x1 !== null && x !== null ? x1 - x : null)
+  const height = finiteNumber(value.height) ?? (y1 !== null && y !== null ? y1 - y : null)
+
+  if (x === null || y === null || width === null || height === null) return undefined
+  if (width <= 0 || height <= 0) return undefined
+
+  return { x, y, width, height }
+}
+
+export function mapRecognizedPage(data: any): LocalOcrPage {
+  const lines: LocalOcrLine[] = []
+
+  for (const block of data?.blocks || []) {
+    for (const paragraph of block.paragraphs || []) {
+      for (const line of paragraph.lines || []) {
+        const text = (line.text || "").trim()
+        if (!text) continue
+
+        const words: LocalOcrWord[] = []
+        for (const word of line.words || []) {
+          const wordText = (word.text || "").trim()
+          const boundingBox = readBoundingBox(word.bbox)
+          if (!wordText || !boundingBox) continue
+          words.push({
+            text: wordText,
+            confidence: toAppScale(
+              typeof word.confidence === "number" ? word.confidence : data.confidence ?? 0,
+            ),
+            boundingBox,
+            baseline: finiteNumber(word.baseline) ?? undefined,
+          })
+        }
+
+        const boundingBox = readBoundingBox(line.bbox)
+        const measuredBaselines = words
+          .map((word) => word.baseline)
+          .filter((value): value is number => typeof value === "number")
+        const baseline =
+          finiteNumber(line.baseline) ??
+          (measuredBaselines.length > 0
+            ? measuredBaselines.reduce((sum, value) => sum + value, 0) / measuredBaselines.length
+            : boundingBox
+              ? boundingBox.y + boundingBox.height * 0.85
+              : undefined)
+
+        lines.push({
+          text,
+          confidence: toAppScale(
+            typeof line.confidence === "number" ? line.confidence : data.confidence ?? 0,
+          ),
+          boundingBox,
+          words: words.length > 0 ? words : undefined,
+          baseline,
+        })
+      }
+    }
+  }
+
+  return {
+    text: (data?.text || "").trim(),
+    confidence: toAppScale(data?.confidence ?? 0),
+    lines,
+  }
 }
 
 /** Any other language stays on the engine that can spell it. */
@@ -122,12 +220,19 @@ export async function recognizePage(
   image: Blob,
 
   timeoutMs: number = PAGE_DEADLINE_MS,
+
+  signal?: AbortSignal,
 ): Promise<LocalOcrPage | null> {
+  signal?.throwIfAborted()
+
   const worker = await getOcrWorker();
 
   if (!worker) return null;
 
+  signal?.throwIfAborted()
+
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let onAbort: (() => void) | undefined;
 
   try {
     // Confidence per line only exists in the block tree; the text-only default would
@@ -141,37 +246,24 @@ export async function recognizePage(
         timeoutMs,
       );
     });
+    const aborted = signal
+      ? new Promise((_resolve, reject) => {
+          onAbort = () => reject(new DOMException("OCR cancelled", "AbortError"));
+          signal.addEventListener("abort", onAbort, { once: true });
+        })
+      : null;
 
-    const { data } = await Promise.race([job, deadline]);
+    const { data } = await Promise.race([job, deadline, ...(aborted ? [aborted] : [])]);
 
-    const lines: Array<{ text: string ; confidence: number }> = [];
+    signal?.throwIfAborted()
 
-    for (const block of data.blocks || []) {
-      for (const paragraph of block.paragraphs || []) {
-        for (const line of paragraph.lines || []) {
-          const text = (line.text || "").trim();
-
-          if (text) {
-            lines.push({
-              text,
-
-              confidence: toAppScale(
-                typeof line.confidence === "number" ? line.confidence : data.confidence ?? 0,
-              ),
-            });
-          }
-        }
-      }
+    return mapRecognizedPage(data);
+  } catch (err: any) {
+    if (signal?.aborted) {
+      await discardWorker();
+      throw err;
     }
 
-    return {
-      text: (data.text || "").trim(),
-
-      confidence: toAppScale(data.confidence ?? 0),
-
-      lines,
-    };
-  } catch (err: any) {
     console.warn("In-browser OCR pass failed:", err);
 
     // A page that threw, or ran out of time, may have left the WASM context busy or
@@ -181,5 +273,6 @@ export async function recognizePage(
     return { text: "", confidence: 0, lines: [], failed: true };
   } finally {
     if (timer) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
 }

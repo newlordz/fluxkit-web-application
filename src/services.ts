@@ -140,7 +140,9 @@ async function localOcrScan(
   for (const image of images) {
     ensureNotCancelled(options.signal)
 
-    const page = await ocr.recognizePage(image)
+    const page = await ocr.recognizePage(image, undefined, options.signal)
+
+    ensureNotCancelled(options.signal)
 
     // One unreadable page makes the whole transcript a lie. A page the engine timed out
     // on is a job the provider can still take; an environment with no engine is not.
@@ -921,6 +923,341 @@ export async function mergePDFs(
     breakdown,
 
     skipped: skipped.length > 0 ? skipped : undefined,
+  }
+}
+
+// ============================================================================
+// Word Documents Merge (DOCX)
+// ============================================================================
+
+export interface MergeWordOptions {
+  pageBreakBetween?: boolean
+  fileName?: string
+}
+
+function extractDocxBodyParts(xml: string): {
+  bodyContent: string
+  sectPr: string
+} {
+  const bodyMatch = xml.match(/<w:body\b[^>]*>([\s\S]*?)<\/w:body>/i)
+  if (!bodyMatch) return { bodyContent: "", sectPr: "" }
+  let content = bodyMatch[1]
+  const sectPrMatch = content.match(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>\s*$/i)
+  let sectPr = ""
+  if (sectPrMatch) {
+    sectPr = sectPrMatch[0]
+    content = content.substring(0, content.length - sectPrMatch[0].length)
+  }
+  return { bodyContent: content, sectPr }
+}
+
+function convertTextToWordXml(text: string): string {
+  const lines = text.split(/\r?\n/)
+  let xml = ""
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      xml += '<w:p><w:pPr><w:spacing w:after="80"/></w:pPr></w:p>'
+    } else {
+      xml += `<w:p><w:pPr><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/></w:rPr><w:t xml:space="preserve">${escapeXml(trimmed)}</w:t></w:r></w:p>`
+    }
+  }
+  return xml
+}
+
+function createBaseDocxZip(JSZip: any) {
+  const zip = new JSZip()
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>`
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:styleId="Normal" w:default="1">
+    <w:name w:val="Normal"/>
+    <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr>
+  </w:style>
+</w:styles>`
+  zip.file("[Content_Types].xml", contentTypes)
+  zip.file("_rels/.rels", rels)
+  zip.file("word/_rels/document.xml.rels", docRels)
+  zip.file("word/styles.xml", styles)
+  return zip
+}
+
+export async function mergeWordFiles(
+  files: Array<File | Uint8Array | ArrayBuffer | { name: string; data: Uint8Array }>,
+  options: MergeWordOptions = {},
+  onProgress?: MergeProgressCallback,
+  signal?: AbortSignal,
+): Promise<OutputResult> {
+  if (!files || files.length < 2) {
+    throw new Error("Choose at least two Word documents to merge.")
+  }
+
+  const jszipMod = await import("jszip")
+  const JSZip = (jszipMod.default || jszipMod) as any
+
+  onProgress?.({
+    current: 1,
+    total: files.length,
+    currentFileName: "Preparing documents...",
+    percentage: 10,
+    stage: `Initializing Word merge engine for ${files.length} documents...`,
+  })
+
+  const docEntries: Array<{ name: string; bytes: Uint8Array }> = []
+  let totalBytes = 0
+
+  for (let i = 0; i < files.length; i++) {
+    ensureNotCancelled(signal)
+    const item = files[i]
+    let bytes: Uint8Array
+    let name: string
+    if (item && "data" in item && item.data instanceof Uint8Array) {
+      bytes = item.data
+      name = item.name || `Document_${i + 1}.docx`
+    } else {
+      const extracted = await extractBytes(item as File)
+      bytes = extracted.bytes
+      name = extracted.name || `Document_${i + 1}.docx`
+    }
+    totalBytes += bytes.length
+    docEntries.push({ name, bytes })
+  }
+
+  if (totalBytes > MERGE_MAX_TOTAL_BYTES) {
+    const totalMb = (totalBytes / (1024 * 1024)).toFixed(1)
+    throw new Error(
+      `These ${files.length} documents total ${totalMb} MB, which exceeds browser memory limits.`,
+    )
+  }
+
+  let masterZip: any = null
+  let masterSectPr = ""
+  let masterRelsXml = ""
+  let maxRelId = 1
+  let firstDocIdx = -1
+
+  for (let i = 0; i < docEntries.length; i++) {
+    const { bytes } = docEntries[i]
+    if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+      try {
+        const testZip = await JSZip.loadAsync(bytes)
+        const docXmlFile = testZip.file("word/document.xml")
+        if (docXmlFile) {
+          masterZip = testZip
+          firstDocIdx = i
+          const docXml = await docXmlFile.async("string")
+          const extracted = extractDocxBodyParts(docXml)
+          masterSectPr = extracted.sectPr
+          const relsFile = masterZip.file("word/_rels/document.xml.rels")
+          if (relsFile) {
+            masterRelsXml = await relsFile.async("string")
+            const ids = (masterRelsXml.match(/\brId(\d+)\b/g) || []).map((s: string) =>
+              parseInt(s.replace("rId", ""), 10),
+            )
+            if (ids.length > 0) maxRelId = Math.max(...ids)
+          }
+          break
+        }
+      } catch {
+        // Try next candidate
+      }
+    }
+  }
+
+  if (!masterZip) {
+    masterZip = createBaseDocxZip(JSZip)
+    masterRelsXml = await masterZip.file("word/_rels/document.xml.rels").async("string")
+  }
+
+  const breakdown: Array<{ name: string; pageCount: number }> = []
+  const skipped: Array<{ name: string; reason: string }> = []
+  let unifiedBodyXml = ""
+  const pageBreakBetween = options.pageBreakBetween !== false
+
+  for (let idx = 0; idx < docEntries.length; idx++) {
+    ensureNotCancelled(signal)
+    const { name, bytes } = docEntries[idx]
+    const fileNum = idx + 1
+    const filePercent = Math.round(15 + (fileNum / docEntries.length) * 70)
+
+    onProgress?.({
+      current: fileNum,
+      total: docEntries.length,
+      currentFileName: name,
+      percentage: filePercent,
+      stage: `Merging and stitching ${name}...`,
+    })
+
+    try {
+      let docBody = ""
+      let docParagraphs = 1
+
+      const isZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b
+      if (isZip) {
+        try {
+          const docZip = idx === firstDocIdx ? masterZip : await JSZip.loadAsync(bytes)
+          const docFile = docZip.file("word/document.xml")
+          if (docFile) {
+            const docXml = await docFile.async("string")
+            const parts = extractDocxBodyParts(docXml)
+            docBody = parts.bodyContent
+            const pCount = (docBody.match(/<w:p\b/g) || []).length
+            docParagraphs = Math.max(1, pCount)
+
+            if (idx !== firstDocIdx) {
+              const relsFile = docZip.file("word/_rels/document.xml.rels")
+              if (relsFile) {
+                const relsXml = await relsFile.async("string")
+                const relMatches = relsXml.matchAll(
+                  /<Relationship\s+([^>]*?)Id="([^"]+)"([^>]*?)Type="([^"]+)"([^>]*?)Target="([^"]+)"([^>]*?)\/>/gi,
+                )
+                for (const match of relMatches) {
+                  const origId = match[2]
+                  const relType = match[4]
+                  const target = match[6]
+
+                  if (target.includes("media/") || relType.includes("image")) {
+                    const normTarget = target.replace(/^\.\.\//, "").replace(/^word\//, "")
+                    const mediaInZip = docZip.file("word/" + normTarget) || docZip.file(normTarget)
+                    if (mediaInZip) {
+                      const mediaBytes = await mediaInZip.async("uint8array")
+                      const ext = normTarget.split(".").pop() || "png"
+                      const newTarget = `media/doc${idx + 1}_${origId}.${ext}`
+                      masterZip.file("word/" + newTarget, mediaBytes)
+
+                      maxRelId++
+                      const newRelId = `rIdMerge${maxRelId}`
+                      const newRelTag = `<Relationship Id="${newRelId}" Type="${relType}" Target="${newTarget}"/>`
+                      masterRelsXml = masterRelsXml.replace(
+                        "</Relationships>",
+                        `  ${newRelTag}\n</Relationships>`,
+                      )
+
+                      docBody = docBody.replaceAll(`"${origId}"`, `"${newRelId}"`)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          docBody = convertTextToWordXml(new TextDecoder("utf-8", { fatal: false }).decode(bytes))
+        }
+      } else {
+        const textStr = new TextDecoder("utf-8", { fatal: false }).decode(bytes)
+        docBody = convertTextToWordXml(textStr)
+        docParagraphs = Math.max(1, textStr.split(/\r?\n/).filter((l) => l.trim()).length)
+      }
+
+      if (!docBody.trim()) {
+        docBody = `<w:p><w:r><w:t>${escapeXml(name.replace(/\.[^/.]+$/, ""))}</w:t></w:r></w:p>`
+      }
+
+      if (unifiedBodyXml.length > 0) {
+        if (pageBreakBetween) {
+          unifiedBodyXml += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+        }
+      }
+      unifiedBodyXml += docBody
+
+      breakdown.push({
+        name,
+        pageCount: docParagraphs,
+      })
+    } catch (err: any) {
+      if (err?.message === JOB_CANCELLED) throw err
+      skipped.push({
+        name,
+        reason: err?.message ? String(err.message).replace(/^Error:\s*/, "") : "Could not process document",
+      })
+    }
+  }
+
+  if (breakdown.length === 0) {
+    throw new Error(
+      `None of the ${files.length} Word documents could be read (${skipped[0]?.reason || "invalid format"}).`,
+    )
+  }
+
+  onProgress?.({
+    current: files.length,
+    total: files.length,
+    currentFileName: "Packaging Unified Word Document...",
+    percentage: 90,
+    stage: "Rebuilding OpenXML package and XML streams...",
+  })
+
+  let contentTypesXml = (await masterZip.file("[Content_Types].xml")?.async("string")) || ""
+  if (contentTypesXml && !contentTypesXml.includes('Extension="png"')) {
+    contentTypesXml = contentTypesXml.replace(
+      "</Types>",
+      '  <Default Extension="png" ContentType="image/png"/>\n  <Default Extension="jpeg" ContentType="image/jpeg"/>\n  <Default Extension="jpg" ContentType="image/jpeg"/>\n</Types>',
+    )
+    masterZip.file("[Content_Types].xml", contentTypesXml)
+  }
+
+  masterZip.file("word/_rels/document.xml.rels", masterRelsXml)
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">
+  <w:body>
+    ${unifiedBodyXml}
+    ${masterSectPr || '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'}
+  </w:body>
+</w:document>`
+
+  masterZip.file("word/document.xml", documentXml)
+
+  const mergedBytes = await masterZip.generateAsync({
+    type: "uint8array",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  })
+
+  const textMatches = unifiedBodyXml.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || []
+  const fullExtractedText = textMatches
+    .map((m: string) => m.replace(/<[^>]+>/g, ""))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  const outName = options.fileName || "merged-documents.docx"
+
+  onProgress?.({
+    current: files.length,
+    total: files.length,
+    currentFileName: outName,
+    percentage: 100,
+    stage: `Successfully merged ${breakdown.length} Word documents! Preparing download...`,
+  })
+
+  return {
+    name: outName,
+    blob: new Blob([mergedBytes], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+    pageCount: breakdown.reduce((sum, b) => sum + b.pageCount, 0),
+    breakdown,
+    skipped: skipped.length > 0 ? skipped : undefined,
+    previewSnippet: fullExtractedText.slice(0, 600) || "Merged Word Document",
+    extractedText: fullExtractedText,
   }
 }
 
@@ -2555,6 +2892,8 @@ export function escapeXml(str: string): string {
   if (!str) return ""
 
   return str
+
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
 
     .replace(/&/g, "&amp;")
 
@@ -4985,7 +5324,32 @@ export async function pdfToExcel(
     }
   }
 
-  // OpenXML .xlsx with auto-calculated column widths and gridlines
+  if (format === "xlsx") {
+    return {
+      name: `${baseName}-converted.xlsx`,
+      blob: createXlsxBlob(rows, { signal: options?.signal }),
+    }
+  }
+
+  throw new Error(`Unsupported spreadsheet format: ${format}`)
+}
+
+export function createXlsxBlob(
+  rows: string[][],
+  options: {
+    sheetName?: string
+    numericColumns?: boolean[]
+    parseNumeric?: (value: string, columnIndex: number) => number | null
+    mergeRanges?: Array<{
+      firstRow: number
+      firstCol: number
+      lastRow: number
+      lastCol: number
+    }>
+    signal?: AbortSignal
+  } = {},
+): Blob {
+  const columnCount = Math.max(1, ...rows.map((row) => row.length))
 
   const maxColWidths: number[] = []
 
@@ -5026,30 +5390,31 @@ export async function pdfToExcel(
       const cellRef = `${colIndexToName(colIdx)}${rowNum}`
 
       const trimmed = cellVal.trim()
+      if (trimmed.length > 32000) {
+        throw new Error("A spreadsheet cell contains too much text (32,000 character limit).")
+      }
 
       const isLeadingZeroId = /^0\d+$/.test(trimmed)
 
-      const isNum =
-        !isLeadingZeroId && /^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/.test(trimmed)
+      const numericAllowed =
+        options.numericColumns?.[colIdx] === true || options.numericColumns === undefined
+      let numericValue: number | null = null
 
-      if (isNum) {
-        const rawNum = trimmed
-
-          .replace(/^[\$€£¥₹]\s*/, "")
-
-          .replace(/,/g, "")
-
-          .replace(/%$/, "")
-
-        const numVal = parseFloat(rawNum)
-
-        if (!isNaN(numVal)) {
-          const finalVal = trimmed.endsWith("%") ? numVal / 100 : numVal
-
-          rowCellsXml += `<c r="${cellRef}"><v>${finalVal}</v></c>`
-        } else {
-          rowCellsXml += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(cellVal)}</t></is></c>`
+      if (numericAllowed && !isLeadingZeroId) {
+        if (options.parseNumeric) {
+          numericValue = options.parseNumeric(trimmed, colIdx)
+        } else if (/^-?[\$€£¥₹]?\s*[\d,]+(?:\.\d+)?%?$/.test(trimmed)) {
+          const rawNum = trimmed
+            .replace(/^[\$€£¥₹]\s*/, "")
+            .replace(/,/g, "")
+            .replace(/%$/, "")
+          const parsed = parseFloat(rawNum)
+          if (!isNaN(parsed)) numericValue = trimmed.endsWith("%") ? parsed / 100 : parsed
         }
+      }
+
+      if (numericValue !== null && Number.isFinite(numericValue)) {
+        rowCellsXml += `<c r="${cellRef}"><v>${numericValue}</v></c>`
       } else {
         rowCellsXml += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(cellVal)}</t></is></c>`
       }
@@ -5079,9 +5444,31 @@ export async function pdfToExcel(
   const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
-    <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
+    <sheet name="${escapeXml(validSheetName(options.sheetName || "Sheet1"))}" sheetId="1" r:id="rId1"/>
   </sheets>
 </workbook>`
+
+  const mergeRanges = (options.mergeRanges || []).filter(
+    (range) =>
+      Number.isInteger(range.firstRow) &&
+      Number.isInteger(range.firstCol) &&
+      Number.isInteger(range.lastRow) &&
+      Number.isInteger(range.lastCol) &&
+      range.firstRow >= 0 &&
+      range.firstCol >= 0 &&
+      range.lastRow >= range.firstRow &&
+      range.lastCol >= range.firstCol &&
+      range.lastRow < rows.length &&
+      range.lastCol < columnCount,
+  )
+  const mergeXml = mergeRanges.length
+    ? `  <mergeCells count="${mergeRanges.length}">${mergeRanges
+        .map(
+          (range) =>
+            `    <mergeCell ref="${colIndexToName(range.firstCol)}${range.firstRow + 1}:${colIndexToName(range.lastCol)}${range.lastRow + 1}"/>`,
+        )
+        .join("")}</mergeCells>\n`
+    : ""
 
   const sheet1Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -5092,7 +5479,7 @@ export async function pdfToExcel(
 ${colsXml}  <sheetData>
     ${sheetDataXml}
   </sheetData>
-</worksheet>`
+${mergeXml}</worksheet>`
 
   const zipBytes = buildZipArchive([
     { name: "[Content_Types].xml", data: contentTypesXml },
@@ -5106,13 +5493,14 @@ ${colsXml}  <sheetData>
     { name: "xl/worksheets/sheet1.xml", data: sheet1Xml },
   ])
 
-  return {
-    name: `${baseName}-converted.xlsx`,
+  return new Blob([zipBytes as any], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  })
+}
 
-    blob: new Blob([zipBytes as any], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-  }
+function validSheetName(name: string): string {
+  const cleaned = name.replace(/[\\/*?:[\]]/g, " ").replace(/\s+/g, " ").trim()
+  return (cleaned || "Sheet1").slice(0, 31)
 }
 
 // ----------------------------------------------------------------------------

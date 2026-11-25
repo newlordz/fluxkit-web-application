@@ -17,6 +17,7 @@ import {
 
 import {
   getShowcase,
+  getShowcaseCustomPalette,
   type ImageShowcaseData,
   type ShowcaseTheme,
 } from "./imageShowcaseService"
@@ -179,6 +180,14 @@ export default function ImageShowcaseViewer({
 
   // --------------------------------------------------------------------------
 
+  const customPalette = getShowcaseCustomPalette(data.customColors)
+  const customControlClass = customPalette.isLight
+    ? "bg-black/10 hover:bg-black/15"
+    : "bg-white/10 hover:bg-white/15"
+  const customBorderClass = customPalette.isLight
+    ? "border-black/15"
+    : "border-white/15"
+
   const getThemeWrapperClass = (t: ShowcaseTheme) => {
     switch (t) {
       case "polaroid":
@@ -195,6 +204,9 @@ export default function ImageShowcaseViewer({
 
       case "billboard":
         return "bg-black text-white"
+
+      case "custom":
+        return ""
 
       case "glassmorphism":
 
@@ -220,6 +232,11 @@ export default function ImageShowcaseViewer({
       case "billboard":
         return "rounded-3xl overflow-hidden shadow-2xl bg-neutral-900"
 
+      case "custom":
+        return customPalette.isLight
+          ? "rounded-2xl overflow-hidden bg-white/30 ring-1 ring-black/15 shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
+          : "rounded-2xl overflow-hidden bg-white/[0.04] ring-1 ring-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+
       case "glassmorphism":
 
       default:
@@ -232,6 +249,14 @@ export default function ImageShowcaseViewer({
       className={`min-h-[100dvh] flex flex-col justify-between py-6 px-4 md:py-10 transition-colors duration-300 ${getThemeWrapperClass(
         data.theme,
       )}`}
+      style={
+        data.theme === "custom"
+          ? {
+              background: customPalette.gradient,
+              color: customPalette.textColor,
+            }
+          : undefined
+      }
     >
       {/* Top Header Bar */}
       <header className="max-w-md mx-auto w-full flex items-center justify-between pb-4">
@@ -239,20 +264,34 @@ export default function ImageShowcaseViewer({
           onClick={() =>
             onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
           }
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-md transition-all active:scale-[0.98]"
+          className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full backdrop-blur-md transition-all active:scale-[0.98] ${
+            data.theme === "custom"
+              ? customControlClass
+              : "bg-white/10 hover:bg-white/15"
+          }`}
         >
           <ArrowLeft size={13} /> Masterfilepro QR
         </button>
 
         <div className="flex items-center gap-2">
           {data.badgeText && (
-            <span className="text-[10.5px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            <span
+              className={`text-[10.5px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full border ${
+                data.theme === "custom" && customPalette.isLight
+                  ? "bg-black/10 text-indigo-950 border-indigo-950/20"
+                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+              }`}
+            >
               {data.badgeText}
             </span>
           )}
           <button
             onClick={handleShare}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-md transition-all active:scale-[0.98]"
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-md transition-all active:scale-[0.98] ${
+              data.theme === "custom"
+                ? customControlClass
+                : "bg-white/10 hover:bg-white/15"
+            }`}
             title="Share showcase link"
           >
             {copied ? (
@@ -340,7 +379,11 @@ export default function ImageShowcaseViewer({
           {data.downloadAllowed && (
             <button
               onClick={handleDownload}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-current text-sm font-semibold border border-white/15 backdrop-blur-md transition-all active:scale-[0.98]"
+              className={`w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-current text-sm font-semibold border backdrop-blur-md transition-all active:scale-[0.98] ${
+                data.theme === "custom"
+                  ? `${customControlClass} ${customBorderClass}`
+                  : "bg-white/10 hover:bg-white/15 border-white/15"
+              }`}
             >
               <Download size={15} />
               <span>Save Full Resolution Photo</span>

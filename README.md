@@ -104,3 +104,25 @@ Without a backend, the picker accepts browser-recognized `audio/*` for **local s
 Selected audio, transcript edits and job IDs stay in component memory only, never local storage. Only pressing **Transcribe audio** sends content to the configured backend. Copy/download act on the edited text. Save to My Documents is intentionally absent because persistence is not implemented. Leaving the page aborts the client upload/polling but **does not guarantee remote cancellation or deletion**; removing a local selection does not delete a backend job.
 
 The backend must keep provider credentials server-side, validate decoded audio and duration (including silent/no-speech recordings), enforce file limits and quotas, authorize job access, and configure private temporary storage with an enforced cleanup schedule. Return its actual retention/usage policy in capabilities; the frontend cannot enforce remote deletion. Use a same-origin authenticated proxy in production (requests use same-origin credentials); a separate service needs correctly scoped CORS and server-side authorization. Never put provider keys in `VITE_*`.
+
+### Anonymous product insights and one-click feedback
+
+`src/privacyTelemetry.ts` posts four funnel stages per tool — `tool_opened`,
+`file_added`, `result_ready`, `download_started` — to `POST /api/db/insights`,
+each body limited to `{ visitId, toolId, stage, sequence }`. `visitId` is a
+random UUID kept in module memory only, so it is not shared across tabs and is
+gone on reload. `src/QuickFeedback.tsx` posts `{ visitId, toolId, sentiment }`
+with three fixed sentiments and no free text or attachments. Requests omit
+credentials and the referrer, are serialised through one queue, and abort after
+four seconds; failures never block or alter a tool result.
+
+Never transmitted: file names, sizes, types, document contents, extracted text,
+results, account identity, e-mail, tokens, or URLs. `shared/insights.ts` is the
+allowlist for stages, sentiments, and tool ids; unknown values are dropped.
+Set `VITE_ENABLE_PRODUCT_INSIGHTS=false` to disable collection entirely.
+
+Events land in the `funnel_events` and `product_feedback` tables defined by
+`supabase/migrations/0004_product_insights.sql`, which is **not yet applied**;
+until it is, these requests return 500 and are silently ignored. Both tables are
+default-deny to `anon`/`authenticated` — only the server function writes them,
+and the admin view reads aggregates through the same endpoint.

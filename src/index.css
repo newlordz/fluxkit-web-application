@@ -100,6 +100,18 @@
   border-radius: 10px;
 }
 
+.tool-page button.primary:hover,
+.tool-page form button.primary:hover,
+.primary:hover {
+  color: #ffffff !important;
+}
+
+.tool-page button.primary:hover *,
+.tool-page form button.primary:hover *,
+.primary:hover * {
+  color: #ffffff !important;
+}
+
 .tool-page .local-note {
   font-size: 13px;
   color: var(--muted);
@@ -1246,6 +1258,219 @@ main:has(.pro-paywall-panel) {
 .paywall-lock-icon {
   transition: transform 0.3s ease;
   filter: drop-shadow(0 2px 4px rgba(146, 64, 14, 0.32));
+}
+
+.sidebar-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.processing-location {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 11px 13px;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.processing-location svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.job-status {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--subtle);
+}
+
+.job-status-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.job-status progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.job-status progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--surface-hover);
+}
+
+.job-status progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.job-status progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.job-status small {
+  display: block;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.retry-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.retry-panel .secondary,
+.empty-result .secondary {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.tool-page .result-panel:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.tool-page .file-row > button {
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+}
+
+.tool-page .file-row > button:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--surface-hover);
+}
+
+.quick-feedback {
+  width: 100%;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.feedback-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.feedback-prompt strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.feedback-prompt span,
+.feedback-confirmation,
+.feedback-error {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.feedback-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feedback-option {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.feedback-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--surface-hover);
+}
+
+.feedback-error {
+  margin-top: 10px;
+  color: var(--danger-ink);
+}
+
+.feedback-confirmation {
+  color: var(--ok-ink);
+}
+
+.quick-feedback.is-compact {
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.quick-feedback.is-compact .feedback-prompt {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 960px) {
+  .sidebar-close {
+    display: grid;
+  }
+
+  .tool-page .file-row {
+    flex-wrap: wrap;
+  }
+
+  .tool-page .file-row > span:not([title]) {
+    min-width: calc(100% - 80px);
+  }
 }
 
 /* When Unlocked State */

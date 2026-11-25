@@ -48,6 +48,15 @@ interface OverviewProps {
 
 type TabCategory = "All" | "PDF Essentials" | "Convert & Export" | "AI & Writing" | "QR & Sharing" | "Favorites"
 
+const overviewTabs: TabCategory[] = [
+  "All",
+  "PDF Essentials",
+  "Convert & Export",
+  "AI & Writing",
+  "QR & Sharing",
+  "Favorites",
+]
+
 export default function Overview({
   navigate,
   activity,
@@ -78,6 +87,10 @@ export default function Overview({
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+  const modalTriggerRef = useRef<HTMLElement | null>(null)
+  const dropzoneRef = useRef<HTMLDivElement>(null)
+  const conversionTriggerRef = useRef<HTMLButtonElement>(null)
 
   const [activeCurrency, setActiveCurrency] = useState(getActiveCurrency)
 
@@ -99,18 +112,48 @@ export default function Overview({
   useEffect(() => {
     if (!isModalOpen || !stagedFile) return
     const prevOverflow = document.body.style.overflow
+    const previousFocus = modalTriggerRef.current || (document.activeElement as HTMLElement | null)
     document.body.style.overflow = "hidden"
 
-    const handleEsc = (e: KeyboardEvent) => {
+    const focusable = () =>
+      Array.from(
+        modalRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((element) => element.getClientRects().length > 0)
+
+    const frame = requestAnimationFrame(() => focusable()[0]?.focus())
+
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault()
         setIsModalOpen(false)
+        return
+      }
+      if (e.key !== "Tab") return
+      const items = focusable()
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last?.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first?.focus()
       }
     }
-    window.addEventListener("keydown", handleEsc)
+    window.addEventListener("keydown", handleKeyDown)
 
     return () => {
+      cancelAnimationFrame(frame)
       document.body.style.overflow = prevOverflow
-      window.removeEventListener("keydown", handleEsc)
+      window.removeEventListener("keydown", handleKeyDown)
+      const restoreTarget = (
+        [previousFocus, conversionTriggerRef.current] as HTMLElement[]
+      ).find(
+        (element) => element?.isConnected && element.getClientRects().length > 0,
+      )
+      restoreTarget?.focus()
     }
   }, [isModalOpen, stagedFile])
 
@@ -353,6 +396,13 @@ export default function Overview({
     if (["doc", "docx"].includes(ext)) {
       return [
         {
+          id: "merge-word",
+          name: "Merge Word",
+          desc: "Combine this Word document with other documents into a single file",
+          category: "convert" as const,
+          badge: "DOCX",
+        },
+        {
           id: "word-to-pdf",
           name: "Word to PDF",
           desc: "Transform Word document into standardized PDF file",
@@ -465,6 +515,16 @@ export default function Overview({
   const handleFileReceived = (files: FileList | File[]) => {
     if (!files || files.length === 0) return
     const file = files[0]
+    const active = document.activeElement as HTMLElement | null
+    // The file dialog reports focus on the display:none input, which cannot be
+    // refocused, so only keep an active, visible trigger from drag-and-drop.
+    if (
+      active &&
+      active !== fileInputRef.current &&
+      active.getClientRects().length > 0
+    ) {
+      modalTriggerRef.current = active
+    }
     setStagedFile(file)
     setModalCategory("all")
     setIsModalOpen(true)
@@ -509,6 +569,7 @@ export default function Overview({
       }
       if (activeTab === "Convert & Export") {
         return [
+          "merge-word",
           "pdf-to-word",
           "word-to-pdf",
           "pdf-to-excel",
@@ -559,6 +620,7 @@ export default function Overview({
       ).length,
       "Convert & Export": tools.filter((t) =>
         [
+          "merge-word",
           "pdf-to-word",
           "word-to-pdf",
           "pdf-to-excel",
@@ -665,13 +727,13 @@ export default function Overview({
           {/* Value Props Matrix */}
           <div className="hero-value-matrix">
             <span className="value-pill">
-              <ShieldCheck size={14} /> 100% Private & Client-Side
+              <ShieldCheck size={14} /> Local-first processing
             </span>
             <span className="value-pill">
-              <Zap size={14} /> Zero Upload Delay
+              <Zap size={14} /> Cloud help only when needed
             </span>
             <span className="value-pill">
-              <FileCheck2 size={14} /> No File Size Caps
+              <FileCheck2 size={14} /> Up to 25 MB per file
             </span>
             <span className="value-pill">
               <Sparkles size={14} /> AI-Assisted Output
@@ -684,6 +746,8 @@ export default function Overview({
               <Search className="hero-search-icon" size={19} />
               <input
                 ref={searchInputRef}
+                id="tool-search"
+                name="tool-search"
                 type="text"
                 placeholder="Search tools... (e.g. 'merge pdf', 'pdf to word', 'compress', 'qr code')"
                 value={search}
@@ -728,17 +792,27 @@ export default function Overview({
 
       {/* --- SMART DRAG & DROP QUICK-LAUNCH BAR --- */}
       <div
+        ref={dropzoneRef}
         className={`overview-dropzone-bar ${isDragOver ? "is-dragover" : ""} ${
           stagedFile ? "has-file" : ""
         }`}
+        role={stagedFile ? undefined : "button"}
+        tabIndex={stagedFile ? -1 : 0}
+        aria-label={stagedFile ? undefined : "Choose a document, photo, or audio file"}
         onDragOver={(e) => {
           e.preventDefault()
           setIsDragOver(true)
         }}
-        onDragLeave={() => setIsDragOver(false)}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false)
+        }}
         onDrop={handleDrop}
         onClick={() => {
-          if (!stagedFile) {
+          if (!stagedFile) fileInputRef.current?.click()
+        }}
+        onKeyDown={(e) => {
+          if (!stagedFile && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault()
             fileInputRef.current?.click()
           }
         }}
@@ -786,8 +860,10 @@ export default function Overview({
               <button
                 type="button"
                 className="choose-conversion-btn"
+                ref={conversionTriggerRef}
                 onClick={(e) => {
                   e.stopPropagation()
+                  modalTriggerRef.current = e.currentTarget
                   setIsModalOpen(true)
                 }}
               >
@@ -801,6 +877,8 @@ export default function Overview({
                 aria-label="Remove file"
                 onClick={(e) => {
                   e.stopPropagation()
+                  modalTriggerRef.current = dropzoneRef.current
+                  dropzoneRef.current?.focus()
                   setStagedFile(null)
                 }}
               >
@@ -818,6 +896,7 @@ export default function Overview({
             if (e.target.files && e.target.files.length > 0) {
               handleFileReceived(e.target.files)
             }
+            e.target.value = ""
           }}
         />
       </div>
@@ -834,6 +913,7 @@ export default function Overview({
             aria-labelledby="modal-action-title"
           >
             <div
+              ref={modalRef}
               className="quick-action-modal"
               onClick={(e) => e.stopPropagation()}
             >
@@ -928,6 +1008,7 @@ export default function Overview({
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
                             setIsModalOpen(false)
                             navigate(action.id, [stagedFile])
                           }
@@ -978,21 +1059,34 @@ export default function Overview({
 
       {/* --- FILTER & CATEGORY TOOLBAR --- */}
       <div className="overview-toolbar">
-        <div className="overview-category-tabs" role="tablist">
-          {([
-            "All",
-            "PDF Essentials",
-            "Convert & Export",
-            "AI & Writing",
-            "QR & Sharing",
-            "Favorites",
-          ] as TabCategory[]).map((tab) => {
+        <div
+          className="overview-category-tabs"
+          role="tablist"
+          aria-label="Tool categories"
+          onKeyDown={(event) => {
+            const current = overviewTabs.indexOf(activeTab)
+            let next = current
+            if (event.key === "ArrowRight") next = (current + 1) % overviewTabs.length
+            else if (event.key === "ArrowLeft") next = (current - 1 + overviewTabs.length) % overviewTabs.length
+            else if (event.key === "Home") next = 0
+            else if (event.key === "End") next = overviewTabs.length - 1
+            else return
+            event.preventDefault()
+            setActiveTab(overviewTabs[next])
+            setSearch("")
+            requestAnimationFrame(() => document.getElementById(`overview-tab-${next}`)?.focus())
+          }}
+        >
+          {overviewTabs.map((tab, index) => {
             const isActive = activeTab === tab
             return (
               <button
                 key={tab}
+                id={`overview-tab-${index}`}
                 role="tab"
                 aria-selected={isActive}
+                aria-controls="overview-tool-results"
+                tabIndex={isActive ? 0 : -1}
                 className={`category-tab-btn ${isActive ? "is-active" : ""}`}
                 onClick={() => {
                   setActiveTab(tab)
@@ -1055,6 +1149,9 @@ export default function Overview({
       {/* --- THE 5-COLUMN TOOL CARDS GRID --- */}
       {filteredTools.length > 0 ? (
         <div
+          id="overview-tool-results"
+          role="tabpanel"
+          aria-labelledby={`overview-tab-${overviewTabs.indexOf(activeTab)}`}
           className={`overview-grid ${
             viewMode === "compact" ? "is-compact" : ""
           }`}
@@ -1072,15 +1169,6 @@ export default function Overview({
                   onClick={() => navigate(t.id)}
                   onMouseMove={handleCardMouseMove}
                   onMouseLeave={handleCardMouseLeave}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      navigate(t.id)
-                    }
-                  }}
-                  aria-label={`Open ${t.name}`}
                 >
                   {/* Cursor-following spotlight glow */}
                   <div className="card-spotlight-layer" />
@@ -1148,10 +1236,18 @@ export default function Overview({
                         </span>
                       )}
                     </span>
-                    <span className="card-bottom-action">
+                    <button
+                      type="button"
+                      className="card-bottom-action"
+                      aria-label={`Open ${t.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(t.id)
+                      }}
+                    >
                       <span>{t.available ? "Launch" : "Open"}</span>
                       <ArrowRight size={13} />
-                    </span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1160,7 +1256,12 @@ export default function Overview({
         </div>
       ) : (
         /* Empty Search or Favorites State */
-        <div className="overview-empty-search">
+        <div
+          id="overview-tool-results"
+          role="tabpanel"
+          aria-labelledby={`overview-tab-${overviewTabs.indexOf(activeTab)}`}
+          className="overview-empty-search"
+        >
           <div className="empty-search-icon">
             <Search size={26} />
           </div>
@@ -1220,6 +1321,21 @@ export default function Overview({
             <p>
               Transcribe audio, summarize lengthy agreements, and generate
               formatted PDFs without juggling disparate software.
+            </p>
+          </div>
+        </div>
+        <div className="trust-card">
+          <div className="trust-card-icon">
+            <Shield size={19} />
+          </div>
+          <div>
+            <strong>Anonymous usage counts</strong>
+            <p>
+              We count which tool was opened, whether a file was added, and
+              whether a result was downloaded, using a random id that lives only
+              until you reload. File names, contents, and your account are never
+              part of that count, and the one-click rating sends only which
+              button you pressed.
             </p>
           </div>
         </div>

@@ -15,6 +15,10 @@ Module._load = function (request, parent, isMain) {
       ...ts,
       transpileModule(input, options, fileName, ...rest) {
         const result = ts.transpileModule(input, options, fileName, ...rest)
+        result.outputText = result.outputText.replaceAll(
+          "import.meta.env",
+          "(typeof process !== \"undefined\" ? process.env : globalThis.__VITE_ENV__)",
+        )
 
         if (input.includes("function RouteLoading") && input.includes("export default function App")) {
           result.outputText = result.outputText

@@ -87,6 +87,30 @@ export async function isProviderOutOfQuota(provider: string): Promise<boolean> {
   return row.used >= row.monthly_quota
 }
 
+export async function countApiUsage(
+  provider: string,
+  options: { since: Date; tool?: string; userId?: string },
+): Promise<number> {
+  const conditions = ["k.provider = $1", "u.created_at >= $2"]
+  const params: any[] = [provider, options.since]
+  if (options.tool) {
+    params.push(options.tool)
+    conditions.push(`u.tool = $${params.length}`)
+  }
+  if (options.userId) {
+    params.push(options.userId)
+    conditions.push(`u.user_id = $${params.length}`)
+  }
+  const rows = await query<{ count: number }>(
+    `select count(*)::int as count
+       from api_usage u
+       join api_keys k on k.id = u.api_key_id
+      where ${conditions.join(" and ")}`,
+    params,
+  )
+  return Number(rows[0]?.count || 0)
+}
+
 export interface GatewayConfig {
   secretKey: string
   publicKey: string

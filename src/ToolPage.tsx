@@ -2,6 +2,18 @@ import { useState, useRef, useEffect, type FormEvent } from "react"
 
 import DocumentPreviewModal from "./DocumentPreviewModal"
 
+import ImageTablePreview from "./ImageTablePreview"
+
+import PassportPhotoStudio from "./PassportPhotoStudio"
+
+import { isPassportImageFile } from "./passportPhoto"
+
+import {
+  assessImageTable,
+  type ImageTable,
+  type ImageTableAssessment,
+} from "./imageTableReconstruction"
+
 import QRCodeStudioModal from "./QRCodeStudioModal"
 
 import MergeLoadingModal from "./MergeLoadingModal"
@@ -85,6 +97,8 @@ import {
   download,
   generateQR,
   mergePDFs,
+  mergeWordFiles,
+  type MergeWordOptions,
   rotatePDF,
   textToPDF,
   splitPDF,
@@ -189,6 +203,8 @@ import {
 
 import { getCurrentUser, type UserAccount } from "./authService"
 import { getToolPaymentStatus } from "./adminService"
+import { trackToolEvent } from "./privacyTelemetry"
+import QuickFeedback from "./QuickFeedback"
 
 const STOPWORDS = new Set([
   "a",
@@ -780,8 +796,26 @@ const CLOUD_ROUTED_TOOLS = new Set([
   "pdf-to-word",
   "pdf-to-ppt",
   "pdf-to-excel",
+  "image-to-excel",
   "ppt-to-pdf",
   "ocr",
+])
+
+const CANCELLABLE_TOOLS = new Set([
+  "merge-pdf",
+  "merge-word",
+  "split-pdf",
+  "compress",
+  "pdf-to-word",
+  "pdf-to-ppt",
+  "image-to-excel",
+  "pdf-to-excel",
+  "ppt-to-pdf",
+  "pdf-to-jpg",
+  "ocr",
+  "convert-compress",
+  "merge-compress",
+  "split-compress",
 ])
 
 export default function ToolPage({
@@ -809,13 +843,31 @@ export default function ToolPage({
 
   // State
 
-  const [files, setFiles] = useState<File[]>(() => initialFiles || [])
+  const [files, setFiles] = useState<File[]>(() =>
+    tool.id === "passport-photo" ? (initialFiles || []).slice(0, 1) : initialFiles || [],
+  )
 
   const [error, setError] = useState("")
 
   const [status, setStatus] = useState<JobStatus>("idle")
 
+  const isProcessing = status === "processing"
+
   const [result, setResultState] = useState<OutputResult>()
+
+  const [imageTableRun, setImageTableRun] = useState<{
+    sourceFile: File
+    table: ImageTable
+    assessment: ImageTableAssessment
+    needsCloud: boolean
+    source: "local" | "cloud"
+  } | null>(null)
+
+  const [imageTableExporting, setImageTableExporting] = useState(false)
+
+  const [imageTableCloudBusy, setImageTableCloudBusy] = useState(false)
+
+  const [imageTableCloudError, setImageTableCloudError] = useState("")
 
   // Which engine actually finished the job, so the result can name where the document
   // went instead of promising browser-only processing that a cloud failover breaks.
@@ -838,6 +890,8 @@ export default function ToolPage({
   const [showcasePreviewData, setShowcasePreviewData] =
     useState<ShowcaseMobileMockupProps>({
       theme: "glassmorphism",
+
+      customColors: { startColor: "#4f46e5", endColor: "#ec4899" },
 
       title: "",
 
@@ -876,6 +930,10 @@ export default function ToolPage({
 
   const fileDragIndexRef = useRef<number | null>(null)
   const jobControllerRef = useRef<AbortController | null>(null)
+  const jobGenerationRef = useRef(0)
+  const formRef = useRef<HTMLFormElement>(null)
+  const resultPanelRef = useRef<HTMLElement>(null)
+  const previousStatusRef = useRef<JobStatus>("idle")
   const [jobCancellable, setJobCancellable] = useState(false)
   const [fileDragSourceIndex, setFileDragSourceIndex] = useState<number | null>(
     null,
@@ -973,15 +1031,59 @@ export default function ToolPage({
   }
 
   const handleDownload = (res: OutputResult) => {
+    trackToolEvent("download_started", tool.id)
     download(res)
 
     setDownloadSuccessName(res.name)
 
     notify.success(
-      `"${res.name}" downloaded! Check your browser's Downloads folder.`,
+      `"${res.name}" download started. Check your browser's Downloads folder.`,
     )
 
     setTimeout(() => setDownloadSuccessName(null), 3500)
+  }
+
+  async function handleImageTableExport(table: ImageTable) {
+    if (!imageTableRun) return
+    setImageTableExporting(true)
+    try {
+      const { exportImageTableToXlsx } = await import("./imageTableService")
+      const output = await exportImageTableToXlsx(
+        table,
+        imageTableRun.sourceFile.name,
+      )
+      handleDownload(output)
+      onComplete(tool.name)
+    } finally {
+      setImageTableExporting(false)
+    }
+  }
+
+  async function handleImageTableCloud() {
+    if (!imageTableRun || !currentUser) return
+    const sourceFile = imageTableRun.sourceFile
+    setImageTableCloudBusy(true)
+    setImageTableCloudError("")
+    try {
+      const { extractImageTableWithCloud } = await import("./imageTableService")
+      const run = await extractImageTableWithCloud(sourceFile, {
+        onProgress: (stage) =>
+          setPipelineStep({ current: 1, total: 3, label: stage }),
+      })
+      setImageTableRun((current) =>
+        current?.sourceFile === sourceFile ? { ...current, ...run } : current,
+      )
+      notify("Cloud-assisted table is ready. Review the cells before exporting.", "success")
+    } catch (error) {
+      setImageTableCloudError(
+        error instanceof Error
+          ? error.message
+          : "Cloud extraction failed. Your local result is still available.",
+      )
+    } finally {
+      setImageTableCloudBusy(false)
+      setPipelineStep(null)
+    }
   }
 
   const handleDownloadAsZip = async (res: OutputResult) => {
@@ -992,10 +1094,11 @@ export default function ToolPage({
         archiveName: `${res.name.replace(/\.[^/.]+$/, "")}.zip`,
       })
 
+      trackToolEvent("download_started", tool.id)
       download(zipRes)
 
       notify.success(
-        `"${zipRes.name}" ZIP archive downloaded! Check your Downloads folder.`,
+        `"${zipRes.name}" ZIP download started. Check your Downloads folder.`,
       )
     } catch (err: any) {
       notify(err?.message || "Failed to package as ZIP.", "error")
@@ -1308,6 +1411,43 @@ export default function ToolPage({
   // Hydrate documents and storage stats from persistent IndexedDB database on mount
 
   useEffect(() => {
+    trackToolEvent("tool_opened", tool.id)
+  }, [tool.id])
+
+  useEffect(() => {
+    if (status !== "completed" || previousStatusRef.current === "completed") {
+      previousStatusRef.current = status
+      return
+    }
+
+    previousStatusRef.current = status
+    const hasResult = Boolean(
+      result || textOutput || qr || imageTableRun || ocrResult || extractedFiles.length,
+    )
+    if (!hasResult) return
+
+    trackToolEvent("result_ready", tool.id)
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const frame = requestAnimationFrame(() => {
+      resultPanelRef.current?.focus({ preventScroll: true })
+      resultPanelRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [status, result, textOutput, qr, imageTableRun, ocrResult, extractedFiles.length, tool.id])
+
+  useEffect(
+    () => () => {
+      jobGenerationRef.current += 1
+    },
+    [],
+  )
+
+  useEffect(() => {
     if (
       tool.id === "documents" &&
       typeof window !== "undefined" &&
@@ -1349,8 +1489,10 @@ export default function ToolPage({
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
+      trackToolEvent("file_added", tool.id)
       const isFileTool = [
         "merge-pdf",
+        "merge-word",
 
         "split-pdf",
 
@@ -1371,6 +1513,10 @@ export default function ToolPage({
         "pdf-to-ppt",
 
         "pdf-to-excel",
+
+        "image-to-excel",
+
+        "passport-photo",
 
         "word-to-pdf",
 
@@ -1398,7 +1544,12 @@ export default function ToolPage({
       ].includes(tool.id)
 
       if (isFileTool) {
-        setFiles(initialFiles)
+        setFiles(
+          tool.id === "image-to-excel" || tool.id === "passport-photo"
+            ? initialFiles.slice(0, 1)
+            : initialFiles,
+        )
+        setImageTableRun(null)
       } else if (tool.category === "AI text tools") {
         const file = initialFiles[0]
 
@@ -1703,7 +1854,7 @@ export default function ToolPage({
       return ".pdf,application/pdf"
     }
 
-    if (id === "word-to-pdf") {
+    if (id === "word-to-pdf" || id === "merge-word") {
       return ".docx,.doc,.txt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
     }
 
@@ -1717,6 +1868,14 @@ export default function ToolPage({
 
     if (id === "jpg-to-pdf") {
       return ".jpg,.jpeg,.png,.webp,image/*"
+    }
+
+    if (id === "image-to-excel") {
+      return ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+    }
+
+    if (id === "passport-photo") {
+      return ".jpg,.jpeg,.png,.webp,.avif,image/jpeg,image/png,image/webp,image/avif"
     }
 
     if (id.includes("jpg") || id.includes("image")) {
@@ -1773,7 +1932,20 @@ export default function ToolPage({
   }
 
   function addFiles(incoming: FileList | null) {
-    if (!incoming) return
+    if (!incoming || isProcessing || jobControllerRef.current) return
+
+    jobGenerationRef.current += 1
+
+    if (tool.id === "image-to-excel" && incoming.length !== 1) {
+      setError("Choose exactly one payslip or bank statement image.")
+      setImageTableRun(null)
+      return
+    }
+
+    if (tool.id === "passport-photo" && incoming.length !== 1) {
+      setError("Choose exactly one passport photo.")
+      return
+    }
 
     const accepted: File[] = []
 
@@ -1814,6 +1986,20 @@ export default function ToolPage({
           (file.type && file.type !== "application/pdf"))
       ) {
         errors.push(`${file.name}: only PDF files are supported.`)
+      } else if (
+        tool.id === "merge-word" &&
+        !/\.(docx|doc|txt)$/i.test(file.name) &&
+        !file.type.includes("word") &&
+        !file.type.includes("text")
+      ) {
+        errors.push(`${file.name}: choose a DOCX, DOC, or TXT Word document.`)
+      } else if (
+        tool.id === "image-to-excel" &&
+        !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+      ) {
+        errors.push(`${file.name}: choose a JPG, PNG, or WebP image.`)
+      } else if (tool.id === "passport-photo" && !isPassportImageFile(file)) {
+        errors.push(`${file.name}: choose a JPG, PNG, WebP, or AVIF image.`)
       } else if (file.size > 25 * 1024 * 1024) {
         errors.push(`${file.name}: maximum size is 25 MB.`)
       } else {
@@ -1829,7 +2015,15 @@ export default function ToolPage({
       }
     }
 
-    setFiles((current) => [...current, ...accepted])
+    setFiles((current) =>
+      tool.id === "image-to-excel" || tool.id === "passport-photo"
+        ? accepted
+        : [...current, ...accepted],
+    )
+
+    setImageTableRun(null)
+
+    setImageTableCloudError("")
 
     setError(errors.join(" "))
 
@@ -1840,6 +2034,7 @@ export default function ToolPage({
     setStatus("idle")
 
     if (accepted.length > 0) {
+      trackToolEvent("file_added", tool.id)
       if (dropSuccessTimerRef.current) {
         clearTimeout(dropSuccessTimerRef.current)
       }
@@ -2026,6 +2221,11 @@ export default function ToolPage({
   async function submit(e: FormEvent) {
     e.preventDefault()
 
+    if (tool.id === "passport-photo" || isProcessing || jobControllerRef.current) return
+
+    const generation = ++jobGenerationRef.current
+    const isCurrentJob = () => jobGenerationRef.current === generation
+
     setError("")
 
     setResultState(undefined)
@@ -2046,11 +2246,12 @@ export default function ToolPage({
 
     const { signal } = controller
 
-    setJobCancellable(true)
+    setJobCancellable(CANCELLABLE_TOOLS.has(tool.id))
 
     let out: any = undefined
 
     const setResult = (res: OutputResult | undefined) => {
+      if (!isCurrentJob()) return
       out = res
 
       setEngineRun(getEngineRunSince(jobStartedAtRef.current))
@@ -2168,6 +2369,45 @@ export default function ToolPage({
             stage: mergedRes.skipped
               ? `Stitched ${mergedRes.breakdown?.length || 0} of ${files.length} documents.`
               : "All files successfully stitched!",
+          })
+
+          await new Promise((resolve) => setTimeout(resolve, 450))
+
+          setResult(mergedRes)
+        } finally {
+          setMergeProgress(null)
+        }
+      } else if (tool.id === "merge-word") {
+        if (files.length < 2)
+          throw new Error("Choose at least two Word documents to merge.")
+
+        setMergeProgress({
+          current: 1,
+          total: files.length,
+          currentFileName: files[0]?.name || "Document 1",
+          percentage: 12,
+          stage: `Initializing Word merge engine for ${files.length} documents...`,
+        })
+
+        try {
+          const [mergedRes] = await Promise.all([
+            mergeWordFiles(
+              files,
+              { pageBreakBetween: optionA !== "continuous" },
+              (p) => setMergeProgress(p),
+              signal,
+            ),
+            new Promise((resolve) => setTimeout(resolve, 600)),
+          ])
+
+          setMergeProgress({
+            current: files.length,
+            total: files.length,
+            currentFileName: "Done",
+            percentage: 100,
+            stage: mergedRes.skipped
+              ? `Merged ${mergedRes.breakdown?.length || 0} of ${files.length} documents.`
+              : "All Word documents successfully stitched!",
           })
 
           await new Promise((resolve) => setTimeout(resolve, 450))
@@ -2330,6 +2570,32 @@ export default function ToolPage({
         setResult(
           await pdfToPPT(files[0], { aspectRatio, theme, layout, signal }),
         )
+      } else if (tool.id === "image-to-excel") {
+        if (files.length !== 1) {
+          throw new Error("Choose exactly one payslip or bank statement image.")
+        }
+
+        setImageTableRun(null)
+        setImageTableCloudError("")
+        const { extractImageTable } = await import("./imageTableService")
+        try {
+          const run = await extractImageTable(files[0], {
+            signal,
+            onProgress: (stage) =>
+              setPipelineStep({ current: 1, total: 3, label: stage }),
+          })
+          setImageTableRun({ sourceFile: files[0], ...run })
+          setStatus("completed")
+          notify(
+            run.needsCloud
+              ? "Local reading needs review. Cloud help is optional and requires your consent."
+              : "Table extracted locally. Review the cells before exporting.",
+            "success",
+          )
+          return
+        } finally {
+          setPipelineStep(null)
+        }
       } else if (tool.id === "pdf-to-excel") {
         if (files.length < 1)
           throw new Error("Select a PDF to extract into Excel.")
@@ -3160,6 +3426,8 @@ export default function ToolPage({
         }
       }
 
+      if (!isCurrentJob()) return
+
       if (out) {
         setIsSavedInVault(true)
 
@@ -3189,6 +3457,8 @@ export default function ToolPage({
 
       notify(`${tool.name} completed. Your result is ready.`, "success")
     } catch (err) {
+      if (!isCurrentJob()) return
+
       if (
         signal.aborted ||
         (err instanceof Error && err.message === JOB_CANCELLED)
@@ -3210,9 +3480,12 @@ export default function ToolPage({
           : "Something went wrong. Please try again.",
       )
     } finally {
-      jobControllerRef.current = null
-
-      setJobCancellable(false)
+      if (jobControllerRef.current === controller) {
+        jobControllerRef.current = null
+      }
+      if (isCurrentJob()) {
+        setJobCancellable(false)
+      }
     }
   }
 
@@ -3389,6 +3662,7 @@ export default function ToolPage({
     }
 
     if (typeof download === "function") {
+      trackToolEvent("download_started", tool.id)
       download({ name: doc.name, blob })
     }
 
@@ -3537,7 +3811,31 @@ export default function ToolPage({
       <p className="page-subtitle">{tool.description}</p>
 
       {/* --- WORKSPACE SPECIAL VIEWS --- */}
-      {tool.id === "meetings" ? (
+      {tool.id === "passport-photo" && files[0] ? (
+        <div className="mt-6">
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="break-words font-semibold text-slate-900">{files[0].name}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Your photo stays on this device. Nothing is uploaded.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-button inline-flex items-center justify-center gap-2"
+              onClick={() => {
+                setFiles([])
+                setError("")
+                setResultState(undefined)
+                setStatus("idle")
+              }}
+            >
+              <X size={16} /> Change photo
+            </button>
+          </div>
+          <PassportPhotoStudio file={files[0]} onComplete={onComplete} />
+        </div>
+      ) : tool.id === "meetings" ? (
         <div
           className="tool-layout"
           style={{ gridTemplateColumns: "1.3fr 1fr", gap: "20px" }}
@@ -6405,14 +6703,21 @@ export default function ToolPage({
         /* --- GENERAL TOOL WORKSPACE (FILE, AI, QR) --- */
 
         <div className="tool-layout">
-          <form className="panel input-panel" onSubmit={submit}>
+          <form
+            ref={formRef}
+            className="panel input-panel"
+            onSubmit={submit}
+            aria-busy={isProcessing}
+          >
             <h2>
               {tool.id === "qr"
                 ? "Configure QR Connection"
                 : tool.category === "AI text tools"
                   ? "Input Content & Guidance"
                   : tool.category === "File tools"
-                    ? "Add Source Documents"
+                    ? tool.id === "passport-photo"
+                      ? "Add a Passport Photo"
+                      : "Add Source Documents"
                     : "Configure Workspace Tool"}
             </h2>
 
@@ -7219,6 +7524,7 @@ export default function ToolPage({
 
                     .join(" ")}
                   onDragOver={(e) => {
+                    if (isProcessing) return
                     e.preventDefault()
 
                     e.stopPropagation()
@@ -7226,6 +7532,7 @@ export default function ToolPage({
                     setIsDropzoneDragging(true)
                   }}
                   onDragEnter={(e) => {
+                    if (isProcessing) return
                     e.preventDefault()
 
                     e.stopPropagation()
@@ -7292,9 +7599,13 @@ export default function ToolPage({
                       <strong>Drop your files here</strong>
                       <span>or click to browse files</span>
                       <small>
-                        {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
-                          ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
-                          : "Up to 25 MB each · Private in-browser processing"}
+                        {tool.id === "image-to-excel"
+                          ? "Up to 25 MB · Local OCR first · Cloud help only with consent"
+                          : tool.id === "passport-photo"
+                            ? "JPG, PNG, WebP, or AVIF · Up to 25 MB · Processed locally"
+                            : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                              ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
+                              : "Up to 25 MB each · Private in-browser processing"}
                       </small>
                     </>
                   )}
@@ -7302,11 +7613,13 @@ export default function ToolPage({
                     type="file"
                     multiple={
                       tool.id === "merge-pdf" ||
+                      tool.id === "merge-word" ||
                       tool.id === "jpg-to-pdf" ||
                       tool.id === "merge-compress" ||
                       (tool.id === "zip" && zipMode === "create")
                     }
                     accept={getAcceptedFileTypes()}
+                    disabled={isProcessing}
                     onChange={(e) => {
                       addFiles(e.target.files)
 
@@ -7330,8 +7643,9 @@ export default function ToolPage({
                               : ""
                           }`}
                           key={`${file.name}-${file.size}-${file.lastModified || i}`}
-                          draggable={files.length > 1}
+                          draggable={!isProcessing && files.length > 1}
                           onDragStart={(e) => {
+                            if (isProcessing) return
                             e.dataTransfer.effectAllowed = "move"
                             e.dataTransfer.setData("text/plain", `${i}`)
                             fileDragIndexRef.current = i
@@ -7340,6 +7654,7 @@ export default function ToolPage({
                             }, 0)
                           }}
                           onDragOver={(e) => {
+                            if (isProcessing) return
                             e.preventDefault()
                             e.dataTransfer.dropEffect = "move"
                             if (fileDragOverIndex !== i) {
@@ -7365,6 +7680,7 @@ export default function ToolPage({
                           onDrop={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
+                            if (isProcessing) return
                             let source = fileDragIndexRef.current
                             if (source === null) {
                               const text = e.dataTransfer.getData("text/plain")
@@ -7391,7 +7707,7 @@ export default function ToolPage({
                             setFileDragOverIndex(null)
                           }}
                           style={{
-                            cursor: files.length > 1 ? "grab" : "default",
+                            cursor: !isProcessing && files.length > 1 ? "grab" : "default",
                           }}
                         >
                           {files.length > 1 && (
@@ -7422,6 +7738,7 @@ export default function ToolPage({
                             type="button"
                             aria-label={`Preview ${file.name}`}
                             title={`Preview ${file.name}`}
+                            disabled={isProcessing}
                             onClick={() => setShowPreviewModal(true)}
                           >
                             <Eye size={15} />
@@ -7431,7 +7748,7 @@ export default function ToolPage({
                               <button
                                 aria-label={`Move ${file.name} up`}
                                 type="button"
-                                disabled={i === 0}
+                                disabled={i === 0 || isProcessing}
                                 onClick={() =>
                                   setFiles((f) => {
                                     const copy = [...f]
@@ -7450,7 +7767,7 @@ export default function ToolPage({
                               <button
                                 aria-label={`Move ${file.name} down`}
                                 type="button"
-                                disabled={i === files.length - 1}
+                                disabled={i === files.length - 1 || isProcessing}
                                 onClick={() =>
                                   setFiles((f) => {
                                     const copy = [...f]
@@ -7471,8 +7788,13 @@ export default function ToolPage({
                           <button
                             aria-label={`Remove ${file.name}`}
                             type="button"
+                            disabled={isProcessing}
                             onClick={() => {
                               setFiles((f) => f.filter((_, n) => n !== i))
+
+                              setImageTableRun(null)
+
+                              setImageTableCloudError("")
 
                               setResultState(undefined)
 
@@ -7491,12 +7813,14 @@ export default function ToolPage({
 
                 {/* Preview & Arrange button for merge/arrange tools */}
                 {(tool.id === "merge-pdf" ||
+                  tool.id === "merge-word" ||
                   tool.id === "jpg-to-pdf" ||
                   tool.id === "merge-compress") &&
                   files.length >= 1 && (
                     <button
                       type="button"
                       className="dpm-trigger-btn"
+                      disabled={isProcessing}
                       onClick={() => setShowPreviewModal(true)}
                     >
                       <Layers size={15} />
@@ -7506,6 +7830,29 @@ export default function ToolPage({
                       </span>
                     </button>
                   )}
+
+                {tool.id === "merge-word" && (
+                  <label style={{ marginTop: "12px" }}>
+                    Document Separation
+                    <select
+                      value={optionA || "page-break"}
+                      onChange={(e) => setOptionA(e.target.value)}
+                    >
+                      <option value="page-break">Insert Page Break between documents (Recommended)</option>
+                      <option value="continuous">Continuous (Flow directly into next document)</option>
+                    </select>
+                    <small
+                      style={{
+                        color: "var(--muted)",
+                        display: "block",
+                        marginTop: "4px",
+                        fontSize: "11px",
+                      }}
+                    >
+                      Choose whether each merged document starts on a fresh page or continues directly.
+                    </small>
+                  </label>
+                )}
 
                 {tool.id === "rotate-pdf" && (
                   <label style={{ marginTop: "12px" }}>
@@ -7570,6 +7917,7 @@ export default function ToolPage({
                     <button
                       type="button"
                       className="dpm-trigger-btn"
+                      disabled={isProcessing}
                       onClick={() => setShowPreviewModal(true)}
                     >
                       <Scissors size={15} />
@@ -9152,17 +9500,62 @@ export default function ToolPage({
             )}
 
             {error && (
-              <div className="error" role="alert" style={{ marginTop: "12px" }}>
-                {error}
+              <div className="error retry-panel" role="alert" style={{ marginTop: "12px" }}>
+                <span>{error}</span>
+                {status === "failed" && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => formRef.current?.requestSubmit()}
+                  >
+                    <RefreshCw size={15} /> Retry
+                  </button>
+                )}
               </div>
             )}
 
-            {!(tool.id === "qr" && kind === "Image / Photo Showcase") && (
-              <>
+            {isProcessing && (
+              <div className="job-status" role="status" aria-live="polite">
+                <div className="job-status-heading">
+                  <LoaderCircle className="spin" size={17} />
+                  <span>{pipelineStep?.label || "Processing…"}</span>
+                </div>
+                {pipelineStep && (
+                  <progress
+                    max={pipelineStep.total}
+                    value={Math.min(pipelineStep.current, pipelineStep.total)}
+                    aria-label={`${pipelineStep.label} progress`}
+                    aria-valuetext={`Step ${pipelineStep.current} of ${pipelineStep.total}: ${pipelineStep.label}`}
+                  />
+                )}
+                <small>Keep this tab open while your file is processed.</small>
+              </div>
+            )}
+
+            <div className="processing-location">
+              <ShieldCheck size={16} />
+              {tool.id === "image-to-excel"
+                ? "Local-first · cloud help only after sign-in and consent"
+                : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                  ? "Local-first · a cloud engine may process this file"
+                  : "Processed locally · no upload required"}
+            </div>
+
+            {tool.id !== "passport-photo" &&
+              !(tool.id === "qr" && kind === "Image / Photo Showcase") && (
+                <>
                 <button
                   className="primary"
-                  disabled={status === "processing"}
-                  style={{ marginTop: "18px", width: "100%" }}
+                  aria-disabled={isProcessing || undefined}
+                  // A disabled button steals focus to <body> mid-job, so the
+                  // submit() guard prevents duplicates instead.
+                  style={{
+                    marginTop: "18px",
+                    width: "100%",
+                    ...(isProcessing
+                      ? { opacity: 0.65, cursor: "progress" }
+                      : null),
+                  }}
                 >
                   {status === "processing" ? (
                     <LoaderCircle className="spin" size={17} />
@@ -9177,6 +9570,8 @@ export default function ToolPage({
                       ? "Generate QR Code"
                       : tool.id === "merge-pdf"
                         ? "Merge PDFs"
+                        : tool.id === "merge-word"
+                          ? "Merge Word Documents"
                         : tool.id === "rotate-pdf"
                           ? "Rotate PDF"
                           : tool.id === "split-pdf"
@@ -9199,8 +9594,10 @@ export default function ToolPage({
                                           ? "Convert to Word"
                                           : tool.id === "pdf-to-ppt"
                                             ? "Convert to PowerPoint"
-                                            : tool.id === "pdf-to-excel"
-                                              ? "Convert to Excel"
+                                            : tool.id === "image-to-excel"
+                                              ? "Extract Table"
+                                              : tool.id === "pdf-to-excel"
+                                                ? "Convert to Excel"
                                               : tool.id === "word-to-pdf" ||
                                                   tool.id === "ppt-to-pdf" ||
                                                   tool.id === "excel-to-pdf" ||
@@ -9325,20 +9722,24 @@ export default function ToolPage({
                 )}
               </>
             )}
-
-            <div className="local-note">
-              <ShieldCheck size={14} />
-              {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
-                ? " Runs in your browser by default; this tool can hand a job to a cloud engine, which uploads that file."
-                : " Processed locally in your browser. No upload required."}
-            </div>
           </form>
 
           {/* --- RESULTS PANEL --- */}
-          <section className="panel result-panel" aria-live="polite">
+          <section
+            ref={resultPanelRef}
+            tabIndex={-1}
+            aria-labelledby="tool-result-heading"
+            className={`panel result-panel ${
+              tool.id === "qr" && kind === "Image / Photo Showcase"
+                ? "lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
+                : ""
+            }`}
+            aria-live="polite"
+          >
             <div className="section-heading">
-              <h2>Your result</h2>
-              {status === "completed" && textOutput && (
+              <h2 id="tool-result-heading">Your result</h2>
+              {status === "completed" &&
+                (result || textOutput || imageTableRun || qr || ocrResult || extractedFiles.length > 0) && (
                 <span className="live-badge">
                   <Check size={12} /> Ready
                 </span>
@@ -10057,9 +10458,10 @@ export default function ToolPage({
                         type: "text/plain;charset=utf-8",
                       })
 
+                      trackToolEvent("download_started", tool.id)
                       download({ name: `${tool.id}-output.txt`, blob })
 
-                      notify("Downloaded text file.", "success")
+                      notify("Text file download started.", "success")
                     }}
                   >
                     <Download size={16} /> Download
@@ -10398,7 +10800,10 @@ export default function ToolPage({
                       type="button"
                       className="primary"
                       style={{ flex: 1, padding: "8px 12px", fontSize: "13px" }}
-                      onClick={() => download(result)}
+                      onClick={() => {
+                        trackToolEvent("download_started", tool.id)
+                        download(result)
+                      }}
                     >
                       <Download size={16} /> Download TXT
                     </button>
@@ -10444,19 +10849,44 @@ export default function ToolPage({
                       <button
                         type="button"
                         style={{ padding: "4px 8px", fontSize: "11px" }}
-                        onClick={() =>
+                        onClick={() => {
+                          trackToolEvent("download_started", tool.id)
                           download({
                             name: item.name.split("/").pop() || item.name,
 
                             blob: item.blob,
                           })
-                        }
+                        }}
                       >
                         <Download size={12} /> Save
                       </button>
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : tool.id === "image-to-excel" && imageTableRun ? (
+              <div style={{ width: "100%" }}>
+                <ImageTablePreview
+                  table={imageTableRun.table}
+                  assessment={imageTableRun.assessment}
+                  sourceFile={imageTableRun.sourceFile}
+                  source={imageTableRun.source}
+                  needsCloud={imageTableRun.needsCloud}
+                  signedIn={Boolean(currentUser)}
+                  cloudBusy={imageTableCloudBusy}
+                  cloudError={imageTableCloudError}
+                  onChange={(table) =>
+                    setImageTableRun((current) =>
+                      current
+                        ? { ...current, table, assessment: assessImageTable(table) }
+                        : current,
+                    )
+                  }
+                  onCloud={handleImageTableCloud}
+                  onSignIn={() => navigate?.("sign-in")}
+                  onExport={handleImageTableExport}
+                  exporting={imageTableExporting}
+                />
               </div>
             ) : result ? (
               <div className="result-ready result-ready-celebrate">
@@ -10604,7 +11034,10 @@ export default function ToolPage({
                           </div>
                           <button
                             type="button"
-                            onClick={() => download(piece)}
+                            onClick={() => {
+                              trackToolEvent("download_started", tool.id)
+                              download(piece)
+                            }}
                             style={{
                               padding: "4px 8px",
 
@@ -10762,7 +11195,7 @@ export default function ToolPage({
                     )}
                   </div>
                 ) : null}
-                {tool.id === "merge-pdf" && result.breakdown && (
+                {(tool.id === "merge-pdf" || tool.id === "merge-word") && result.breakdown && (
                   <div
                     style={{
                       width: "100%",
@@ -10835,7 +11268,9 @@ export default function ToolPage({
                   </div>
                 )}
 
-                {(tool.id === "merge-pdf" || tool.id === "merge-compress") &&
+                {(tool.id === "merge-pdf" ||
+                  tool.id === "merge-word" ||
+                  tool.id === "merge-compress") &&
                 result.skipped?.length ? (
                   <div
                     style={{
@@ -11166,7 +11601,7 @@ export default function ToolPage({
                   >
                     {downloadSuccessName === result.name ? (
                       <>
-                        <Check size={16} /> Saved to Downloads!
+                        <Check size={16} /> Download started
                       </>
                     ) : (
                       <>
@@ -11350,13 +11785,26 @@ export default function ToolPage({
                 <div className="empty-icon">
                   <tool.icon size={28} />
                 </div>
-                <h3>Nothing here yet</h3>
+                <h3>
+                  {status === "failed" ? "Processing didn’t finish" : "Nothing here yet"}
+                </h3>
                 <p>
-                  Your {tool.id === "qr" ? "QR code" : "document"} will appear
-                  here when it’s ready.
+                  {status === "failed"
+                    ? error || "Your file is still here. Please try again."
+                    : `Your ${tool.id === "qr" ? "QR code" : "document"} will appear here when it’s ready.`}
                 </p>
+                {status === "failed" && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => formRef.current?.requestSubmit()}
+                  >
+                    <RefreshCw size={15} /> Retry
+                  </button>
+                )}
               </div>
             )}
+            {status === "completed" && <QuickFeedback toolId={tool.id} />}
           </section>
         </div>
       )}
