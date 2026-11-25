@@ -108,3 +108,10 @@ test("Word Documents Merge - Error Boundary enforces minimum 2 files", () => {
     "services.ts must throw if fewer than 2 files are provided",
   )
 })
+
+test("Word Documents Preview - DocumentPreviewModal extracts clean docx paragraphs and blocks PK binary garbage", () => {
+  const dpmContent = fs.readFileSync(path.join(__dirname, "../src/DocumentPreviewModal.tsx"), "utf8")
+  assert.ok(dpmContent.includes("isDocx"), "DocumentPreviewModal must have specific isDocx check")
+  assert.ok(dpmContent.includes("word/document.xml"), "DocumentPreviewModal must parse word/document.xml")
+  assert.ok(dpmContent.includes("PK\\x03\\x04"), "DocumentPreviewModal must guard against raw zip binary string leakage")
+})

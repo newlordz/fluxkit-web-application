@@ -2087,6 +2087,25 @@ export default function ToolPage({
             `Extracted text from ${file.name} (${pages.length} pages).`,
           )
         }
+      } else if (file.name.toLowerCase().endsWith(".docx")) {
+        const jszipMod = await import("jszip")
+        const JSZip = (jszipMod.default || jszipMod) as any
+        const zip = await JSZip.loadAsync(await file.arrayBuffer())
+        const docXmlFile = zip.file("word/document.xml")
+        let fullText = ""
+        if (docXmlFile) {
+          const xml = await docXmlFile.async("text")
+          const pMatches = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi) || []
+          const paras: string[] = []
+          for (const pXml of pMatches) {
+            const tMatches = pXml.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || []
+            const text = tMatches.map((t: string) => t.replace(/<[^>]+>/g, "")).join("").trim()
+            if (text) paras.push(text)
+          }
+          fullText = paras.join("\n\n")
+        }
+        setValue(fullText || file.name)
+        notify.success(`Extracted text from ${file.name}.`)
       } else {
         const text = await file.text()
 

@@ -250,10 +250,128 @@ export async function loadFilePreview(
     }
   }
 
-  // Text or others
+  // Word documents (.docx, .doc)
+  const isDocx =
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    /\.docx$/i.test(file.name)
 
+  if (isDocx) {
+    try {
+      const jszipMod = await import("jszip")
+      const JSZip = (jszipMod.default || jszipMod) as any
+      const buf = await file.arrayBuffer()
+      const zip = await JSZip.loadAsync(buf)
+      const docXmlFile = zip.file("word/document.xml")
+
+      let textLines: string[] = []
+      let fullText = ""
+
+      if (docXmlFile) {
+        const xml = await docXmlFile.async("text")
+        const pMatches = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi) || []
+        const paras: string[] = []
+        for (const pXml of pMatches) {
+          const tMatches = pXml.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || []
+          const text = tMatches
+            .map((t: string) => t.replace(/<[^>]+>/g, ""))
+            .join("")
+            .trim()
+          if (text) paras.push(text)
+        }
+        textLines = cleanReadableLines(paras).slice(0, 10)
+        fullText = paras.join("\n\n")
+      }
+
+      let imageUrl: string | undefined = undefined
+      let pdfUrl: string | undefined = undefined
+      let pageCount = 1
+
+      try {
+        const { wordToPDF } = await import("./services")
+        const pdfRes = await wordToPDF(file)
+        if (pdfRes?.blob) {
+          const pdfBuf = await pdfRes.blob.arrayBuffer()
+          const doc = await PDFDocument.load(pdfBuf, { ignoreEncryption: true })
+          pageCount = Math.max(1, doc.getPageCount())
+          if (typeof window !== "undefined") {
+            try {
+              const rendered = await renderPdfPageToDataUrl(pdfBuf, 1, 1.2)
+              if (rendered) imageUrl = rendered
+            } catch {}
+          }
+          try {
+            pdfUrl = URL.createObjectURL(pdfRes.blob)
+          } catch {}
+        }
+      } catch (err) {
+        // Fallback to text preview
+      }
+
+      if (!textLines.length) {
+        textLines = [file.name.replace(/\.[^/.]+$/, "")]
+      }
+
+      return {
+        pageCount,
+        imageUrl,
+        pdfUrl,
+        textLines,
+        fullText: fullText || textLines.join("\n"),
+      }
+    } catch {
+      return {
+        pageCount: 1,
+        textLines: [file.name.replace(/\.[^/.]+$/, "")],
+        fullText: file.name,
+      }
+    }
+  }
+
+  const isDoc = /\.doc$/i.test(file.name) || file.type === "application/msword"
+  if (isDoc) {
+    try {
+      const { wordToPDF } = await import("./services")
+      const pdfRes = await wordToPDF(file)
+      if (pdfRes?.blob) {
+        const pdfBuf = await pdfRes.blob.arrayBuffer()
+        const doc = await PDFDocument.load(pdfBuf, { ignoreEncryption: true })
+        const pageCount = Math.max(1, doc.getPageCount())
+        let imageUrl: string | undefined = undefined
+        if (typeof window !== "undefined") {
+          try {
+            const rendered = await renderPdfPageToDataUrl(pdfBuf, 1, 1.2)
+            if (rendered) imageUrl = rendered
+          } catch {}
+        }
+        return {
+          pageCount,
+          imageUrl,
+          pdfUrl: URL.createObjectURL(pdfRes.blob),
+          textLines: [file.name.replace(/\.[^/.]+$/, "")],
+          fullText: `Word Document: ${file.name}`,
+        }
+      }
+    } catch {}
+    return {
+      pageCount: 1,
+      textLines: [file.name.replace(/\.[^/.]+$/, "")],
+      fullText: `Word Document: ${file.name}`,
+    }
+  }
+
+  // Text or others
   try {
     const text = await file.text()
+
+    // Binary file safety check - don't render zip/binary header garbage
+    if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 1000)) || text.startsWith("PK\x03\x04")) {
+      return {
+        pageCount: 1,
+        textLines: [file.name.replace(/\.[^/.]+$/, "")],
+        fullText: file.name,
+      }
+    }
 
     const lines = cleanReadableLines(text.split("\n")).slice(0, 8)
 
@@ -1177,6 +1295,13 @@ export default function DocumentPreviewModal({
 
     let active = true
 
+    const isDocxOrDoc =
+      inspectDocModal.file &&
+      (inspectDocModal.file.type ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        inspectDocModal.file.type === "application/msword" ||
+        /\.(docx|doc)$/i.test(inspectDocModal.file.name))
+
     if (
       inspectDocModal.file &&
       (inspectDocModal.file.type === "application/pdf" ||
@@ -1185,7 +1310,6 @@ export default function DocumentPreviewModal({
       setIsDocInspectLoading(true)
 
       renderPdfPageToDataUrl(inspectDocModal.file, 1, 1.8)
-
         .then((img) => {
           if (active) {
             if (img) setDocInspectImg(img)
@@ -1193,7 +1317,21 @@ export default function DocumentPreviewModal({
             setIsDocInspectLoading(false)
           }
         })
-
+        .catch(() => {
+          if (active) setIsDocInspectLoading(false)
+        })
+    } else if (isDocxOrDoc) {
+      setIsDocInspectLoading(true)
+      import("./services")
+        .then((s) => s.wordToPDF(inspectDocModal.file))
+        .then((res) => (res?.blob ? res.blob.arrayBuffer() : null))
+        .then((buf) => (buf ? renderPdfPageToDataUrl(buf, 1, 1.8) : null))
+        .then((img) => {
+          if (active) {
+            if (img) setDocInspectImg(img)
+            setIsDocInspectLoading(false)
+          }
+        })
         .catch(() => {
           if (active) setIsDocInspectLoading(false)
         })
