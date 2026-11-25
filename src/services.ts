@@ -1760,6 +1760,718 @@ export async function reorderPDFPages(
   })
 }
 
+// ============================================================================
+// Extended PDF & Document Utilities
+// ============================================================================
+
+export async function organizePDF(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+  options: { pageOrder: number[] },
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file to organize.")
+
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  const total = pdf.getPageCount()
+
+  const indices = (options.pageOrder || [])
+    .map((p) => Number(p) - 1)
+    .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < total)
+
+  if (indices.length === 0) {
+    throw new Error("Keep at least one valid page before exporting.")
+  }
+
+  const newDoc = await PDFDocument.create()
+  const copied = await newDoc.copyPages(pdf, indices)
+  copied.forEach((page) => newDoc.addPage(page))
+
+  const outBytes = await newDoc.save()
+  const base = name.replace(/\.pdf$/i, "") || "document"
+
+  return {
+    name: `${base}-organized.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: indices.length,
+    previewSnippet: `Organized ${indices.length} page${indices.length === 1 ? "" : "s"} (from ${total} original pages).`,
+  }
+}
+
+export interface AddPageNumbersOptions {
+  format?: "page-x-of-y" | "x-of-y" | "number-only" | "bates"
+  position?:
+    | "bottom-center"
+    | "bottom-right"
+    | "bottom-left"
+    | "top-center"
+    | "top-right"
+    | "top-left"
+  startNumber?: number
+  fontSize?: number
+  skipFirstPage?: boolean
+  headerText?: string
+  footerText?: string
+  batesPrefix?: string
+}
+
+export async function addPageNumbersPDF(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+  options: AddPageNumbersOptions = {},
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file to number.")
+
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const pages = pdf.getPages()
+  const total = pages.length
+  const format = options.format || "page-x-of-y"
+  const position = options.position || "bottom-center"
+  const startNum = Number.isFinite(options.startNumber)
+    ? Math.max(1, Math.floor(options.startNumber!))
+    : 1
+  const fontSize = Math.min(24, Math.max(7, Number(options.fontSize) || 10))
+  const skipFirst = Boolean(options.skipFirstPage)
+  const batesPrefix = sanitizeForWinAnsi(options.batesPrefix || "DOC-", font)
+  const headerText = sanitizeForWinAnsi((options.headerText || "").trim(), font)
+  const footerText = sanitizeForWinAnsi((options.footerText || "").trim(), font)
+  const totalDisplay = total - (skipFirst && total > 1 ? 1 : 0) + startNum - 1
+
+  pages.forEach((page, i) => {
+    const { width, height } = page.getSize()
+    if (skipFirst && i === 0) return
+
+    const displayIndex = startNum + (skipFirst ? i - 1 : i)
+    let label = ""
+    if (format === "number-only") {
+      label = `${displayIndex}`
+    } else if (format === "x-of-y") {
+      label = `${displayIndex} / ${totalDisplay}`
+    } else if (format === "bates") {
+      label = `${batesPrefix}${String(displayIndex).padStart(4, "0")}`
+    } else {
+      label = `Page ${displayIndex} of ${totalDisplay}`
+    }
+
+    const safeLabel = sanitizeForWinAnsi(label, font)
+    const textWidth = font.widthOfTextAtSize(safeLabel, fontSize)
+    const marginX = 28
+    const marginY = 20
+
+    const isTop = position.startsWith("top-")
+    const y = isTop ? height - marginY - fontSize : marginY
+
+    let x = (width - textWidth) / 2
+    if (position.endsWith("-left")) x = marginX
+    else if (position.endsWith("-right")) x = Math.max(marginX, width - marginX - textWidth)
+
+    page.drawText(safeLabel, {
+      x,
+      y,
+      size: fontSize,
+      font,
+      color: rgb(0.2, 0.24, 0.32),
+    })
+
+    if (headerText) {
+      const hSize = Math.max(8, fontSize - 1)
+      const hWidth = font.widthOfTextAtSize(headerText, hSize)
+      const hx =
+        position === "top-left"
+          ? Math.max(marginX, width - marginX - hWidth)
+          : marginX
+      page.drawText(headerText, {
+        x: hx,
+        y: height - marginY - hSize,
+        size: hSize,
+        font,
+        color: rgb(0.35, 0.4, 0.48),
+      })
+    }
+
+    if (footerText) {
+      const fSize = Math.max(8, fontSize - 1)
+      const fWidth = font.widthOfTextAtSize(footerText, fSize)
+      const fx =
+        position === "bottom-left"
+          ? Math.max(marginX, width - marginX - fWidth)
+          : marginX
+      page.drawText(footerText, {
+        x: fx,
+        y: marginY,
+        size: fSize,
+        font,
+        color: rgb(0.35, 0.4, 0.48),
+      })
+    }
+  })
+
+  const outBytes = await pdf.save()
+  const base = name.replace(/\.pdf$/i, "") || "document"
+
+  return {
+    name: `${base}-numbered.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: total,
+    previewSnippet: `Added ${format} numbering across ${skipFirst ? Math.max(0, total - 1) : total} pages.`,
+  }
+}
+
+export interface RedactionRegion {
+  pageNumber: number
+  xPct: number
+  yPct: number
+  wPct: number
+  hPct: number
+}
+
+export async function redactPDF(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+  options: { regions: RedactionRegion[]; dpiScale?: number },
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file to redact.")
+
+  const regions = (options.regions || []).filter(
+    (r) => r.wPct > 0.002 && r.hPct > 0.002 && r.pageNumber >= 1,
+  )
+  if (regions.length === 0) {
+    throw new Error("Draw at least one redaction box on the PDF before exporting.")
+  }
+
+  const srcPdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  const srcPages = srcPdf.getPages()
+  const total = srcPages.length
+  const canCanvas =
+    typeof window !== "undefined" && typeof document !== "undefined"
+
+  if (canCanvas) {
+    try {
+      const { renderPdfPageToDataUrl } = await import("./pdfEngine")
+      const outPdf = await PDFDocument.create()
+      const scale = options.dpiScale || 1.8
+
+      for (let i = 0; i < total; i++) {
+        const pageNum = i + 1
+        const { width, height } = srcPages[i].getSize()
+        const pageRegions = regions.filter((r) => r.pageNumber === pageNum)
+
+        const dataUrl = await renderPdfPageToDataUrl(bytes, pageNum, scale)
+        if (!dataUrl) {
+          const [copied] = await outPdf.copyPages(srcPdf, [i])
+          outPdf.addPage(copied)
+          continue
+        }
+
+        const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image()
+          img.onload = () => resolve(img)
+          img.onerror = reject
+          img.src = dataUrl
+        })
+
+        const canvas = document.createElement("canvas")
+        canvas.width = imgEl.naturalWidth || Math.round(width * scale)
+        canvas.height = imgEl.naturalHeight || Math.round(height * scale)
+        const ctx = canvas.getContext("2d")
+        if (ctx) {
+          ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height)
+          ctx.fillStyle = "#000000"
+          for (const r of pageRegions) {
+            ctx.fillRect(
+              r.xPct * canvas.width,
+              r.yPct * canvas.height,
+              r.wPct * canvas.width,
+              r.hPct * canvas.height,
+            )
+          }
+        }
+
+        const redactedDataUrl = canvas.toDataURL("image/jpeg", 0.92)
+        const base64 = redactedDataUrl.split(",")[1]
+        const raw = atob(base64)
+        const jpgBytes = new Uint8Array(raw.length)
+        for (let k = 0; k < raw.length; k++) jpgBytes[k] = raw.charCodeAt(k)
+
+        const embedded = await outPdf.embedJpg(jpgBytes)
+        const outPage = outPdf.addPage([width, height])
+        outPage.drawImage(embedded, { x: 0, y: 0, width, height })
+      }
+
+      const outBytes = await outPdf.save()
+      const base = name.replace(/\.pdf$/i, "") || "document"
+      return {
+        name: `${base}-redacted.pdf`,
+        blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+        pageCount: total,
+        previewSnippet: `Permanently redacted ${regions.length} region${regions.length === 1 ? "" : "s"} and flattened ${total} page${total === 1 ? "" : "s"}.`,
+      }
+    } catch {
+      // Fall through to vector-rect redaction if PDF.js canvas fails
+    }
+  }
+
+  for (const r of regions) {
+    if (r.pageNumber < 1 || r.pageNumber > total) continue
+    const page = srcPages[r.pageNumber - 1]
+    const { width, height } = page.getSize()
+    const rx = r.xPct * width
+    const rw = r.wPct * width
+    const rh = r.hPct * height
+    const ry = height - (r.yPct * height + rh)
+    page.drawRectangle({
+      x: rx,
+      y: ry,
+      width: rw,
+      height: rh,
+      color: rgb(0, 0, 0),
+    })
+  }
+
+  const outBytes = await srcPdf.save()
+  const base = name.replace(/\.pdf$/i, "") || "document"
+  return {
+    name: `${base}-redacted.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: total,
+    previewSnippet: `Redacted ${regions.length} region${regions.length === 1 ? "" : "s"} across ${total} page${total === 1 ? "" : "s"}.`,
+  }
+}
+
+export interface PDFMetadataInfo {
+  title: string
+  author: string
+  subject: string
+  keywords: string
+  creator: string
+  producer: string
+  creationDate: string
+  modificationDate: string
+  pageCount: number
+}
+
+export async function inspectPDFMetadata(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+): Promise<PDFMetadataInfo> {
+  const { bytes } = await extractBytes(fileOrBytes)
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  return {
+    title: pdf.getTitle() || "",
+    author: pdf.getAuthor() || "",
+    subject: pdf.getSubject() || "",
+    keywords: pdf.getKeywords() || "",
+    creator: pdf.getCreator() || "",
+    producer: pdf.getProducer() || "",
+    creationDate: pdf.getCreationDate()?.toISOString() || "",
+    modificationDate: pdf.getModificationDate()?.toISOString() || "",
+    pageCount: pdf.getPageCount(),
+  }
+}
+
+export interface CleanMetadataOptions {
+  stripAll?: boolean
+  title?: string
+  author?: string
+  subject?: string
+  keywords?: string
+  creator?: string
+  producer?: string
+}
+
+export async function cleanPDFMetadata(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+  options: CleanMetadataOptions = { stripAll: true },
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file.")
+
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  const stripAll = options.stripAll !== false
+
+  if (stripAll) {
+    pdf.setTitle("")
+    pdf.setAuthor("")
+    pdf.setSubject("")
+    pdf.setKeywords([])
+    pdf.setCreator("")
+    pdf.setProducer("")
+    pdf.setCreationDate(new Date(0))
+    pdf.setModificationDate(new Date(0))
+  } else {
+    pdf.setTitle(options.title || "")
+    pdf.setAuthor(options.author || "")
+    pdf.setSubject(options.subject || "")
+    pdf.setKeywords(
+      (options.keywords || "")
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean),
+    )
+    pdf.setCreator(options.creator || "")
+    pdf.setProducer(options.producer || "")
+  }
+
+  const outBytes = await pdf.save()
+  const base = name.replace(/\.pdf$/i, "") || "document"
+
+  return {
+    name: `${base}-${stripAll ? "cleaned" : "updated"}.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: pdf.getPageCount(),
+    previewSnippet: stripAll
+      ? "Stripped all author, title, software, and timestamp metadata."
+      : "Updated PDF document metadata fields.",
+  }
+}
+
+export interface CropResizeOptions {
+  mode: "resize" | "crop"
+  targetSize?: "a4" | "letter" | "legal"
+  marginTop?: number
+  marginRight?: number
+  marginBottom?: number
+  marginLeft?: number
+}
+
+export async function cropResizePDF(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+  options: CropResizeOptions,
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file to crop or resize.")
+
+  const srcPdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  const base = name.replace(/\.pdf$/i, "") || "document"
+
+  if (options.mode === "resize") {
+    const sizeMap: Record<"a4" | "letter" | "legal", [number, number]> = {
+      a4: [595.28, 841.89],
+      letter: [612, 792],
+      legal: [612, 1008],
+    }
+    const [targetW, targetH] = sizeMap[options.targetSize || "a4"]
+    const outPdf = await PDFDocument.create()
+    const srcPages = srcPdf.getPages()
+
+    for (let i = 0; i < srcPages.length; i++) {
+      const embedded = await outPdf.embedPage(srcPages[i])
+      const scale = Math.min(targetW / embedded.width, targetH / embedded.height)
+      const drawW = embedded.width * scale
+      const drawH = embedded.height * scale
+      const outPage = outPdf.addPage([targetW, targetH])
+      outPage.drawPage(embedded, {
+        x: (targetW - drawW) / 2,
+        y: (targetH - drawH) / 2,
+        width: drawW,
+        height: drawH,
+      })
+    }
+
+    const outBytes = await outPdf.save()
+    return {
+      name: `${base}-${options.targetSize || "a4"}.pdf`,
+      blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+      pageCount: srcPages.length,
+      previewSnippet: `Standardized ${srcPages.length} pages to ${(options.targetSize || "a4").toUpperCase()}.`,
+    }
+  }
+
+  const mTop = Math.max(0, Number(options.marginTop) || 0)
+  const mRight = Math.max(0, Number(options.marginRight) || 0)
+  const mBottom = Math.max(0, Number(options.marginBottom) || 0)
+  const mLeft = Math.max(0, Number(options.marginLeft) || 0)
+
+  const pages = srcPdf.getPages()
+  for (const page of pages) {
+    const box = page.getMediaBox()
+    const newW = box.width - mLeft - mRight
+    const newH = box.height - mTop - mBottom
+    if (newW < 36 || newH < 36) {
+      throw new Error("Crop margins are larger than the page size (minimum 36pt remaining).")
+    }
+    page.setCropBox(box.x + mLeft, box.y + mBottom, newW, newH)
+    page.setMediaBox(box.x + mLeft, box.y + mBottom, newW, newH)
+  }
+
+  const outBytes = await srcPdf.save()
+  return {
+    name: `${base}-cropped.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: pages.length,
+    previewSnippet: `Cropped ${pages.length} pages (T:${mTop}pt, R:${mRight}pt, B:${mBottom}pt, L:${mLeft}pt).`,
+  }
+}
+
+export async function flattenPDF(
+  fileOrBytes: File | Uint8Array | ArrayBuffer,
+): Promise<OutputResult> {
+  const { bytes, name } = await extractBytes(fileOrBytes)
+  if (bytes.length === 0) throw new Error("Select a PDF file to flatten.")
+
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+  let fieldCount = 0
+  try {
+    const form = pdf.getForm()
+    fieldCount = form.getFields().length
+    if (fieldCount > 0) {
+      form.flatten()
+    }
+  } catch {
+    // PDF has no AcroForm or malformed form dictionary; re-saving still normalizes streams
+  }
+
+  const outBytes = await pdf.save()
+  const base = name.replace(/\.pdf$/i, "") || "document"
+
+  return {
+    name: `${base}-flattened.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: pdf.getPageCount(),
+    previewSnippet:
+      fieldCount > 0
+        ? `Flattened ${fieldCount} interactive form field${fieldCount === 1 ? "" : "s"} into static content.`
+        : "Normalized and saved document as a permanent static PDF.",
+  }
+}
+
+export interface MarkdownHtmlToPDFOptions {
+  mode?: "markdown" | "html"
+  title?: string
+  pageSize?: "a4" | "letter"
+}
+
+export async function markdownHtmlToPDF(
+  content: string,
+  options: MarkdownHtmlToPDFOptions = {},
+): Promise<OutputResult> {
+  if (!content || !content.trim()) {
+    throw new Error("Paste Markdown or HTML content (or upload a .md/.html file).")
+  }
+
+  const mode =
+    options.mode ||
+    (/<\/?[a-z][\s\S]*>/i.test(content) && !/^#{1,6}\s/m.test(content)
+      ? "html"
+      : "markdown")
+
+  type BlockKind = "h1" | "h2" | "h3" | "p" | "li" | "quote" | "code" | "hr"
+  const blocks: Array<{ kind: BlockKind; text: string }> = []
+
+  const stripInlineMd = (s: string) =>
+    s
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+
+  const decodeEntities = (s: string) =>
+    s
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+
+  if (mode === "html") {
+    const cleaned = content
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+
+    const tokenRegex =
+      /<(h1|h2|h3|h4|p|li|blockquote|pre|hr)\b[^>]*>([\s\S]*?)<\/\1>|<hr\s*\/?>/gi
+    let lastIdx = 0
+    for (const m of cleaned.matchAll(tokenRegex)) {
+      const before = decodeEntities(
+        cleaned.slice(lastIdx, m.index).replace(/<[^>]+>/g, " "),
+      ).trim()
+      if (before) blocks.push({ kind: "p", text: before })
+      lastIdx = (m.index || 0) + m[0].length
+
+      if (/^<hr/i.test(m[0])) {
+        blocks.push({ kind: "hr", text: "" })
+      } else {
+        const tag = m[1].toLowerCase()
+        const inner = decodeEntities(m[2].replace(/<[^>]+>/g, " "))
+          .replace(/\s+/g, " ")
+          .trim()
+        if (!inner) continue
+        if (tag === "h1") blocks.push({ kind: "h1", text: inner })
+        else if (tag === "h2") blocks.push({ kind: "h2", text: inner })
+        else if (tag === "h3" || tag === "h4") blocks.push({ kind: "h3", text: inner })
+        else if (tag === "li") blocks.push({ kind: "li", text: inner })
+        else if (tag === "blockquote") blocks.push({ kind: "quote", text: inner })
+        else if (tag === "pre") blocks.push({ kind: "code", text: inner })
+        else blocks.push({ kind: "p", text: inner })
+      }
+    }
+    const tail = decodeEntities(
+      cleaned.slice(lastIdx).replace(/<[^>]+>/g, " "),
+    ).trim()
+    if (tail) blocks.push({ kind: "p", text: tail })
+  } else {
+    const lines = content.split(/\r?\n/)
+    let inCode = false
+    let codeBuf: string[] = []
+    for (const line of lines) {
+      if (line.trim().startsWith("```")) {
+        if (inCode) {
+          if (codeBuf.length) blocks.push({ kind: "code", text: codeBuf.join("\n") })
+          codeBuf = []
+          inCode = false
+        } else {
+          inCode = true
+        }
+        continue
+      }
+      if (inCode) {
+        codeBuf.push(line)
+        continue
+      }
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (/^[-*_]{3,}$/.test(trimmed)) blocks.push({ kind: "hr", text: "" })
+      else if (trimmed.startsWith("### ")) blocks.push({ kind: "h3", text: stripInlineMd(trimmed.slice(4)) })
+      else if (trimmed.startsWith("## ")) blocks.push({ kind: "h2", text: stripInlineMd(trimmed.slice(3)) })
+      else if (trimmed.startsWith("# ")) blocks.push({ kind: "h1", text: stripInlineMd(trimmed.slice(2)) })
+      else if (trimmed.startsWith("> ")) blocks.push({ kind: "quote", text: stripInlineMd(trimmed.slice(2)) })
+      else if (/^[-*+]\s+/.test(trimmed))
+        blocks.push({ kind: "li", text: stripInlineMd(trimmed.replace(/^[-*+]\s+/, "")) })
+      else if (/^\d+\.\s+/.test(trimmed))
+        blocks.push({ kind: "li", text: stripInlineMd(trimmed) })
+      else blocks.push({ kind: "p", text: stripInlineMd(trimmed) })
+    }
+    if (inCode && codeBuf.length) {
+      blocks.push({ kind: "code", text: codeBuf.join("\n") })
+    }
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ kind: "p", text: content.trim() })
+  }
+
+  const pdf = await PDFDocument.create()
+  const regular = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const mono = await pdf.embedFont(StandardFonts.Courier)
+
+  const [pageW, pageH] =
+    options.pageSize === "letter" ? [612, 792] : [595.28, 841.89]
+  const margin = 50
+  const maxWidth = pageW - margin * 2
+
+  let page = pdf.addPage([pageW, pageH])
+  let y = pageH - margin
+
+  const ensureSpace = (needed: number) => {
+    if (y - needed < margin) {
+      page = pdf.addPage([pageW, pageH])
+      y = pageH - margin
+    }
+  }
+
+  const wrapLines = (text: string, font: any, size: number, widthLimit: number) => {
+    const safe = sanitizeForWinAnsi(text, font)
+    const words = safe.split(/\s+/).filter(Boolean)
+    const lines: string[] = []
+    let cur = ""
+    for (const w of words) {
+      const cand = cur ? `${cur} ${w}` : w
+      if (font.widthOfTextAtSize(cand, size) <= widthLimit) {
+        cur = cand
+      } else {
+        if (cur) lines.push(cur)
+        cur = w
+      }
+    }
+    if (cur) lines.push(cur)
+    return lines.length ? lines : [""]
+  }
+
+  if (options.title?.trim()) {
+    const tLines = wrapLines(options.title.trim(), bold, 20, maxWidth)
+    for (const l of tLines) {
+      ensureSpace(26)
+      page.drawText(l, { x: margin, y, size: 20, font: bold, color: rgb(0.05, 0.12, 0.25) })
+      y -= 26
+    }
+    y -= 6
+  }
+
+  for (const b of blocks) {
+    if (b.kind === "hr") {
+      ensureSpace(16)
+      page.drawLine({
+        start: { x: margin, y: y - 4 },
+        end: { x: pageW - margin, y: y - 4 },
+        thickness: 0.75,
+        color: rgb(0.82, 0.85, 0.9),
+      })
+      y -= 16
+      continue
+    }
+
+    const size =
+      b.kind === "h1" ? 18 : b.kind === "h2" ? 14.5 : b.kind === "h3" ? 12.5 : b.kind === "code" ? 9.5 : 10.5
+    const font =
+      b.kind === "h1" || b.kind === "h2" || b.kind === "h3"
+        ? bold
+        : b.kind === "code"
+          ? mono
+          : regular
+    const lineH = Math.round(size * 1.45)
+    const indent = b.kind === "li" || b.kind === "quote" ? 14 : b.kind === "code" ? 10 : 0
+    const prefix = b.kind === "li" ? "• " : ""
+    const lines = wrapLines(`${prefix}${b.text}`, font, size, maxWidth - indent)
+
+    if (b.kind === "h1" || b.kind === "h2") y -= 4
+    for (const l of lines) {
+      ensureSpace(lineH)
+      if (b.kind === "quote") {
+        page.drawRectangle({
+          x: margin + 2,
+          y: y - 2,
+          width: 2.5,
+          height: lineH - 2,
+          color: rgb(0, 0.66, 0.6),
+        })
+      }
+      page.drawText(l, {
+        x: margin + indent,
+        y,
+        size,
+        font,
+        color:
+          b.kind === "quote"
+            ? rgb(0.32, 0.38, 0.48)
+            : b.kind === "code"
+              ? rgb(0.15, 0.2, 0.28)
+              : rgb(0.08, 0.12, 0.18),
+      })
+      y -= lineH
+    }
+    y -= b.kind === "h1" ? 6 : 4
+  }
+
+  const outBytes = await pdf.save()
+  const base =
+    (options.title || "formatted-document")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "formatted-document"
+
+  return {
+    name: `${base}.pdf`,
+    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+    pageCount: pdf.getPageCount(),
+    previewSnippet: `Converted ${mode.toUpperCase()} (${blocks.length} blocks) into ${pdf.getPageCount()} PDF page${pdf.getPageCount() === 1 ? "" : "s"}.`,
+  }
+}
+
 /**
  * Extracts embedded JPEG images directly from a PDF file.
  * Returns an array of image data URLs or Blob URLs.

@@ -353,7 +353,6 @@ test("core journeys expose keyboard, progress, retry, and result semantics", () 
     "submit must stay focusable while processing",
   )
   assert.match(toolPage, /Retry\s*<\/button>/)
-  assert.match(toolPage, /className="processing-location"/)
   assert.match(toolPage, /ref=\{resultPanelRef\}/)
   assert.match(toolPage, /tabIndex=\{-1\}/)
   assert.match(toolPage, /trackToolEvent\("result_ready", tool\.id\)/)

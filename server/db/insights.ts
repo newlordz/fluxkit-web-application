@@ -17,13 +17,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   cors(req, res)
   noStore(res)
   if (req.method === "OPTIONS") return json(res, 200, {})
-  if (req.method !== "GET" && req.method !== "POST") return json(res, 405, { ok: false, error: "Method not allowed" })
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "PATCH") {
+    return json(res, 405, { ok: false, error: "Method not allowed" })
+  }
 
   if (req.method === "GET") {
     const actor = await requireAdmin(req)
     if (!actor) return json(res, 403, { ok: false, error: "Administrator sign-in required" })
 
-    const [toolRows, feedbackRows] = await Promise.all([
+    const [toolRows, feedbackRows, feedbackToolRows, recentRows, triageRows] = await Promise.all([
       transact(async (sql): Promise<Record<string, any>[]> =>
         sql(
           `select tool_id,
@@ -45,6 +47,31 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
             group by sentiment`,
         ),
       ),
+      transact(async (sql): Promise<Record<string, any>[]> =>
+        sql(
+          `select coalesce(tool_id, 'general') as tool_id,
+                  count(*) filter (where sentiment = 'works-well')::text as works_well,
+                  count(*) filter (where sentiment = 'could-be-easier')::text as could_be_easier,
+                  count(*) filter (where sentiment = 'found-a-problem')::text as found_a_problem,
+                  max(created_at) as latest_at
+             from product_feedback
+            where created_at >= now() - interval '30 days'
+            group by coalesce(tool_id, 'general')
+            order by count(*) filter (where sentiment = 'found-a-problem') desc, count(*) desc`,
+        ),
+      ).catch(() => []),
+      transact(async (sql): Promise<Record<string, any>[]> =>
+        sql(
+          `select id, coalesce(tool_id, 'general') as tool_id, sentiment, created_at
+             from product_feedback
+            where created_at >= now() - interval '30 days'
+            order by created_at desc
+            limit 50`,
+        ),
+      ).catch(() => []),
+      transact(async (sql): Promise<Record<string, any>[]> =>
+        sql(`select value from settings where key = 'feedback_triage' limit 1`),
+      ).catch(() => []),
     ])
 
     const tools = toolRows.map((row) => {
@@ -75,6 +102,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (row.sentiment in feedback) feedback[row.sentiment as keyof typeof feedback] = Number(row.count)
     }
 
+    const feedbackByTool = feedbackToolRows.map((row) => ({
+      toolId: String(row.tool_id),
+      worksWell: Number(row.works_well || 0),
+      couldBeEasier: Number(row.could_be_easier || 0),
+      foundAProblem: Number(row.found_a_problem || 0),
+      latestAt: row.latest_at ? String(row.latest_at) : null,
+    }))
+    const recentFeedback = recentRows.map((row) => ({
+      id: Number(row.id),
+      toolId: String(row.tool_id),
+      sentiment: String(row.sentiment),
+      createdAt: String(row.created_at),
+    }))
+    const rawTriage = triageRows[0]?.value
+    const triage =
+      rawTriage && typeof rawTriage === "object" && !Array.isArray(rawTriage)
+        ? rawTriage
+        : {}
+
     return json(res, 200, {
       ok: true,
       periodDays: 30,
@@ -86,7 +132,46 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       },
       tools,
       feedback,
+      feedbackByTool,
+      recentFeedback,
+      triage,
     })
+  }
+
+  if (req.method === "PATCH") {
+    const actor = await requireAdmin(req)
+    if (!actor) return json(res, 403, { ok: false, error: "Administrator sign-in required" })
+
+    const body = await readBody(req, 4096).catch(() => null)
+    const toolId = typeof body?.toolId === "string" ? body.toolId.trim() : ""
+    const status =
+      body?.status === "investigating" || body?.status === "resolved" ? body.status : "open"
+    const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) : ""
+    if (!toolId) return json(res, 400, { ok: false, error: "toolId is required" })
+
+    const triage = await transact(async (sql) => {
+      const existingRows = (await sql(
+        `select value from settings where key = 'feedback_triage' limit 1`,
+      )) as { value: any }[]
+      const current =
+        existingRows[0]?.value && typeof existingRows[0].value === "object"
+          ? { ...existingRows[0].value }
+          : {}
+      current[toolId] = {
+        status,
+        note,
+        updatedAt: new Date().toISOString(),
+        updatedBy: actor.email,
+      }
+      await sql(
+        `insert into settings (key, value, updated_at) values ('feedback_triage', $1::jsonb, now())
+         on conflict (key) do update set value = excluded.value, updated_at = now()`,
+        [JSON.stringify(current)],
+      )
+      return current
+    })
+
+    return json(res, 200, { ok: true, triage })
   }
 
   let body: unknown

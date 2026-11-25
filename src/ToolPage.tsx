@@ -101,6 +101,16 @@ import {
   mergeWordFiles,
   type MergeWordOptions,
   rotatePDF,
+  organizePDF,
+  addPageNumbersPDF,
+  redactPDF,
+  inspectPDFMetadata,
+  cleanPDFMetadata,
+  cropResizePDF,
+  flattenPDF,
+  markdownHtmlToPDF,
+  type RedactionRegion,
+  type PDFMetadataInfo,
   textToPDF,
   splitPDF,
   compressPDF,
@@ -1253,6 +1263,107 @@ export default function ToolPage({
 
   const [showDocPassword, setShowDocPassword] = useState(false)
 
+  // Extended PDF & Document tools state
+  const [orgPages, setOrgPages] = useState<number[]>([])
+  const [orgThumbs, setOrgThumbs] = useState<string[]>([])
+  const [orgLoading, setOrgLoading] = useState(false)
+
+  const [redactPageNum, setRedactPageNum] = useState(1)
+  const [redactTotalPages, setRedactTotalPages] = useState(1)
+  const [redactPageImg, setRedactPageImg] = useState<string | null>(null)
+  const [redactBoxes, setRedactBoxes] = useState<RedactionRegion[]>([])
+  const [redactDragStart, setRedactDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [redactDragCur, setRedactDragCur] = useState<{ x: number; y: number } | null>(null)
+
+  const [pdfMeta, setPdfMeta] = useState<PDFMetadataInfo | null>(null)
+  const [metaStripAll, setMetaStripAll] = useState(true)
+  const [metaEditTitle, setMetaEditTitle] = useState("")
+  const [metaEditAuthor, setMetaEditAuthor] = useState("")
+  const [metaEditSubject, setMetaEditSubject] = useState("")
+  const [metaEditKeywords, setMetaEditKeywords] = useState("")
+
+  // Auto-load visual state when PDF changes for organize-pdf, redact-pdf, metadata-pdf
+  useEffect(() => {
+    const f = files[0]
+    if (!f) {
+      setOrgPages([])
+      setOrgThumbs([])
+      setRedactPageImg(null)
+      setRedactBoxes([])
+      setPdfMeta(null)
+      return
+    }
+    let cancelled = false
+    if (tool.id === "organize-pdf") {
+      setOrgLoading(true)
+      ;(async () => {
+        try {
+          const { PDFDocument } = await import("pdf-lib")
+          const { renderPdfPageToDataUrl } = await import("./pdfEngine")
+          const buf = await f.arrayBuffer()
+          const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
+          const count = doc.getPageCount()
+          if (cancelled) return
+          setOrgPages(Array.from({ length: count }, (_, i) => i + 1))
+          const thumbs: string[] = []
+          const maxPreview = Math.min(count, 24)
+          for (let p = 1; p <= maxPreview; p++) {
+            const url = await renderPdfPageToDataUrl(buf, p, 0.5).catch(() => null)
+            thumbs.push(url || "")
+          }
+          if (!cancelled) setOrgThumbs(thumbs)
+        } catch {
+          if (!cancelled) setOrgPages([])
+        } finally {
+          if (!cancelled) setOrgLoading(false)
+        }
+      })()
+    } else if (tool.id === "redact-pdf") {
+      ;(async () => {
+        try {
+          const { PDFDocument } = await import("pdf-lib")
+          const buf = await f.arrayBuffer()
+          const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
+          if (!cancelled) {
+            setRedactTotalPages(Math.max(1, doc.getPageCount()))
+            setRedactPageNum(1)
+            setRedactBoxes([])
+          }
+        } catch {}
+      })()
+    } else if (tool.id === "metadata-pdf") {
+      inspectPDFMetadata(f)
+        .then((m) => {
+          if (cancelled) return
+          setPdfMeta(m)
+          setMetaEditTitle(m.title)
+          setMetaEditAuthor(m.author)
+          setMetaEditSubject(m.subject)
+          setMetaEditKeywords(m.keywords)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [files, tool.id])
+
+  useEffect(() => {
+    if (tool.id !== "redact-pdf" || !files[0]) return
+    let cancelled = false
+    import("./pdfEngine")
+      .then((m) => m.renderPdfPageToDataUrl(files[0], redactPageNum, 1.4))
+      .then((url) => {
+        if (!cancelled) setRedactPageImg(url || null)
+      })
+      .catch(() => {
+        if (!cancelled) setRedactPageImg(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tool.id, files, redactPageNum])
+
   const [sigInkColor, setSigInkColor] = useState("#0f172a")
 
   const SIGNATURE_INK_COLORS = [
@@ -1537,6 +1648,12 @@ export default function ToolPage({
         "merge-word",
 
         "split-pdf",
+        "organize-pdf",
+        "page-numbers-pdf",
+        "redact-pdf",
+        "metadata-pdf",
+        "crop-pdf",
+        "flatten-pdf",
 
         "compress",
 
@@ -1997,6 +2114,12 @@ export default function ToolPage({
       "merge-pdf",
 
       "split-pdf",
+      "organize-pdf",
+      "page-numbers-pdf",
+      "redact-pdf",
+      "metadata-pdf",
+      "crop-pdf",
+      "flatten-pdf",
 
       "rotate-pdf",
 
@@ -2489,6 +2612,75 @@ export default function ToolPage({
           throw new Error("Add some text to create your document.")
 
         setResult(await textToPDF(value, title))
+      } else if (tool.id === "markdown-pdf") {
+        if (!value.trim())
+          throw new Error("Paste Markdown or HTML content (or upload a .md/.html file).")
+
+        setResult(
+          await markdownHtmlToPDF(value, {
+            mode: (optionA as "markdown" | "html") || undefined,
+            title,
+            pageSize: optionB === "letter" ? "letter" : "a4",
+          }),
+        )
+      } else if (tool.id === "organize-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file to organize.")
+        if (orgPages.length === 0)
+          throw new Error("Keep at least one page before exporting.")
+
+        setResult(await organizePDF(files[0], { pageOrder: orgPages }))
+      } else if (tool.id === "page-numbers-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file to number.")
+
+        setResult(
+          await addPageNumbersPDF(files[0], {
+            format: (optionA as any) || "page-x-of-y",
+            position: (optionB as any) || "bottom-center",
+            startNumber: parseInt(extra || "1", 10) || 1,
+            skipFirstPage: title === "skip-first",
+            headerText: value.trim() || undefined,
+          }),
+        )
+      } else if (tool.id === "redact-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file to redact.")
+        if (redactBoxes.length === 0)
+          throw new Error("Draw at least one redaction box on the PDF before exporting.")
+
+        setResult(await redactPDF(files[0], { regions: redactBoxes }))
+      } else if (tool.id === "metadata-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file.")
+
+        setResult(
+          await cleanPDFMetadata(files[0], {
+            stripAll: metaStripAll,
+            title: metaEditTitle,
+            author: metaEditAuthor,
+            subject: metaEditSubject,
+            keywords: metaEditKeywords,
+          }),
+        )
+      } else if (tool.id === "crop-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file to crop or resize.")
+
+        const mode = optionA === "crop" ? "crop" : "resize"
+        const [mT, mR, mB, mL] = (extra || "36,36,36,36")
+          .split(",")
+          .map((n) => parseFloat(n.trim()) || 0)
+
+        setResult(
+          await cropResizePDF(files[0], {
+            mode,
+            targetSize: (optionB as "a4" | "letter" | "legal") || "a4",
+            marginTop: mT,
+            marginRight: mR,
+            marginBottom: mB,
+            marginLeft: mL,
+          }),
+        )
+      } else if (tool.id === "flatten-pdf") {
+        if (files.length < 1) throw new Error("Select a PDF file to flatten.")
+
+        setResult(await flattenPDF(files[0]))
       } else if (tool.id === "split-pdf") {
         if (files.length < 1) throw new Error("Select a PDF to split.")
 
@@ -7616,6 +7808,101 @@ export default function ToolPage({
                   />
                 </label>
               </>
+            ) : tool.id === "markdown-pdf" ? (
+              /* 3b. HTML / Markdown to PDF */
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                  }}
+                >
+                  <label>
+                    Input Format
+                    <select
+                      value={optionA || "markdown"}
+                      onChange={(e) => setOptionA(e.target.value)}
+                    >
+                      <option value="markdown">Markdown (.md)</option>
+                      <option value="html">HTML (.html)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Page Size
+                    <select
+                      value={optionB || "a4"}
+                      onChange={(e) => setOptionB(e.target.value)}
+                    >
+                      <option value="a4">A4 (210 × 297 mm)</option>
+                      <option value="letter">US Letter (8.5 × 11 in)</option>
+                    </select>
+                  </label>
+                </div>
+                <label style={{ marginTop: "10px" }}>
+                  Document Title (optional)
+                  <input
+                    maxLength={120}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Project Specification"
+                  />
+                </label>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginTop: "10px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    {optionA === "html" ? "HTML Source" : "Markdown Content"}
+                  </span>
+                  <label
+                    className="text-button"
+                    style={{
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      padding: "4px 10px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    Upload .md / .html
+                    <input
+                      type="file"
+                      accept=".md,.markdown,.html,.htm,.txt"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        const txt = await f.text()
+                        setValue(txt)
+                        if (/\.html?$/i.test(f.name)) setOptionA("html")
+                        else if (/\.md|\.markdown/i.test(f.name)) setOptionA("markdown")
+                        if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ""))
+                        notify(`Loaded ${f.name}`, "success")
+                        e.target.value = ""
+                      }}
+                    />
+                  </label>
+                </div>
+                <textarea
+                  required
+                  rows={11}
+                  maxLength={100000}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder={
+                    optionA === "html"
+                      ? "<h1>Quarterly Report</h1>\n<p>Executive summary...</p>"
+                      : "# Quarterly Report\n\n## Highlights\n- Revenue grew **24%** YoY\n- Zero downtime"
+                  }
+                  style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12.5px" }}
+                />
+              </>
             ) : (
               /* 4. File Tools Dropzone & Options */
 
@@ -8627,6 +8914,430 @@ export default function ToolPage({
                       it is marking, not encryption.
                     </p>
                   </>
+                )}
+
+                {tool.id === "organize-pdf" && files.length > 0 && (
+                  <div style={{ marginTop: "14px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      <strong style={{ fontSize: "13px" }}>
+                        Page Sequence ({orgPages.length} page{orgPages.length === 1 ? "" : "s"})
+                      </strong>
+                      <small style={{ color: "var(--muted)", fontSize: "11px" }}>
+                        Order: {orgPages.join(", ")}
+                      </small>
+                    </div>
+                    {orgLoading ? (
+                      <p style={{ fontSize: "12px", color: "var(--muted)" }}>
+                        Rendering page thumbnails…
+                      </p>
+                    ) : (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+                          gap: "8px",
+                          maxHeight: "320px",
+                          overflowY: "auto",
+                          padding: "4px",
+                        }}
+                      >
+                        {orgPages.map((pNum, idx) => (
+                          <div
+                            key={`${pNum}-${idx}`}
+                            style={{
+                              border: "1px solid var(--border)",
+                              borderRadius: "8px",
+                              padding: "6px",
+                              background: "var(--surface)",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            {orgThumbs[pNum - 1] ? (
+                              <img
+                                src={orgThumbs[pNum - 1]}
+                                alt={`Page ${pNum}`}
+                                style={{
+                                  width: "100%",
+                                  height: "76px",
+                                  objectFit: "contain",
+                                  borderRadius: "4px",
+                                  background: "#fff",
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: "100%",
+                                  height: "76px",
+                                  display: "grid",
+                                  placeItems: "center",
+                                  background: "var(--subtle)",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Page {pNum}
+                              </div>
+                            )}
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                              #{idx + 1} (p.{pNum})
+                            </span>
+                            <div style={{ display: "flex", gap: "3px" }}>
+                              <button
+                                type="button"
+                                title="Move earlier"
+                                disabled={idx === 0}
+                                onClick={() =>
+                                  setOrgPages((prev) => {
+                                    const copy = [...prev]
+                                    const [m] = copy.splice(idx, 1)
+                                    copy.splice(idx - 1, 0, m)
+                                    return copy
+                                  })
+                                }
+                                style={{ padding: "2px 5px", fontSize: "11px", border: "1px solid var(--border)", borderRadius: "4px" }}
+                              >
+                                ←
+                              </button>
+                              <button
+                                type="button"
+                                title="Move later"
+                                disabled={idx === orgPages.length - 1}
+                                onClick={() =>
+                                  setOrgPages((prev) => {
+                                    const copy = [...prev]
+                                    const [m] = copy.splice(idx, 1)
+                                    copy.splice(idx + 1, 0, m)
+                                    return copy
+                                  })
+                                }
+                                style={{ padding: "2px 5px", fontSize: "11px", border: "1px solid var(--border)", borderRadius: "4px" }}
+                              >
+                                →
+                              </button>
+                              <button
+                                type="button"
+                                title="Duplicate page"
+                                onClick={() =>
+                                  setOrgPages((prev) => {
+                                    const copy = [...prev]
+                                    copy.splice(idx + 1, 0, pNum)
+                                    return copy
+                                  })
+                                }
+                                style={{ padding: "2px 5px", fontSize: "11px", border: "1px solid var(--border)", borderRadius: "4px" }}
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                title="Delete page"
+                                disabled={orgPages.length <= 1}
+                                onClick={() =>
+                                  setOrgPages((prev) => prev.filter((_, n) => n !== idx))
+                                }
+                                style={{ padding: "2px 5px", fontSize: "11px", border: "1px solid var(--border)", borderRadius: "4px", color: "#ef4444" }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tool.id === "page-numbers-pdf" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <label>
+                        Number Format
+                        <select
+                          value={optionA || "page-x-of-y"}
+                          onChange={(e) => setOptionA(e.target.value)}
+                        >
+                          <option value="page-x-of-y">Page 1 of N</option>
+                          <option value="x-of-y">1 / N</option>
+                          <option value="number-only">1, 2, 3…</option>
+                          <option value="bates">Bates (DOC-0001)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Position
+                        <select
+                          value={optionB || "bottom-center"}
+                          onChange={(e) => setOptionB(e.target.value)}
+                        >
+                          <option value="bottom-center">Bottom Center</option>
+                          <option value="bottom-right">Bottom Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                          <option value="top-center">Top Center</option>
+                          <option value="top-right">Top Right</option>
+                          <option value="top-left">Top Left</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <label>
+                        Start Number
+                        <input
+                          type="number"
+                          min={1}
+                          value={extra || "1"}
+                          onChange={(e) => setExtra(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Header / Stamp Text (optional)
+                        <input
+                          value={value}
+                          onChange={(e) => setValue(e.target.value)}
+                          placeholder="e.g. CONFIDENTIAL"
+                        />
+                      </label>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 500 }}>
+                      <input
+                        type="checkbox"
+                        checked={title === "skip-first"}
+                        onChange={(e) => setTitle(e.target.checked ? "skip-first" : "")}
+                        style={{ width: "auto" }}
+                      />
+                      Skip numbering on Page 1 (Cover page)
+                    </label>
+                  </div>
+                )}
+
+                {tool.id === "redact-pdf" && files.length > 0 && (
+                  <div style={{ marginTop: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <button
+                          type="button"
+                          disabled={redactPageNum <= 1}
+                          onClick={() => setRedactPageNum((p) => Math.max(1, p - 1))}
+                          style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }}
+                        >
+                          Prev
+                        </button>
+                        <span style={{ fontSize: "12px", fontWeight: 600 }}>
+                          Page {redactPageNum} of {redactTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={redactPageNum >= redactTotalPages}
+                          onClick={() => setRedactPageNum((p) => Math.min(redactTotalPages, p + 1))}
+                          style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }}
+                        >
+                          Next
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRedactBoxes((prev) => prev.filter((b) => b.pageNumber !== redactPageNum))}
+                        style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "11px" }}
+                      >
+                        Clear Page Boxes ({redactBoxes.filter((b) => b.pageNumber === redactPageNum).length})
+                      </button>
+                    </div>
+                    <p style={{ fontSize: "11.5px", color: "var(--muted)", marginBottom: "6px" }}>
+                      Click and drag on the page below to draw black redaction boxes. Pages are flattened on export so redacted text cannot be copied.
+                    </p>
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        background: "#ffffff",
+                        cursor: "crosshair",
+                        userSelect: "none",
+                        touchAction: "none",
+                      }}
+                      onPointerDown={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                        const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+                        setRedactDragStart({ x, y })
+                        setRedactDragCur({ x, y })
+                      }}
+                      onPointerMove={(e) => {
+                        if (!redactDragStart) return
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                        const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+                        setRedactDragCur({ x, y })
+                      }}
+                      onPointerUp={() => {
+                        if (redactDragStart && redactDragCur) {
+                          const xPct = Math.min(redactDragStart.x, redactDragCur.x)
+                          const yPct = Math.min(redactDragStart.y, redactDragCur.y)
+                          const wPct = Math.abs(redactDragCur.x - redactDragStart.x)
+                          const hPct = Math.abs(redactDragCur.y - redactDragStart.y)
+                          if (wPct > 0.01 && hPct > 0.01) {
+                            setRedactBoxes((prev) => [
+                              ...prev,
+                              { pageNumber: redactPageNum, xPct, yPct, wPct, hPct },
+                            ])
+                          }
+                        }
+                        setRedactDragStart(null)
+                        setRedactDragCur(null)
+                      }}
+                    >
+                      {redactPageImg ? (
+                        <img
+                          src={redactPageImg}
+                          alt={`Page ${redactPageNum}`}
+                          draggable={false}
+                          style={{ width: "100%", display: "block", pointerEvents: "none" }}
+                        />
+                      ) : (
+                        <div style={{ height: "260px", display: "grid", placeItems: "center", color: "#64748b", fontSize: "12px" }}>
+                          Loading page {redactPageNum}…
+                        </div>
+                      )}
+                      {redactBoxes
+                        .filter((b) => b.pageNumber === redactPageNum)
+                        .map((b, bi) => (
+                          <div
+                            key={bi}
+                            style={{
+                              position: "absolute",
+                              left: `${b.xPct * 100}%`,
+                              top: `${b.yPct * 100}%`,
+                              width: `${b.wPct * 100}%`,
+                              height: `${b.hPct * 100}%`,
+                              background: "#000000",
+                              pointerEvents: "none",
+                            }}
+                          />
+                        ))}
+                      {redactDragStart && redactDragCur && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: `${Math.min(redactDragStart.x, redactDragCur.x) * 100}%`,
+                            top: `${Math.min(redactDragStart.y, redactDragCur.y) * 100}%`,
+                            width: `${Math.abs(redactDragCur.x - redactDragStart.x) * 100}%`,
+                            height: `${Math.abs(redactDragCur.y - redactDragStart.y) * 100}%`,
+                            background: "rgba(0, 0, 0, 0.72)",
+                            border: "1px dashed #ef4444",
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {tool.id === "metadata-pdf" && pdfMeta && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        padding: "10px 12px",
+                        background: "var(--subtle)",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <strong style={{ display: "block", marginBottom: "6px" }}>
+                        Detected Metadata ({pdfMeta.pageCount} pages)
+                      </strong>
+                      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: "4px 8px", color: "var(--muted)" }}>
+                        <span>Title:</span><strong style={{ color: "var(--text)" }}>{pdfMeta.title || "—"}</strong>
+                        <span>Author:</span><strong style={{ color: "var(--text)" }}>{pdfMeta.author || "—"}</strong>
+                        <span>Creator:</span><strong style={{ color: "var(--text)" }}>{pdfMeta.creator || "—"}</strong>
+                        <span>Producer:</span><strong style={{ color: "var(--text)" }}>{pdfMeta.producer || "—"}</strong>
+                      </div>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={metaStripAll}
+                        onChange={(e) => setMetaStripAll(e.target.checked)}
+                        style={{ width: "auto" }}
+                      />
+                      Strip all hidden metadata (Recommended for privacy)
+                    </label>
+                    {!metaStripAll && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                        <label>
+                          Title
+                          <input value={metaEditTitle} onChange={(e) => setMetaEditTitle(e.target.value)} />
+                        </label>
+                        <label>
+                          Author
+                          <input value={metaEditAuthor} onChange={(e) => setMetaEditAuthor(e.target.value)} />
+                        </label>
+                        <label>
+                          Subject
+                          <input value={metaEditSubject} onChange={(e) => setMetaEditSubject(e.target.value)} />
+                        </label>
+                        <label>
+                          Keywords (comma-separated)
+                          <input value={metaEditKeywords} onChange={(e) => setMetaEditKeywords(e.target.value)} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tool.id === "crop-pdf" && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <label>
+                      Operation Mode
+                      <select
+                        value={optionA || "resize"}
+                        onChange={(e) => setOptionA(e.target.value)}
+                      >
+                        <option value="resize">Standardize Page Size (A4 / Letter / Legal)</option>
+                        <option value="crop">Trim / Crop Margins (points)</option>
+                      </select>
+                    </label>
+                    {(optionA || "resize") === "resize" ? (
+                      <label>
+                        Target Page Size
+                        <select
+                          value={optionB || "a4"}
+                          onChange={(e) => setOptionB(e.target.value)}
+                        >
+                          <option value="a4">A4 (595 × 842 pt)</option>
+                          <option value="letter">US Letter (612 × 792 pt)</option>
+                          <option value="legal">US Legal (612 × 1008 pt)</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <label>
+                        Margins to Trim (Top, Right, Bottom, Left in pt)
+                        <input
+                          value={extra || "36,36,36,36"}
+                          onChange={(e) => setExtra(e.target.value)}
+                          placeholder="e.g. 36,36,36,36 (72 pt = 1 inch)"
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {tool.id === "flatten-pdf" && (
+                  <p className="processing-location-note">
+                    Converts interactive AcroForm fields, checkboxes, and signature widgets into permanent static page content so they can no longer be edited.
+                  </p>
                 )}
 
                 {/* Milestone 3: Conversion Tool Options Panels */}
@@ -9868,6 +10579,24 @@ export default function ToolPage({
                                         : "Add Lock Stamp"
                                       : tool.id === "text-pdf"
                                         ? "Generate PDF"
+                                        : tool.id === "markdown-pdf"
+                                          ? "Convert to PDF"
+                                          : tool.id === "organize-pdf"
+                                            ? "Export Organized PDF"
+                                            : tool.id === "page-numbers-pdf"
+                                              ? "Stamp Page Numbers"
+                                              : tool.id === "redact-pdf"
+                                                ? "Apply Redactions & Flatten"
+                                                : tool.id === "metadata-pdf"
+                                                  ? metaStripAll
+                                                    ? "Strip Metadata & Export"
+                                                    : "Update Metadata & Export"
+                                                  : tool.id === "crop-pdf"
+                                                    ? optionA === "crop"
+                                                      ? "Crop PDF Pages"
+                                                      : "Resize PDF Pages"
+                                                    : tool.id === "flatten-pdf"
+                                                      ? "Flatten PDF"
                                         : tool.id === "pdf-to-word"
                                           ? "Convert to Word"
                                           : tool.id === "pdf-to-ppt"

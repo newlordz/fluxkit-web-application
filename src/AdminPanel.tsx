@@ -52,6 +52,7 @@ import {
   type CloudApiConfig,
   type ApiHealthResult,
 } from "./apiPoolService"
+import { authHeaders } from "./sessionService"
 import {
   getAdminConfig,
   updateAdminSettings,
@@ -116,6 +117,7 @@ export type AdminTab =
   | "pages"
   | "integrations"
   | "apis"
+  | "insights"
   | "settings"
 
 export const VALID_ADMIN_TABS: AdminTab[] = [
@@ -124,6 +126,7 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
   "pages",
   "integrations",
   "apis",
+  "insights",
   "settings",
 ]
 
@@ -302,6 +305,57 @@ export default function AdminPanel({
   )
   const [testingApiId, setTestingApiId] = useState<string | null>(null)
   const [savingApiId, setSavingApiId] = useState<string | null>(null)
+  const [insightsData, setInsightsData] = useState<{
+    totals: {
+      opened: number
+      filesAdded: number
+      results: number
+      downloads: number
+      resultRate: number
+      downloadRate: number
+    }
+    feedback: {
+      "works-well": number
+      "could-be-easier": number
+      "found-a-problem": number
+    }
+    tools: {
+      toolId: string
+      opened: number
+      filesAdded: number
+      results: number
+      downloads: number
+      resultRate: number
+      downloadRate: number
+    }[]
+    feedbackByTool: {
+      toolId: string
+      worksWell: number
+      couldBeEasier: number
+      foundAProblem: number
+      latestAt: string | null
+    }[]
+    recentFeedback: {
+      id: number
+      toolId: string
+      sentiment: string
+      createdAt: string
+    }[]
+    triage: Record<
+      string,
+      {
+        status: "open" | "investigating" | "resolved"
+        note: string
+        updatedAt?: string
+        updatedBy?: string
+      }
+    >
+  } | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(false)
+  const [triageDrafts, setTriageDrafts] = useState<
+    Record<string, { status: "open" | "investigating" | "resolved"; note: string }>
+  >({})
+  const [savingTriageToolId, setSavingTriageToolId] = useState<string | null>(null)
   const [apiHealthResults, setApiHealthResults] =
     useState<Record<string, ApiHealthResult>>({})
   const [showApiSecrets, setShowApiSecrets] = useState<Record<string, boolean>>(
@@ -586,6 +640,42 @@ export default function AdminPanel({
       setActiveTab(initialTab)
     }
   }, [initialTab])
+
+  const loadInsights = async () => {
+    setInsightsLoading(true)
+    try {
+      const res = await fetch("/api/db/insights", { headers: authHeaders() })
+      const data = await res.json().catch(() => null)
+      if (res.ok && data?.ok) {
+        setInsightsData(data)
+        const nextDrafts: Record<
+          string,
+          { status: "open" | "investigating" | "resolved"; note: string }
+        > = {}
+        const triage = data.triage || {}
+        for (const [toolId, entry] of Object.entries<any>(triage)) {
+          nextDrafts[toolId] = {
+            status:
+              entry?.status === "investigating" || entry?.status === "resolved"
+                ? entry.status
+                : "open",
+            note: typeof entry?.note === "string" ? entry.note : "",
+          }
+        }
+        setTriageDrafts(nextDrafts)
+      }
+    } catch {
+      // ignore network failure
+    } finally {
+      setInsightsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "insights") {
+      void loadInsights()
+    }
+  }, [activeTab])
 
   // Page Editor State
   const [editingPageId, setEditingPageId] = useState<string | null>(null)
@@ -1510,6 +1600,18 @@ export default function AdminPanel({
               <Cpu size={16} className="admin-nav-icon" />
               <span className="admin-nav-label">PDF & Cloud APIs</span>
               <span className="admin-nav-badge subtle">Priorities</span>
+            </button>
+
+            <button
+              type="button"
+              className={`admin-nav-tab ${
+                activeTab === "insights" ? "active" : ""
+              }`}
+              onClick={() => setActiveTab("insights")}
+              title="Customer Feedback & Insights"
+            >
+              <Activity size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Feedback & Insights</span>
             </button>
 
             <button
@@ -7970,6 +8072,441 @@ export default function AdminPanel({
                   )
                 })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "insights" && (
+        <div
+          className="page-enter"
+          style={{ display: "flex", flexDirection: "column", gap: "24px" }}
+        >
+          <div className="admin-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginBottom: "18px",
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: "18px", margin: 0 }}>
+                  Customer Feedback & Tool Insights (Last 30 Days)
+                </h2>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "var(--muted)",
+                    margin: "4px 0 0 0",
+                  }}
+                >
+                  Track one-click customer reactions per tool, spot funnel
+                  drop-offs, and record triage notes as issues are addressed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadInsights()}
+                disabled={insightsLoading}
+                style={{
+                  fontSize: "12px",
+                  padding: "7px 14px",
+                  borderRadius: "6px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: insightsLoading ? "wait" : "pointer",
+                }}
+              >
+                <RefreshCw
+                  size={13}
+                  className={insightsLoading ? "spin" : ""}
+                />
+                {insightsLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  Tool Opens
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px" }}>
+                  {insightsData?.totals?.opened ?? 0}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  Completion Rate
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px" }}>
+                  {insightsData?.totals?.resultRate ?? 0}%
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  Download Rate
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px" }}>
+                  {insightsData?.totals?.downloadRate ?? 0}%
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "rgba(16, 185, 129, 0.08)",
+                  border: "1px solid rgba(16, 185, 129, 0.28)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "#059669" }}>
+                  Works well
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px", color: "#059669" }}>
+                  {insightsData?.feedback?.["works-well"] ?? 0}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "rgba(245, 158, 11, 0.08)",
+                  border: "1px solid rgba(245, 158, 11, 0.28)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "#d97706" }}>
+                  Could be easier
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px", color: "#d97706" }}>
+                  {insightsData?.feedback?.["could-be-easier"] ?? 0}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.28)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "#dc2626" }}>
+                  Found a problem
+                </div>
+                <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "4px", color: "#dc2626" }}>
+                  {insightsData?.feedback?.["found-a-problem"] ?? 0}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="admin-card">
+            <h3 style={{ fontSize: "16px", margin: "0 0 12px 0" }}>
+              Per-Tool Reactions & Issue Triage
+            </h3>
+            {(() => {
+              const toolMap = new Map<
+                string,
+                {
+                  toolId: string
+                  opened: number
+                  resultRate: number
+                  downloadRate: number
+                  worksWell: number
+                  couldBeEasier: number
+                  foundAProblem: number
+                }
+              >()
+              for (const t of insightsData?.tools || []) {
+                toolMap.set(t.toolId, {
+                  toolId: t.toolId,
+                  opened: t.opened,
+                  resultRate: t.resultRate,
+                  downloadRate: t.downloadRate,
+                  worksWell: 0,
+                  couldBeEasier: 0,
+                  foundAProblem: 0,
+                })
+              }
+              for (const f of insightsData?.feedbackByTool || []) {
+                const existing = toolMap.get(f.toolId) || {
+                  toolId: f.toolId,
+                  opened: 0,
+                  resultRate: 0,
+                  downloadRate: 0,
+                  worksWell: 0,
+                  couldBeEasier: 0,
+                  foundAProblem: 0,
+                }
+                existing.worksWell = f.worksWell
+                existing.couldBeEasier = f.couldBeEasier
+                existing.foundAProblem = f.foundAProblem
+                toolMap.set(f.toolId, existing)
+              }
+              const rows = Array.from(toolMap.values()).sort(
+                (a, b) =>
+                  b.foundAProblem - a.foundAProblem ||
+                  b.couldBeEasier - a.couldBeEasier ||
+                  b.opened - a.opened,
+              )
+
+              if (rows.length === 0) {
+                return (
+                  <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
+                    No tool reactions or funnel events recorded in the last 30 days yet.
+                  </p>
+                )
+              }
+
+              return (
+                <div style={{ overflowX: "auto" }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: "12.5px",
+                    }}
+                  >
+                    <thead>
+                      <tr
+                        style={{
+                          textAlign: "left",
+                          borderBottom: "1px solid var(--border)",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        <th style={{ padding: "8px 10px" }}>Tool</th>
+                        <th style={{ padding: "8px 10px" }}>Opens</th>
+                        <th style={{ padding: "8px 10px" }}>Result / DL</th>
+                        <th style={{ padding: "8px 10px" }}>Reactions</th>
+                        <th style={{ padding: "8px 10px" }}>Status</th>
+                        <th style={{ padding: "8px 10px" }}>Admin Note</th>
+                        <th style={{ padding: "8px 10px" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => {
+                        const draft = triageDrafts[row.toolId] || {
+                          status: "open" as const,
+                          note: "",
+                        }
+                        const isSavingTriage = savingTriageToolId === row.toolId
+                        return (
+                          <tr
+                            key={row.toolId}
+                            style={{ borderBottom: "1px solid var(--border)" }}
+                          >
+                            <td style={{ padding: "10px", fontWeight: 600 }}>
+                              {row.toolId}
+                            </td>
+                            <td style={{ padding: "10px" }}>{row.opened}</td>
+                            <td style={{ padding: "10px" }}>
+                              {row.resultRate}% / {row.downloadRate}%
+                            </td>
+                            <td style={{ padding: "10px", whiteSpace: "nowrap" }}>
+                              <span style={{ color: "#059669", marginRight: "8px" }}>
+                                +{row.worksWell}
+                              </span>
+                              <span style={{ color: "#d97706", marginRight: "8px" }}>
+                                ?{row.couldBeEasier}
+                              </span>
+                              <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                                !{row.foundAProblem}
+                              </span>
+                            </td>
+                            <td style={{ padding: "10px" }}>
+                              <select
+                                value={draft.status}
+                                onChange={(e) =>
+                                  setTriageDrafts((prev) => ({
+                                    ...prev,
+                                    [row.toolId]: {
+                                      ...draft,
+                                      status: e.target.value as
+                                        | "open"
+                                        | "investigating"
+                                        | "resolved",
+                                    },
+                                  }))
+                                }
+                                style={{
+                                  padding: "5px 8px",
+                                  borderRadius: "5px",
+                                  border: "1px solid var(--border)",
+                                  background: "var(--bg)",
+                                  color: "var(--text)",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                <option value="open">Open</option>
+                                <option value="investigating">Investigating</option>
+                                <option value="resolved">Resolved</option>
+                              </select>
+                            </td>
+                            <td style={{ padding: "10px", minWidth: "220px" }}>
+                              <input
+                                type="text"
+                                value={draft.note}
+                                onChange={(e) =>
+                                  setTriageDrafts((prev) => ({
+                                    ...prev,
+                                    [row.toolId]: {
+                                      ...draft,
+                                      note: e.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="Add triage note..."
+                                style={{
+                                  width: "100%",
+                                  padding: "5px 8px",
+                                  borderRadius: "5px",
+                                  border: "1px solid var(--border)",
+                                  background: "var(--bg)",
+                                  color: "var(--text)",
+                                  fontSize: "12px",
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: "10px" }}>
+                              <button
+                                type="button"
+                                className="primary"
+                                disabled={isSavingTriage}
+                                onClick={async () => {
+                                  setSavingTriageToolId(row.toolId)
+                                  try {
+                                    const res = await fetch("/api/db/insights", {
+                                      method: "PATCH",
+                                      headers: authHeaders({
+                                        "Content-Type": "application/json",
+                                      }),
+                                      body: JSON.stringify({
+                                        toolId: row.toolId,
+                                        status: draft.status,
+                                        note: draft.note,
+                                      }),
+                                    })
+                                    const data = await res.json().catch(() => null)
+                                    if (res.ok && data?.ok) {
+                                      setInsightsData((prev) =>
+                                        prev
+                                          ? { ...prev, triage: data.triage || prev.triage }
+                                          : prev,
+                                      )
+                                      showToast(`Saved triage note for ${row.toolId}.`)
+                                    } else {
+                                      showToast(
+                                        data?.error || "Failed to save triage note.",
+                                        "error",
+                                      )
+                                    }
+                                  } finally {
+                                    setSavingTriageToolId(null)
+                                  }
+                                }}
+                                style={{
+                                  fontSize: "11px",
+                                  padding: "5px 10px",
+                                  borderRadius: "5px",
+                                }}
+                              >
+                                {isSavingTriage ? "Saving..." : "Save"}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
+          </div>
+
+          <div className="admin-card">
+            <h3 style={{ fontSize: "16px", margin: "0 0 12px 0" }}>
+              Recent Customer Reactions
+            </h3>
+            {!insightsData?.recentFeedback?.length ? (
+              <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
+                No individual reactions recorded yet.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {insightsData.recentFeedback.map((item) => {
+                  const badgeColor =
+                    item.sentiment === "works-well"
+                      ? "#059669"
+                      : item.sentiment === "could-be-easier"
+                        ? "#d97706"
+                        : "#dc2626"
+                  return (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        fontSize: "12.5px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: badgeColor,
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {item.sentiment.replace(/-/g, " ")}
+                        </span>
+                        <span style={{ color: "var(--text)" }}>{item.toolId}</span>
+                      </div>
+                      <span style={{ color: "var(--muted)", fontSize: "11.5px" }}>
+                        {new Date(item.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

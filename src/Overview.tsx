@@ -559,8 +559,14 @@ export default function Overview({
         return [
           "merge-pdf",
           "split-pdf",
+          "organize-pdf",
           "compress",
           "rotate-pdf",
+          "page-numbers-pdf",
+          "redact-pdf",
+          "metadata-pdf",
+          "crop-pdf",
+          "flatten-pdf",
           "watermark",
           "edit-pdf",
           "sign-pdf",
@@ -570,6 +576,7 @@ export default function Overview({
       if (activeTab === "Convert & Export") {
         return [
           "merge-word",
+          "markdown-pdf",
           "pdf-to-word",
           "word-to-pdf",
           "pdf-to-excel",
@@ -610,8 +617,14 @@ export default function Overview({
         [
           "merge-pdf",
           "split-pdf",
+          "organize-pdf",
           "compress",
           "rotate-pdf",
+          "page-numbers-pdf",
+          "redact-pdf",
+          "metadata-pdf",
+          "crop-pdf",
+          "flatten-pdf",
           "watermark",
           "edit-pdf",
           "sign-pdf",
@@ -621,6 +634,7 @@ export default function Overview({
       "Convert & Export": tools.filter((t) =>
         [
           "merge-word",
+          "markdown-pdf",
           "pdf-to-word",
           "word-to-pdf",
           "pdf-to-excel",
