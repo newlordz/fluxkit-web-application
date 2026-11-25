@@ -73,13 +73,63 @@ export function trackToolEvent(stage: FunnelStage, toolId: string): void {
   void post("/api/db/insights", payload)
 }
 
+export interface LocalFeedbackEntry {
+  id: number
+  toolId: string
+  sentiment: FeedbackSentiment
+  comment: string | null
+  createdAt: string
+}
+
+const LOCAL_FEEDBACK_KEY = "fluxkit-local-feedback"
+
+export function getLocalFeedbackEntries(): LocalFeedbackEntry[] {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return []
+    const raw = window.localStorage.getItem(LOCAL_FEEDBACK_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function saveLocalFeedbackEntry(
+  sentiment: FeedbackSentiment,
+  toolId: string | null,
+  comment?: string,
+): boolean {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false
+    const existing = getLocalFeedbackEntries()
+    const cleanComment = comment?.trim().slice(0, 500) || null
+    const entry: LocalFeedbackEntry = {
+      id: Date.now(),
+      toolId: toolId || "general",
+      sentiment,
+      comment: cleanComment,
+      createdAt: new Date().toISOString(),
+    }
+    const next = [entry, ...existing].slice(0, 100)
+    window.localStorage.setItem(LOCAL_FEEDBACK_KEY, JSON.stringify(next))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function submitProductFeedback(
   sentiment: FeedbackSentiment,
   toolId: string | null,
+  comment?: string,
 ): Promise<boolean> {
   if (!enabled || !isFeedbackSentiment(sentiment) || (toolId !== null && !isToolId(toolId))) return false
   const id = currentVisitId()
   if (!id) return false
-  const payload: FeedbackPayload = { visitId: id, toolId, sentiment }
+  const cleanComment = typeof comment === "string" ? comment.trim().slice(0, 500) : ""
+  const payload: FeedbackPayload = cleanComment
+    ? { visitId: id, toolId, sentiment, comment: cleanComment }
+    : { visitId: id, toolId, sentiment }
   return post("/api/db/insights", payload)
 }

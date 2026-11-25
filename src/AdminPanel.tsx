@@ -110,6 +110,7 @@ import {
 } from "./paymentIntegrationService"
 import { tools } from "./config"
 import { useNotify } from "./Notifications"
+import { getLocalFeedbackEntries } from "./privacyTelemetry"
 
 export type AdminTab =
   | "tiers"
@@ -339,6 +340,7 @@ export default function AdminPanel({
       id: number
       toolId: string
       sentiment: string
+      comment?: string | null
       createdAt: string
     }[]
     triage: Record<
@@ -351,6 +353,9 @@ export default function AdminPanel({
       }
     >
   } | null>(null)
+  const [reactionFilter, setReactionFilter] = useState<
+    "all" | "problems" | "works-well" | "could-be-easier"
+  >("all")
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [triageDrafts, setTriageDrafts] = useState<
     Record<string, { status: "open" | "investigating" | "resolved"; note: string }>
@@ -643,11 +648,51 @@ export default function AdminPanel({
 
   const loadInsights = async () => {
     setInsightsLoading(true)
+    const localEntries = getLocalFeedbackEntries()
+    const mergeWithLocal = (serverData: any) => {
+      const base = serverData || {
+        periodDays: 30,
+        totals: { opened: 0, resultRate: 0, downloadRate: 0 },
+        tools: [],
+        feedback: { "works-well": 0, "could-be-easier": 0, "found-a-problem": 0 },
+        feedbackByTool: [],
+        recentFeedback: [],
+        triage: {},
+      }
+      if (!localEntries.length) return base
+      const feedback = { ...base.feedback }
+      const toolMap = new Map<string, any>(
+        (base.feedbackByTool || []).map((f: any) => [f.toolId, { ...f }]),
+      )
+      for (const entry of localEntries) {
+        if (entry.sentiment in feedback) {
+          feedback[entry.sentiment] = (feedback[entry.sentiment] || 0) + 1
+        }
+        const existing = toolMap.get(entry.toolId) || {
+          toolId: entry.toolId,
+          worksWell: 0,
+          couldBeEasier: 0,
+          foundAProblem: 0,
+          latestAt: entry.createdAt,
+        }
+        if (entry.sentiment === "works-well") existing.worksWell += 1
+        else if (entry.sentiment === "could-be-easier") existing.couldBeEasier += 1
+        else if (entry.sentiment === "found-a-problem") existing.foundAProblem += 1
+        toolMap.set(entry.toolId, existing)
+      }
+      return {
+        ...base,
+        feedback,
+        feedbackByTool: Array.from(toolMap.values()),
+        recentFeedback: [...localEntries, ...(base.recentFeedback || [])].slice(0, 80),
+      }
+    }
+
     try {
       const res = await fetch("/api/db/insights", { headers: authHeaders() })
       const data = await res.json().catch(() => null)
       if (res.ok && data?.ok) {
-        setInsightsData(data)
+        setInsightsData(mergeWithLocal(data))
         const nextDrafts: Record<
           string,
           { status: "open" | "investigating" | "resolved"; note: string }
@@ -663,9 +708,13 @@ export default function AdminPanel({
           }
         }
         setTriageDrafts(nextDrafts)
+      } else if (localEntries.length) {
+        setInsightsData(mergeWithLocal(null))
       }
     } catch {
-      // ignore network failure
+      if (localEntries.length) {
+        setInsightsData(mergeWithLocal(null))
+      }
     } finally {
       setInsightsLoading(false)
     }
@@ -8232,6 +8281,186 @@ export default function AdminPanel({
             </div>
           </div>
 
+          {/* Visual Reactions Chart & Per-Tool Breakdown Graph */}
+          <div className="admin-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+                marginBottom: "14px",
+              }}
+            >
+              <h3 style={{ fontSize: "16px", margin: 0 }}>
+                Reactions Graph &amp; Tool Satisfaction
+              </h3>
+              {(() => {
+                const w = insightsData?.feedback?.["works-well"] ?? 0
+                const e = insightsData?.feedback?.["could-be-easier"] ?? 0
+                const p = insightsData?.feedback?.["found-a-problem"] ?? 0
+                const total = w + e + p
+                const satPct = total ? Math.round((w / total) * 100) : 0
+                return (
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      background: total ? "rgba(16, 185, 129, 0.12)" : "var(--bg)",
+                      color: total ? "#059669" : "var(--muted)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {total ? `${satPct}% Positive (${total} total reactions)` : "No reactions yet"}
+                  </span>
+                )
+              })()}
+            </div>
+
+            {(() => {
+              const w = insightsData?.feedback?.["works-well"] ?? 0
+              const e = insightsData?.feedback?.["could-be-easier"] ?? 0
+              const p = insightsData?.feedback?.["found-a-problem"] ?? 0
+              const total = w + e + p
+              const wPct = total ? (w / total) * 100 : 0
+              const ePct = total ? (e / total) * 100 : 0
+              const pPct = total ? (p / total) * 100 : 0
+              const toolBars = [...(insightsData?.feedbackByTool || [])]
+                .map((row) => ({
+                  ...row,
+                  sum: row.worksWell + row.couldBeEasier + row.foundAProblem,
+                }))
+                .filter((row) => row.sum > 0)
+                .sort((a, b) => b.sum - a.sum)
+                .slice(0, 12)
+              const maxToolSum = Math.max(1, ...toolBars.map((r) => r.sum))
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div>
+                    <div
+                      style={{
+                        height: "18px",
+                        width: "100%",
+                        borderRadius: "999px",
+                        overflow: "hidden",
+                        display: "flex",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                      }}
+                      role="img"
+                      aria-label={`Reactions distribution: ${w} works well, ${e} could be easier, ${p} found a problem`}
+                    >
+                      {wPct > 0 && (
+                        <div
+                          style={{ width: `${wPct}%`, background: "#059669", transition: "width 0.3s ease" }}
+                          title={`Works well: ${w} (${Math.round(wPct)}%)`}
+                        />
+                      )}
+                      {ePct > 0 && (
+                        <div
+                          style={{ width: `${ePct}%`, background: "#d97706", transition: "width 0.3s ease" }}
+                          title={`Could be easier: ${e} (${Math.round(ePct)}%)`}
+                        />
+                      )}
+                      {pPct > 0 && (
+                        <div
+                          style={{ width: `${pPct}%`, background: "#dc2626", transition: "width 0.3s ease" }}
+                          title={`Found a problem: ${p} (${Math.round(pPct)}%)`}
+                        />
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "16px",
+                        flexWrap: "wrap",
+                        marginTop: "8px",
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      <span>
+                        <strong style={{ color: "#059669" }}>● Works well:</strong> {w} ({Math.round(wPct)}%)
+                      </span>
+                      <span>
+                        <strong style={{ color: "#d97706" }}>● Could be easier:</strong> {e} ({Math.round(ePct)}%)
+                      </span>
+                      <span>
+                        <strong style={{ color: "#dc2626" }}>● Found a problem:</strong> {p} ({Math.round(pPct)}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  {toolBars.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>
+                        By Tool (Top {toolBars.length})
+                      </div>
+                      {toolBars.map((row) => {
+                        const rowWidthPct = (row.sum / maxToolSum) * 100
+                        const rw = (row.worksWell / row.sum) * 100
+                        const re = (row.couldBeEasier / row.sum) * 100
+                        const rp = (row.foundAProblem / row.sum) * 100
+                        return (
+                          <div
+                            key={row.toolId}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "150px 1fr 90px",
+                              alignItems: "center",
+                              gap: "10px",
+                              fontSize: "12px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                              title={row.toolId}
+                            >
+                              {row.toolId}
+                            </span>
+                            <div
+                              style={{
+                                height: "12px",
+                                borderRadius: "6px",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${rowWidthPct}%`,
+                                  height: "100%",
+                                  display: "flex",
+                                }}
+                              >
+                                {rw > 0 && <div style={{ width: `${rw}%`, background: "#059669" }} />}
+                                {re > 0 && <div style={{ width: `${re}%`, background: "#d97706" }} />}
+                                {rp > 0 && <div style={{ width: `${rp}%`, background: "#dc2626" }} />}
+                              </div>
+                            </div>
+                            <span style={{ textAlign: "right", color: "var(--muted)", fontSize: "11px" }}>
+                              +{row.worksWell} / ?{row.couldBeEasier} / !{row.foundAProblem}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+
           <div className="admin-card">
             <h3 style={{ fontSize: "16px", margin: "0 0 12px 0" }}>
               Per-Tool Reactions & Issue Triage
@@ -8457,56 +8686,151 @@ export default function AdminPanel({
           </div>
 
           <div className="admin-card">
-            <h3 style={{ fontSize: "16px", margin: "0 0 12px 0" }}>
-              Recent Customer Reactions
-            </h3>
-            {!insightsData?.recentFeedback?.length ? (
-              <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
-                No individual reactions recorded yet.
-              </p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {insightsData.recentFeedback.map((item) => {
-                  const badgeColor =
-                    item.sentiment === "works-well"
-                      ? "#059669"
-                      : item.sentiment === "could-be-easier"
-                        ? "#d97706"
-                        : "#dc2626"
-                  return (
-                    <div
-                      key={item.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "8px 12px",
-                        borderRadius: "6px",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        fontSize: "12.5px",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <span
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+                marginBottom: "12px",
+              }}
+            >
+              <h3 style={{ fontSize: "16px", margin: 0 }}>
+                User Reactions &amp; Problem Comments
+              </h3>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {(
+                  [
+                    { id: "all", label: "All" },
+                    { id: "problems", label: "Problems & Comments" },
+                    { id: "works-well", label: "Works well" },
+                    { id: "could-be-easier", label: "Could be easier" },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setReactionFilter(tab.id)}
+                    style={{
+                      fontSize: "11.5px",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border)",
+                      background:
+                        reactionFilter === tab.id ? "var(--accent)" : "var(--bg)",
+                      color:
+                        reactionFilter === tab.id ? "var(--accent-ink)" : "var(--text)",
+                      fontWeight: reactionFilter === tab.id ? 600 : 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(() => {
+              const filteredReactions = (insightsData?.recentFeedback || []).filter(
+                (item) => {
+                  if (reactionFilter === "problems") {
+                    return (
+                      item.sentiment === "found-a-problem" || Boolean(item.comment)
+                    )
+                  }
+                  if (reactionFilter === "works-well") {
+                    return item.sentiment === "works-well"
+                  }
+                  if (reactionFilter === "could-be-easier") {
+                    return item.sentiment === "could-be-easier"
+                  }
+                  return true
+                },
+              )
+
+              if (filteredReactions.length === 0) {
+                return (
+                  <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
+                    {reactionFilter === "problems"
+                      ? "No problem reports or user comments recorded yet."
+                      : "No individual reactions recorded yet."}
+                  </p>
+                )
+              }
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {filteredReactions.map((item) => {
+                    const badgeColor =
+                      item.sentiment === "works-well"
+                        ? "#059669"
+                        : item.sentiment === "could-be-easier"
+                          ? "#d97706"
+                          : "#dc2626"
+                    return (
+                      <div
+                        key={`${item.id}-${item.createdAt}`}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "6px",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          background: "var(--bg)",
+                          border:
+                            item.sentiment === "found-a-problem"
+                              ? "1px solid rgba(239, 68, 68, 0.35)"
+                              : "1px solid var(--border)",
+                          fontSize: "12.5px",
+                        }}
+                      >
+                        <div
                           style={{
-                            fontWeight: 600,
-                            color: badgeColor,
-                            textTransform: "capitalize",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: "10px",
                           }}
                         >
-                          {item.sentiment.replace(/-/g, " ")}
-                        </span>
-                        <span style={{ color: "var(--text)" }}>{item.toolId}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                color: badgeColor,
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {item.sentiment.replace(/-/g, " ")}
+                            </span>
+                            <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                              {item.toolId}
+                            </span>
+                          </div>
+                          <span style={{ color: "var(--muted)", fontSize: "11.5px" }}>
+                            {new Date(item.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {item.comment && (
+                          <div
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: "6px",
+                              background: "var(--surface)",
+                              borderLeft: `3px solid ${badgeColor}`,
+                              color: "var(--text)",
+                              fontSize: "12.5px",
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {item.comment}
+                          </div>
+                        )}
                       </div>
-                      <span style={{ color: "var(--muted)", fontSize: "11.5px" }}>
-                        {new Date(item.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

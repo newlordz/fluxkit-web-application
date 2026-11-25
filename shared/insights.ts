@@ -87,6 +87,7 @@ export interface FeedbackPayload {
   visitId: string
   toolId: ToolId | null
   sentiment: FeedbackSentiment
+  comment?: string
 }
 
 const toolIds = new Set<string>(TOOL_IDS)
@@ -133,12 +134,22 @@ export function parseFunnelPayload(value: unknown): FunnelPayload | null {
 export function parseFeedbackPayload(value: unknown): FeedbackPayload | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const body = value as Record<string, unknown>
-  if (!hasExactKeys(body, ["visitId", "toolId", "sentiment"])) return null
+  const keys = Object.keys(body)
+  const allowed = new Set(["visitId", "toolId", "sentiment", "comment"])
+  if (keys.some((k) => !allowed.has(k))) return null
+  if (!("visitId" in body) || !("toolId" in body) || !("sentiment" in body)) return null
   if (!isVisitId(body.visitId) || !isFeedbackSentiment(body.sentiment)) return null
   if (body.toolId !== null && !isToolId(body.toolId)) return null
+  let comment: string | undefined
+  if (body.comment !== undefined) {
+    if (typeof body.comment !== "string") return null
+    const trimmed = body.comment.trim().slice(0, 500)
+    if (trimmed) comment = trimmed
+  }
   return {
     visitId: body.visitId,
     toolId: body.toolId as ToolId | null,
     sentiment: body.sentiment,
+    ...(comment ? { comment } : {}),
   }
 }

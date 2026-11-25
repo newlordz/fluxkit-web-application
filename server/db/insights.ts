@@ -62,11 +62,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       ).catch(() => []),
       transact(async (sql): Promise<Record<string, any>[]> =>
         sql(
-          `select id, coalesce(tool_id, 'general') as tool_id, sentiment, created_at
+          `select id, coalesce(tool_id, 'general') as tool_id, sentiment, comment, created_at
              from product_feedback
             where created_at >= now() - interval '30 days'
             order by created_at desc
             limit 50`,
+        ).catch(() =>
+          sql(
+            `select id, coalesce(tool_id, 'general') as tool_id, sentiment, null::text as comment, created_at
+               from product_feedback
+              where created_at >= now() - interval '30 days'
+              order by created_at desc
+              limit 50`,
+          ),
         ),
       ).catch(() => []),
       transact(async (sql): Promise<Record<string, any>[]> =>
@@ -113,6 +121,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       id: Number(row.id),
       toolId: String(row.tool_id),
       sentiment: String(row.sentiment),
+      comment: row.comment ? String(row.comment) : null,
       createdAt: String(row.created_at),
     }))
     const rawTriage = triageRows[0]?.value
@@ -240,10 +249,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         [payload.visitId],
       )) as { count: string }[]
       if (Number(usage?.count || 0) >= 5) throw new Error("VISIT_LIMIT")
+      await sql(`alter table product_feedback add column if not exists comment text`).catch(() => {})
       await sql(
-        `insert into product_feedback (visit_id, tool_id, sentiment)
-         values ($1, $2, $3)`,
-        [payload.visitId, payload.toolId, payload.sentiment],
+        `insert into product_feedback (visit_id, tool_id, sentiment, comment)
+         values ($1, $2, $3, $4)`,
+        [payload.visitId, payload.toolId, payload.sentiment, payload.comment ?? null],
+      ).catch(() =>
+        sql(
+          `insert into product_feedback (visit_id, tool_id, sentiment)
+           values ($1, $2, $3)`,
+          [payload.visitId, payload.toolId, payload.sentiment],
+        ),
       )
     })
   } catch (error: any) {
