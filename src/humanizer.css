@@ -1,0 +1,567 @@
+/* Humanizer studio — text review surface. Colours come from the shared tokens in
+   index.css so the accent recolour and light theme both reach it. */
+
+.humanizer-studio {
+  display: grid;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.humanizer-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.humanizer-card-head,
+.humanizer-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.humanizer-card-head h2,
+.humanizer-result-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.humanizer-result-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.humanizer-local-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.humanizer-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.humanizer-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120px;
+  resize: vertical;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.humanizer-textarea:focus-visible,
+.humanizer-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent-border);
+}
+
+.humanizer-textarea-small {
+  min-height: 88px;
+}
+
+.humanizer-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.humanizer-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.humanizer-meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.humanizer-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.humanizer-link-button:hover {
+  background: var(--accent-soft);
+}
+
+.humanizer-link-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.humanizer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.humanizer-options {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 16px;
+}
+
+.humanizer-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.humanizer-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.humanizer-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.humanizer-disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.humanizer-disclosure svg {
+  transition: transform 0.18s ease;
+}
+
+.humanizer-disclosure svg.is-open {
+  transform: rotate(180deg);
+}
+
+.humanizer-voice-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--subtle);
+}
+
+.humanizer-error {
+  margin: 14px 0 0;
+  color: var(--danger-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.humanizer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.humanizer-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.humanizer-primary:hover {
+  background: var(--accent-hover);
+}
+
+.humanizer-primary:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+.humanizer-primary[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.humanizer-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.humanizer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.humanizer-tab {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.humanizer-tab[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.humanizer-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.humanizer-output {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--subtle);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.humanizer-mark {
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.humanizer-mark.is-applied {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 0 rgb(var(--accent-rgb));
+}
+
+.humanizer-mark.is-suggested {
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: inset 0 -2px 0 0 var(--warn-ink);
+}
+
+.humanizer-mark.is-reverted {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.humanizer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.humanizer-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.humanizer-button:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.humanizer-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.humanizer-button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.humanizer-fidelity {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--subtle);
+}
+
+.humanizer-fidelity summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.humanizer-fidelity-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.humanizer-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.humanizer-section-title {
+  margin: 20px 0 10px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.humanizer-empty {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.humanizer-editlist {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.humanizer-edit {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  background: var(--subtle);
+}
+
+.humanizer-edit.is-applied {
+  border-left-color: var(--accent);
+}
+
+.humanizer-edit.is-suggested {
+  border-left-color: var(--warn-ink);
+}
+
+.humanizer-edit.is-reverted {
+  border-left-color: var(--danger-ink);
+}
+
+.humanizer-edit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.humanizer-badge,
+.humanizer-confidence,
+.humanizer-state {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.humanizer-badge {
+  background: rgba(165, 180, 252, 0.16);
+  color: var(--info-ink);
+}
+
+.humanizer-confidence.is-high {
+  background: rgba(52, 211, 153, 0.16);
+  color: var(--ok-ink);
+}
+
+.humanizer-confidence.is-medium {
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--warn-ink);
+}
+
+.humanizer-confidence.is-low {
+  background: rgba(248, 113, 113, 0.16);
+  color: var(--danger-ink);
+}
+
+.humanizer-state {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.humanizer-change {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.humanizer-change del {
+  color: var(--muted);
+}
+
+.humanizer-change ins {
+  color: var(--accent-text);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.humanizer-reason {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.humanizer-risk {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warn-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.humanizer-edit-actions {
+  margin-top: 10px;
+}
+
+.humanizer-tiny-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.humanizer-tiny-button:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.humanizer-tiny-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.humanizer-disclaimer {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+@media (max-width: 560px) {
+  .humanizer-card {
+    padding: 14px;
+  }
+
+  .humanizer-output {
+    padding: 13px;
+    font-size: 14.5px;
+  }
+
+  .humanizer-state {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .humanizer-disclosure svg {
+    transition: none;
+  }
+}

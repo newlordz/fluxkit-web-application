@@ -47,8 +47,13 @@ const KIND_LABELS: Record<string, string> = {
   repetition: "repeated word",
 }
 
-function toggle(list: string[], id: string): string[] {
-  return list.includes(id) ? list.filter((value) => value !== id) : [...list, id]
+/** One edit has exactly one decision; the engine gives "reverted" precedence. */
+function pickDecision(current: Decisions, id: string, next: "applied" | "reverted" | "pending"): Decisions {
+  const on = current.on.filter((value) => value !== id)
+  const off = current.off.filter((value) => value !== id)
+  if (next === "applied") on.push(id)
+  if (next === "reverted") off.push(id)
+  return { on, off }
 }
 
 export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioProps) {
@@ -206,8 +211,10 @@ export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioP
               type="file"
               accept=".txt,.md,text/plain"
               className="humanizer-file-input"
+              tabIndex={-1}
+              aria-hidden="true"
               onChange={(event) => {
-                loadFile(event.target.files && event.target.files[0])
+                loadFile(event.target.files?.[0])
                 event.target.value = ""
               }}
             />
@@ -474,13 +481,7 @@ export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioP
                         <button
                           type="button"
                           className="humanizer-tiny-button"
-                          aria-pressed={false}
-                          onClick={() =>
-                            setDecisions((current) => ({
-                              on: toggle(current.on, edit.id),
-                              off: toggle(current.off, edit.id),
-                            }))
-                          }
+                          onClick={() => setDecisions((current) => pickDecision(current, edit.id, "reverted"))}
                         >
                           <Undo2 size={13} aria-hidden="true" /> Revert this
                         </button>
@@ -488,15 +489,18 @@ export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioP
                         <button
                           type="button"
                           className="humanizer-tiny-button"
-                          aria-pressed={state === "suggested" ? false : true}
                           onClick={() =>
-                            setDecisions((current) => ({
-                              on: toggle(current.on, edit.id),
-                              off: toggle(current.off, edit.id),
-                            }))
+                            setDecisions((current) =>
+                              pickDecision(current, edit.id, state === "reverted" ? "pending" : "applied"),
+                            )
                           }
                         >
-                          <Check size={13} aria-hidden="true" /> {state === "reverted" ? "Put it back" : "Apply this"}
+                          {state === "reverted" ? (
+                            <Undo2 size={13} aria-hidden="true" />
+                          ) : (
+                            <Check size={13} aria-hidden="true" />
+                          )}
+                          {state === "reverted" ? "Put it back" : "Apply this"}
                         </button>
                       )}
                     </div>

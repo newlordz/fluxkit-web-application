@@ -9425,6 +9425,281 @@ export const generateQR = (value: string) =>
     errorCorrectionLevel: "M",
   })
 
+export async function decodeQRFromImageData(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+): Promise<string | null> {
+  const mod = await import("jsqr")
+  const jsQR = (mod.default || mod) as any
+  const decoded = jsQR(data, width, height, { inversionAttempts: "attemptBoth" })
+  return decoded?.data ? String(decoded.data) : null
+}
+
+export async function decodeQRFromImage(
+  file: File | Blob,
+): Promise<{ text: string; format: string }> {
+  if (!file) throw new Error("Select an image containing a QR code.")
+
+  if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+    try {
+      const Detector = (window as any).BarcodeDetector
+      const detector = new Detector({ formats: ["qr_code"] })
+      const bitmap = await createImageBitmap(file)
+      try {
+        const codes = await detector.detect(bitmap)
+        if (codes?.[0]?.rawValue) {
+          return { text: String(codes[0].rawValue), format: "qr_code" }
+        }
+      } finally {
+        bitmap.close?.()
+      }
+    } catch {
+      // Fall through to jsQR canvas decoding
+    }
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("Image canvas decoding requires a browser environment.")
+  }
+
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error("Could not load image file."))
+      el.src = url
+    })
+
+    const maxDim = 1600
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || 1, img.naturalHeight || 1))
+    const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale))
+    const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale))
+
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Canvas 2D context unavailable.")
+    ctx.drawImage(img, 0, 0, w, h)
+    const imgData = ctx.getImageData(0, 0, w, h)
+    const text = await decodeQRFromImageData(imgData.data, w, h)
+    if (!text) {
+      throw new Error("No QR code found in this image. Try a clearer, well-lit crop.")
+    }
+    return { text, format: "qr_code" }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+export interface VCardInput {
+  fullName: string
+  organization?: string
+  title?: string
+  phone?: string
+  email?: string
+  website?: string
+  address?: string
+  note?: string
+}
+
+export function buildVCardPayload(input: VCardInput): string {
+  const fn = (input.fullName || "").trim()
+  if (!fn) throw new Error("Enter a full name for the contact card.")
+
+  const parts = fn.split(/\s+/)
+  const first = parts[0] || ""
+  const last = parts.length > 1 ? parts.slice(1).join(" ") : ""
+  const esc = (v: string) => v.replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,")
+
+  const lines = [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `N:${esc(last)};${esc(first)};;;`,
+    `FN:${esc(fn)}`,
+  ]
+  if (input.organization?.trim()) lines.push(`ORG:${esc(input.organization.trim())}`)
+  if (input.title?.trim()) lines.push(`TITLE:${esc(input.title.trim())}`)
+  if (input.phone?.trim()) lines.push(`TEL;TYPE=CELL:${input.phone.trim()}`)
+  if (input.email?.trim()) lines.push(`EMAIL:${input.email.trim()}`)
+  if (input.website?.trim()) {
+    const w = input.website.trim()
+    lines.push(`URL:${/^https?:\/\//i.test(w) ? w : `https://${w}`}`)
+  }
+  if (input.address?.trim()) lines.push(`ADR;TYPE=WORK:;;${esc(input.address.trim())};;;;`)
+  if (input.note?.trim()) lines.push(`NOTE:${esc(input.note.trim())}`)
+  lines.push("END:VCARD")
+  return lines.join("\n")
+}
+
+export async function generateVCardQR(
+  input: VCardInput,
+): Promise<{ payload: string; qrDataUrl: string; result: OutputResult }> {
+  const payload = buildVCardPayload(input)
+  const qrDataUrl = await generateQR(payload)
+  const safeName =
+    input.fullName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "contact"
+  return {
+    payload,
+    qrDataUrl,
+    result: {
+      name: `${safeName}.vcf`,
+      blob: new Blob([payload], { type: "text/vcard;charset=utf-8" }),
+      previewSnippet: payload,
+    },
+  }
+}
+
+export interface EventQRInput {
+  summary: string
+  start: string
+  end?: string
+  location?: string
+  description?: string
+}
+
+function formatIcsDate(value: string, addMinutes = 0): string {
+  const d = new Date(value)
+  if (isNaN(d.getTime())) {
+    throw new Error("Enter a valid start date and time.")
+  }
+  if (addMinutes) d.setMinutes(d.getMinutes() + addMinutes)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}
+
+export function buildIcsEventPayload(input: EventQRInput): string {
+  const summary = (input.summary || "").trim()
+  if (!summary) throw new Error("Enter an event title.")
+  if (!input.start?.trim()) throw new Error("Select a start date and time.")
+
+  const esc = (v: string) =>
+    v.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,")
+
+  const dtStart = formatIcsDate(input.start.trim())
+  const dtEnd = input.end?.trim()
+    ? formatIcsDate(input.end.trim())
+    : formatIcsDate(input.start.trim(), 60)
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Masterfilepro//Event QR//EN",
+    "BEGIN:VEVENT",
+    `SUMMARY:${esc(summary)}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
+  ]
+  if (input.location?.trim()) lines.push(`LOCATION:${esc(input.location.trim())}`)
+  if (input.description?.trim()) lines.push(`DESCRIPTION:${esc(input.description.trim())}`)
+  lines.push("END:VEVENT", "END:VCALENDAR")
+  return lines.join("\n")
+}
+
+export async function generateEventQR(
+  input: EventQRInput,
+): Promise<{ payload: string; qrDataUrl: string; result: OutputResult }> {
+  const payload = buildIcsEventPayload(input)
+  const qrDataUrl = await generateQR(payload)
+  const safeName =
+    input.summary
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "event"
+  return {
+    payload,
+    qrDataUrl,
+    result: {
+      name: `${safeName}.ics`,
+      blob: new Blob([payload], { type: "text/calendar;charset=utf-8" }),
+      previewSnippet: payload,
+    },
+  }
+}
+
+export function parseBatchQRInput(raw: string): Array<{ label: string; payload: string }> {
+  const lines = (raw || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  const items: Array<{ label: string; payload: string }> = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (i === 0 && /^(label|name)\s*,\s*(url|payload|value|text)$/i.test(line)) {
+      continue
+    }
+    const commaIdx = line.indexOf(",")
+    if (commaIdx > 0 && commaIdx < line.length - 1) {
+      const label = line.slice(0, commaIdx).trim().replace(/^"|"$/g, "")
+      const payload = line.slice(commaIdx + 1).trim().replace(/^"|"$/g, "")
+      if (payload) {
+        items.push({ label: label || `qr-${items.length + 1}`, payload })
+        continue
+      }
+    }
+    items.push({ label: `qr-${items.length + 1}`, payload: line })
+  }
+  return items
+}
+
+export async function generateBatchQRs(
+  rawOrItems: string | Array<{ label: string; payload: string }>,
+): Promise<OutputResult> {
+  const items =
+    typeof rawOrItems === "string" ? parseBatchQRInput(rawOrItems) : rawOrItems
+
+  if (!items || items.length === 0) {
+    throw new Error("Enter at least one URL or line (or upload a CSV) to generate QR codes.")
+  }
+  if (items.length > 200) {
+    throw new Error("Maximum 200 QR codes per batch.")
+  }
+
+  const jszipMod = await import("jszip")
+  const JSZip = (jszipMod.default || jszipMod) as any
+  const zip = new JSZip()
+  const usedNames = new Set<string>()
+  const manifestLines = ["filename,label,payload"]
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const dataUrl = await generateQR(item.payload)
+    const base64 = dataUrl.split(",")[1] || ""
+    let safe =
+      item.label
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, "-")
+        .replace(/^-|-$/g, "") || `qr-${i + 1}`
+    if (usedNames.has(safe)) {
+      safe = `${safe}-${i + 1}`
+    }
+    usedNames.add(safe)
+    const fileName = `${safe}.png`
+    zip.file(fileName, base64, { base64: true })
+    manifestLines.push(
+      `"${fileName}","${item.label.replace(/"/g, '""')}","${item.payload.replace(/"/g, '""')}"`,
+    )
+  }
+
+  zip.file("manifest.csv", manifestLines.join("\n"))
+  const zipBytes = await zip.generateAsync({ type: "uint8array" })
+
+  return {
+    name: "qr-batch-codes.zip",
+    blob: new Blob([zipBytes], { type: "application/zip" }),
+    pageCount: items.length,
+    previewSnippet: `Generated ${items.length} QR code PNG${items.length === 1 ? "" : "s"} + manifest.csv`,
+  }
+}
+
 export function download(result: OutputResult) {
   if (!result || !result.blob) return
 

@@ -7,6 +7,7 @@
 @import './document-preview-modal.css';
 @import './merge-loading-modal.css';
 @import './visitor-pass.css';
+@import './humanizer.css';
 
 @theme { --color-brand: var(--accent); }
 :root { font-family: 'DM Sans', sans-serif; color: #F0F4F8; background: #080E1A; font-synthesis: none; --bg: #080E1A; --surface: #0E1726; --surface-hover: #152238; --border: #1E2F4D; --muted: #8294AC; --text: #F0F4F8; --accent: #00C9B7; --accent-ink: #06204D; --accent-text: #5eead4; --accent-hover: #00E5D2; --accent-soft: rgba(0, 201, 183, 0.12); --accent-border: rgba(0, 201, 183, 0.32); --info-ink: #A5B4FC; --ok-ink: #34D399; --danger-ink: #F87171; --warn-ink: #F59E0B; --sidebar: #060A14; --subtle: #0A1324; --accent-rgb: 0,201,183; --brand-navy: #06204D; --brand-teal: var(--accent); color-scheme: dark; }

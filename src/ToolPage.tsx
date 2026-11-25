@@ -6,6 +6,8 @@ import ImageTablePreview from "./ImageTablePreview"
 
 import PassportPhotoStudio from "./PassportPhotoStudio"
 
+import HumanizerStudio from "./HumanizerStudio"
+
 import { isPassportImageFile } from "./passportPhoto"
 
 import {
@@ -97,6 +99,12 @@ import { useNotify } from "./Notifications"
 import {
   download,
   generateQR,
+  decodeQRFromImage,
+  decodeQRFromImageData,
+  generateVCardQR,
+  generateEventQR,
+  generateBatchQRs,
+  parseBatchQRInput,
   mergePDFs,
   mergeWordFiles,
   type MergeWordOptions,
@@ -1282,6 +1290,30 @@ export default function ToolPage({
   const [metaEditSubject, setMetaEditSubject] = useState("")
   const [metaEditKeywords, setMetaEditKeywords] = useState("")
 
+  // QR & Sharing tools state
+  const [vcardWebsite, setVcardWebsite] = useState("")
+  const [vcardAddress, setVcardAddress] = useState("")
+  const [qrCamActive, setQrCamActive] = useState(false)
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null)
+  const qrStreamRef = useRef<MediaStream | null>(null)
+
+  const stopQrCamera = () => {
+    if (qrStreamRef.current) {
+      qrStreamRef.current.getTracks().forEach((t) => t.stop())
+      qrStreamRef.current = null
+    }
+    setQrCamActive(false)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (qrStreamRef.current) {
+        qrStreamRef.current.getTracks().forEach((t) => t.stop())
+        qrStreamRef.current = null
+      }
+    }
+  }, [tool.id])
+
   // Auto-load visual state when PDF changes for organize-pdf, redact-pdf, metadata-pdf
   useEffect(() => {
     const f = files[0]
@@ -2025,7 +2057,7 @@ export default function ToolPage({
       return ".xlsx,.xls,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
     }
 
-    if (id === "jpg-to-pdf") {
+    if (id === "jpg-to-pdf" || id === "qr-scanner") {
       return ".jpg,.jpeg,.png,.webp,image/*"
     }
 
@@ -2607,6 +2639,40 @@ export default function ToolPage({
         const angle = parseInt(optionA || "90", 10) || 90
 
         setResult(await rotatePDF(files[0], angle))
+      } else if (tool.id === "qr-scanner") {
+        if (files.length < 1)
+          throw new Error("Upload a QR code image (or use the camera) to scan.")
+
+        const decoded = await decodeQRFromImage(files[0])
+        setTextOutput(decoded.text)
+        setRawQrPayload(decoded.text)
+        notify("QR code decoded!", "success")
+      } else if (tool.id === "qr-vcard") {
+        const res = await generateVCardQR({
+          fullName: title,
+          organization: optionA,
+          title: optionB,
+          phone: value,
+          email: extra,
+          website: vcardWebsite,
+          address: vcardAddress,
+        })
+        setRawQrPayload(res.payload)
+        setQr(res.qrDataUrl)
+        setResult(res.result)
+      } else if (tool.id === "qr-event") {
+        const res = await generateEventQR({
+          summary: title,
+          start: optionA,
+          end: optionB,
+          location: value,
+          description: extra,
+        })
+        setRawQrPayload(res.payload)
+        setQr(res.qrDataUrl)
+        setResult(res.result)
+      } else if (tool.id === "qr-batch") {
+        setResult(await generateBatchQRs(value))
       } else if (tool.id === "text-pdf") {
         if (!value.trim())
           throw new Error("Add some text to create your document.")
@@ -4088,6 +4154,8 @@ export default function ToolPage({
           </div>
           <PassportPhotoStudio file={files[0]} onComplete={onComplete} />
         </div>
+      ) : tool.id === "humanizer" ? (
+        <HumanizerStudio toolId={tool.id} onComplete={onComplete} />
       ) : tool.id === "meetings" ? (
         <div
           className="tool-layout"
@@ -7903,6 +7971,168 @@ export default function ToolPage({
                   style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12.5px" }}
                 />
               </>
+            ) : tool.id === "qr-vcard" ? (
+              /* 3c. vCard Business Card QR */
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <label>
+                  Full Name *
+                  <input
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Jordan Taylor"
+                    autoComplete="off"
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <label>
+                    Company / Organization
+                    <input
+                      value={optionA}
+                      onChange={(e) => setOptionA(e.target.value)}
+                      placeholder="e.g. Acme Studio"
+                    />
+                  </label>
+                  <label>
+                    Job Title
+                    <input
+                      value={optionB}
+                      onChange={(e) => setOptionB(e.target.value)}
+                      placeholder="e.g. Product Lead"
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <label>
+                    Phone Number
+                    <input
+                      value={value}
+                      onChange={(e) => setValue(e.target.value)}
+                      placeholder="+1 555 234 5678"
+                    />
+                  </label>
+                  <label>
+                    Email Address
+                    <input
+                      type="email"
+                      value={extra}
+                      onChange={(e) => setExtra(e.target.value)}
+                      placeholder="jordan@acme.co"
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <label>
+                    Website
+                    <input
+                      value={vcardWebsite}
+                      onChange={(e) => setVcardWebsite(e.target.value)}
+                      placeholder="https://acme.co"
+                    />
+                  </label>
+                  <label>
+                    Address
+                    <input
+                      value={vcardAddress}
+                      onChange={(e) => setVcardAddress(e.target.value)}
+                      placeholder="City, Country"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : tool.id === "qr-event" ? (
+              /* 3d. Event & Calendar (ICS) QR */
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <label>
+                  Event Title *
+                  <input
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Annual Product Launch"
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <label>
+                    Start Date &amp; Time *
+                    <input
+                      required
+                      type="datetime-local"
+                      value={optionA}
+                      onChange={(e) => setOptionA(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    End Date &amp; Time (optional)
+                    <input
+                      type="datetime-local"
+                      value={optionB}
+                      onChange={(e) => setOptionB(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <label>
+                  Location / Meeting Link
+                  <input
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="e.g. Hall B or https://meet.example.com"
+                  />
+                </label>
+                <label>
+                  Notes / Description
+                  <textarea
+                    rows={3}
+                    value={extra}
+                    onChange={(e) => setExtra(e.target.value)}
+                    placeholder="Agenda, dress code, or check-in instructions..."
+                  />
+                </label>
+              </div>
+            ) : tool.id === "qr-batch" ? (
+              /* 3e. Batch QR Generator */
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    URLs or CSV Rows ({parseBatchQRInput(value).length} items)
+                  </span>
+                  <label
+                    className="text-button"
+                    style={{
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      padding: "4px 10px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    Upload .csv / .txt
+                    <input
+                      type="file"
+                      accept=".csv,.txt,text/csv,text/plain"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        setValue(await f.text())
+                        notify(`Loaded ${f.name}`, "success")
+                        e.target.value = ""
+                      }}
+                    />
+                  </label>
+                </div>
+                <textarea
+                  required
+                  rows={9}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder={"One per line, or Label,Payload CSV:\nTable-1,https://example.com/menu/1\nTable-2,https://example.com/menu/2"}
+                  style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12.5px" }}
+                />
+                <small style={{ color: "var(--muted)", fontSize: "11.5px" }}>
+                  Generates up to 200 PNG QR codes packaged with a manifest.csv inside a ZIP archive.
+                </small>
+              </div>
             ) : (
               /* 4. File Tools Dropzone & Options */
 
@@ -9340,6 +9570,84 @@ export default function ToolPage({
                   </p>
                 )}
 
+                {tool.id === "qr-scanner" && (
+                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={async () => {
+                        if (qrCamActive) {
+                          stopQrCamera()
+                          return
+                        }
+                        try {
+                          const stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: "environment" },
+                          })
+                          qrStreamRef.current = stream
+                          setQrCamActive(true)
+                          setTimeout(() => {
+                            if (qrVideoRef.current) {
+                              qrVideoRef.current.srcObject = stream
+                              qrVideoRef.current.play().catch(() => {})
+                            }
+                          }, 50)
+                          const scanLoop = async () => {
+                            if (!qrStreamRef.current || !qrVideoRef.current) return
+                            const vid = qrVideoRef.current
+                            if (vid.readyState >= 2 && vid.videoWidth > 0) {
+                              const c = document.createElement("canvas")
+                              c.width = vid.videoWidth
+                              c.height = vid.videoHeight
+                              const ctx = c.getContext("2d")
+                              if (ctx) {
+                                ctx.drawImage(vid, 0, 0, c.width, c.height)
+                                const imgData = ctx.getImageData(0, 0, c.width, c.height)
+                                const found = await decodeQRFromImageData(
+                                  imgData.data,
+                                  c.width,
+                                  c.height,
+                                ).catch(() => null)
+                                if (found) {
+                                  setTextOutput(found)
+                                  setRawQrPayload(found)
+                                  setStatus("completed")
+                                  stopQrCamera()
+                                  notify("QR code scanned from camera!", "success")
+                                  return
+                                }
+                              }
+                            }
+                            if (qrStreamRef.current) {
+                              setTimeout(scanLoop, 300)
+                            }
+                          }
+                          setTimeout(scanLoop, 400)
+                        } catch {
+                          notify("Camera permission denied or unavailable. Upload a QR image instead.", "error")
+                        }
+                      }}
+                    >
+                      {qrCamActive ? "Stop Camera" : "Scan with Camera"}
+                    </button>
+                    {qrCamActive && (
+                      <video
+                        ref={qrVideoRef}
+                        muted
+                        playsInline
+                        style={{
+                          width: "100%",
+                          maxHeight: "240px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          background: "#000",
+                          objectFit: "cover",
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {/* Milestone 3: Conversion Tool Options Panels */}
                 {tool.id === "pdf-to-word" && (
                   <div
@@ -10597,6 +10905,14 @@ export default function ToolPage({
                                                       : "Resize PDF Pages"
                                                     : tool.id === "flatten-pdf"
                                                       ? "Flatten PDF"
+                                                      : tool.id === "qr-scanner"
+                                                        ? "Decode QR Code"
+                                                        : tool.id === "qr-vcard"
+                                                          ? "Generate vCard QR"
+                                                          : tool.id === "qr-event"
+                                                            ? "Generate Event QR"
+                                                            : tool.id === "qr-batch"
+                                                              ? "Generate Batch QR ZIP"
                                         : tool.id === "pdf-to-word"
                                           ? "Convert to Word"
                                           : tool.id === "pdf-to-ppt"
@@ -11473,6 +11789,17 @@ export default function ToolPage({
                   >
                     <Download size={16} /> Download
                   </button>
+                  {tool.id === "qr-scanner" && /^https?:\/\//i.test(textOutput.trim()) && (
+                    <a
+                      href={textOutput.trim()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="primary"
+                      style={{ flex: 1, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
+                    >
+                      <ExternalLink size={16} /> Open Link
+                    </a>
+                  )}
                 </div>
               </div>
             ) : qr ? (
