@@ -11834,6 +11834,15 @@ export default function ToolPage({
           mode={previewModalMode}
           files={files}
           onClose={() => setShowPreviewModal(false)}
+          onFilesChange={(newFiles) => {
+            setFiles(newFiles)
+            if (newFiles.length === 0) {
+              setShowPreviewModal(false)
+            }
+          }}
+          onFileRemove={(removedFile) => {
+            notify(`"${removedFile.name}" removed.`)
+          }}
           onConfirm={async (modalResult) => {
             if (modalResult.orderedFiles) setFiles(modalResult.orderedFiles)
 

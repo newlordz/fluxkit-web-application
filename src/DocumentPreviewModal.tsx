@@ -52,6 +52,10 @@ interface DocumentPreviewModalProps {
   }) => void
 
   onClose: () => void
+
+  onFilesChange?: (files: File[]) => void
+
+  onFileRemove?: (file: File, index: number, remainingFiles: File[]) => void
 }
 
 export interface DocumentPreviewData {
@@ -598,12 +602,14 @@ function FilePreviewCard({
         >
           <GripVertical size={16} style={{ pointerEvents: "none" }} />
         </div>
-        <div className="dpm-file-preview-card__actions">
+        <div className="dpm-file-preview-card__actions" onMouseDown={(e) => e.stopPropagation()}>
           <button
             type="button"
             className="dpm-icon-btn"
             disabled={index === 0}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               onMove(index, index - 1)
             }}
@@ -616,7 +622,9 @@ function FilePreviewCard({
             type="button"
             className="dpm-icon-btn"
             disabled={index === total - 1}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               onMove(index, index + 1)
             }}
@@ -628,7 +636,9 @@ function FilePreviewCard({
           <button
             type="button"
             className="dpm-icon-btn dpm-icon-btn--danger"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               onRemove(index)
             }}
@@ -949,7 +959,12 @@ function FileCard({
         type="button"
         className="dpm-file-card__remove"
         aria-label={`Remove ${file.name}`}
-        onClick={() => onRemove(index)}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onRemove(index)
+        }}
       >
         <Trash2 size={14} />
       </button>
@@ -1238,13 +1253,17 @@ export default function DocumentPreviewModal({
   onConfirm,
 
   onClose,
+
+  onFilesChange,
+
+  onFileRemove,
 }: DocumentPreviewModalProps) {
   // File reordering & preview state
 
   const [orderedFiles, setOrderedFiles] = useState<File[]>([...files])
 
   useEffect(() => {
-    if (files && files.length > 0) {
+    if (files) {
       setOrderedFiles([...files])
     }
   }, [files])
@@ -1539,8 +1558,12 @@ export default function DocumentPreviewModal({
 
     setVisible(false)
 
+    if (mode === "merge" || mode === "arrange") {
+      onConfirm({ orderedFiles })
+    }
+
     setTimeout(onClose, 260)
-  }, [onClose, inspectModal])
+  }, [onClose, inspectModal, mode, onConfirm, orderedFiles])
 
   // File Move Handler
 
@@ -1657,10 +1680,21 @@ export default function DocumentPreviewModal({
   }
 
   const handleFileRemove = (i: number) => {
-    setOrderedFiles((prev) => prev.filter((_, idx) => idx !== i))
+    const fileToRemove = orderedFiles[i]
+    const updated = orderedFiles.filter((_, idx) => idx !== i)
+    setOrderedFiles(updated)
 
     if (inspectDocModal && inspectDocModal.index === i) {
       setInspectDocModal(null)
+    }
+
+    onFilesChange?.(updated)
+    if (fileToRemove) {
+      onFileRemove?.(fileToRemove, i, updated)
+    }
+
+    if (updated.length === 0) {
+      handleClose()
     }
   }
 

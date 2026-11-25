@@ -1203,6 +1203,8 @@
   display: flex;
   align-items: center;
   gap: 3px;
+  position: relative;
+  z-index: 5;
 }
 
 .dpm-icon-btn {
@@ -1217,6 +1219,10 @@
   cursor: pointer;
   transition: all 0.15s ease;
   padding: 0;
+}
+
+.dpm-icon-btn svg {
+  pointer-events: none;
 }
 
 .dpm-icon-btn:hover:not(:disabled) {

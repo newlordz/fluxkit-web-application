@@ -115,3 +115,13 @@ test("Word Documents Preview - DocumentPreviewModal extracts clean docx paragrap
   assert.ok(dpmContent.includes("word/document.xml"), "DocumentPreviewModal must parse word/document.xml")
   assert.ok(dpmContent.includes("PK\\x03\\x04"), "DocumentPreviewModal must guard against raw zip binary string leakage")
 })
+
+test("Word Documents Arrange Modal - Trash button immediately propagates deletion and prevents DnD drag lock", () => {
+  const dpmContent = fs.readFileSync(path.join(__dirname, "../src/DocumentPreviewModal.tsx"), "utf8")
+  const toolPageContent = fs.readFileSync(path.join(__dirname, "../src/ToolPage.tsx"), "utf8")
+  assert.ok(dpmContent.includes("onFilesChange"), "DocumentPreviewModal must support onFilesChange")
+  assert.ok(dpmContent.includes("onFileRemove"), "DocumentPreviewModal must support onFileRemove")
+  assert.ok(toolPageContent.includes("onFilesChange"), "ToolPage must wire onFilesChange to setFiles")
+  assert.ok(dpmContent.includes("dpm-file-preview-card__actions"), "Preview card must render actions container")
+  assert.ok(dpmContent.includes("onMouseDown={(e) => e.stopPropagation()}"), "Buttons must stop mousedown propagation from draggable card")
+})
