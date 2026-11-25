@@ -11,6 +11,91 @@ export type ApiRequest = IncomingMessage & { query?: Record<string, string>; bod
 // Postgres via the Supavisor transaction pooler: serverless instances open many
 // short-lived connections, so the pool stays tiny and queries are parameterised.
 let pool: Pool | null = null
+let fallbackPool: Pool | null = null
+let fallbackUntil = 0
+let wasInFallback = false
+const FALLBACK_TTL_MS = 60_000
+
+export function isNeonHost(connectionString: string): boolean {
+  try {
+    return new URL(connectionString).hostname.endsWith(".neon.tech")
+  } catch {
+    return false
+  }
+}
+
+export async function queryNeonHttp<T = Record<string, any>>(
+  connectionString: string,
+  text: string,
+  params: any[] = [],
+): Promise<T[]> {
+  const host = new URL(connectionString).hostname
+  const res = await fetch(`https://${host}/sql`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Neon-Connection-String": connectionString,
+    },
+    body: JSON.stringify({ query: text, params }),
+    signal: AbortSignal.timeout(8000),
+  })
+  const data: any = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.message || `Neon HTTP SQL error (${res.status})`)
+  }
+  return (Array.isArray(data?.rows) ? data.rows : []) as T[]
+}
+
+function getFallbackPool(connectionString: string): Pool {
+  if (!fallbackPool) {
+    fallbackPool = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+      max: 2,
+      idleTimeoutMillis: 8000,
+      connectionTimeoutMillis: 5000,
+    })
+    fallbackPool.on("error", () => {})
+  }
+  return fallbackPool
+}
+
+async function runOnFallbackQuery<T = Record<string, any>>(
+  fallbackUrl: string,
+  text: string,
+  params: any[] = [],
+): Promise<T[]> {
+  if (isNeonHost(fallbackUrl)) {
+    return queryNeonHttp<T>(fallbackUrl, text, params)
+  }
+  const res = await getFallbackPool(fallbackUrl).query(text, params)
+  return res.rows as T[]
+}
+
+async function runOnFallbackTransact<T>(
+  fallbackUrl: string,
+  fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>,
+): Promise<T> {
+  if (isNeonHost(fallbackUrl)) {
+    return fn((text, params = []) => queryNeonHttp<T>(fallbackUrl, text, params))
+  }
+  const client = await getFallbackPool(fallbackUrl).connect()
+  try {
+    await client.query("begin")
+    const run = async (text: string, params: any[] = []) => {
+      const r = await client.query(text, params)
+      return r.rows
+    }
+    const out = await fn(run)
+    await client.query("commit")
+    return out
+  } catch (err) {
+    await client.query("rollback").catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
 
 function createPool(): Pool {
   const connectionString = process.env.SUPABASE_DB_URL
@@ -69,15 +154,65 @@ async function withStaleRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+function isWriteQuery(text: string): boolean {
+  return /^\s*(insert|update|delete|with\b[\s\S]*\b(insert|update|delete))\b/i.test(text)
+}
+
+function triggerBackgroundSync() {
+  import("./sync.ts")
+    .then(({ syncDatabases }) => syncDatabases())
+    .catch(() => {})
+}
+
 export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<T[]> {
-  return withStaleRetry(async () => {
-    const res = await getPool().query(text, params)
-    return res.rows as T[]
-  })
+  const fallbackUrl = process.env.FALLBACK_DB_URL
+  if (fallbackUrl && Date.now() < fallbackUntil) {
+    return runOnFallbackQuery<T>(fallbackUrl, text, params)
+  }
+  try {
+    const rows = await withStaleRetry(async () => {
+      const res = await getPool().query(text, params)
+      return res.rows as T[]
+    })
+    if (fallbackUrl && wasInFallback) {
+      wasInFallback = false
+      triggerBackgroundSync()
+    } else if (fallbackUrl && isWriteQuery(text)) {
+      void runOnFallbackQuery(fallbackUrl, text, params).catch(() => {})
+    }
+    return rows
+  } catch (err) {
+    if (fallbackUrl && isStaleConnection(err)) {
+      const rows = await runOnFallbackQuery<T>(fallbackUrl, text, params)
+      fallbackUntil = Date.now() + FALLBACK_TTL_MS
+      wasInFallback = true
+      return rows
+    }
+    throw err
+  }
 }
 
 export async function transact<T>(fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>): Promise<T> {
-  return withStaleRetry(() => runTransaction(fn))
+  const fallbackUrl = process.env.FALLBACK_DB_URL
+  if (fallbackUrl && Date.now() < fallbackUntil) {
+    return runOnFallbackTransact<T>(fallbackUrl, fn)
+  }
+  try {
+    const out = await withStaleRetry(() => runTransaction(fn))
+    if (fallbackUrl && wasInFallback) {
+      wasInFallback = false
+      triggerBackgroundSync()
+    }
+    return out
+  } catch (err) {
+    if (fallbackUrl && isStaleConnection(err)) {
+      const out = await runOnFallbackTransact<T>(fallbackUrl, fn)
+      fallbackUntil = Date.now() + FALLBACK_TTL_MS
+      wasInFallback = true
+      return out
+    }
+    throw err
+  }
 }
 
 async function runTransaction<T>(

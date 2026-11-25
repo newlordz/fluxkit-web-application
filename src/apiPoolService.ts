@@ -795,9 +795,15 @@ export async function testApiHealth(
         headers: { ...authHeaders(), "Content-Type": "application/json" },
 
         body: JSON.stringify({
+          id: api.id,
+
           endpoint: api.endpoint,
 
           provider: api.provider,
+
+          apiKey: api.apiKey,
+
+          clientSecret: api.clientSecret,
         }),
       })
 

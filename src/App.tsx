@@ -2057,10 +2057,19 @@ export default function App() {
 
                             if (
                               adminNewPassword &&
-                              adminNewPassword.length < 8
+                              !adminCurrentPassword
                             ) {
                               throw new Error(
-                                "New password must be at least 8 characters long.",
+                                "Please enter your current password to set a new password.",
+                              )
+                            }
+
+                            if (
+                              adminNewPassword &&
+                              adminNewPassword.length < 12
+                            ) {
+                              throw new Error(
+                                "New password must be at least 12 characters long.",
                               )
                             }
 
@@ -2201,6 +2210,37 @@ export default function App() {
                               }}
                             />
                           </div>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              fontSize: "11.5px",
+                              color: "var(--muted)",
+                              display: "block",
+                              marginBottom: "4px",
+                            }}
+                          >
+                            Current Password (required when changing password)
+                          </label>
+                          <input
+                            aria-label="Current Password"
+                            autoComplete="off"
+                            type={adminShowPass ? "text" : "password"}
+                            value={adminCurrentPassword}
+                            onChange={(e) =>
+                              setAdminCurrentPassword(e.target.value)
+                            }
+                            style={{
+                              width: "100%",
+                              padding: "8px 10px",
+                              fontSize: "12.5px",
+                              borderRadius: "6px",
+                              background: "var(--bg)",
+                              border: "1px solid var(--border)",
+                              color: "var(--text)",
+                            }}
+                          />
                         </div>
 
                         <div

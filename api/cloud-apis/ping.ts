@@ -59,7 +59,12 @@ export function isPrivateAddress(input: string): boolean {
   return false
 }
 
-async function probe(url: string, method: string) {
+async function probe(
+  url: string,
+  method: string,
+  headers: Record<string, string> = {},
+  body?: string,
+) {
   const controller = new AbortController()
 
   const timer = setTimeout(() => controller.abort(), 5000)
@@ -67,7 +72,13 @@ async function probe(url: string, method: string) {
   try {
     // Redirects are never followed: a public host answering 302 to an internal
     // address would otherwise be fetched by this server on its owner's advice.
-    const res = await fetch(url, { method, redirect: "manual", signal: controller.signal })
+    const res = await fetch(url, {
+      method,
+      headers,
+      body,
+      redirect: "manual",
+      signal: controller.signal,
+    })
 
     return { status: res.status, timedOut: false, error: "" }
   } catch (err: any) {
@@ -79,6 +90,94 @@ async function probe(url: string, method: string) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+interface ProviderSpec {
+  label: string
+  hostSuffix: string
+  needsClientSecret?: boolean
+  buildRequest: (
+    parsedUrl: URL,
+    apiKey: string,
+    clientSecret: string,
+  ) => { url: string; method: string; headers?: Record<string, string>; body?: string }
+  isAccepted: (status: number, hasKey: boolean) => boolean
+}
+
+const PROVIDER_SPECS: Record<string, ProviderSpec> = {
+  google: {
+    label: "Google AI Studio",
+    hostSuffix: "generativelanguage.googleapis.com",
+    buildRequest: (parsedUrl, apiKey) => {
+      const basePath = parsedUrl.pathname.replace(/\/+$/, "") || "/v1beta"
+      return {
+        url: `${parsedUrl.origin}${basePath}/models`,
+        method: "GET",
+        headers: apiKey ? { "x-goog-api-key": apiKey } : undefined,
+      }
+    },
+    isAccepted: (status) => status >= 200 && status < 400,
+  },
+  groq: {
+    label: "Groq Cloud",
+    hostSuffix: "api.groq.com",
+    buildRequest: (parsedUrl, apiKey) => ({
+      url: `${parsedUrl.origin}/openai/v1/models`,
+      method: "GET",
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+    }),
+    isAccepted: (status) => status >= 200 && status < 400,
+  },
+  ilovepdf: {
+    label: "iLovePDF",
+    hostSuffix: "api.ilovepdf.com",
+    buildRequest: (parsedUrl, apiKey) => ({
+      url: `${parsedUrl.origin}/v1/auth`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: apiKey ? JSON.stringify({ public_key: apiKey }) : undefined,
+    }),
+    isAccepted: (status) => status >= 200 && status < 400,
+  },
+  tinypng: {
+    label: "TinyPNG",
+    hostSuffix: "api.tinify.com",
+    buildRequest: (parsedUrl, apiKey) => ({
+      url: `${parsedUrl.origin}/shrink`,
+      method: "POST",
+      headers: apiKey
+        ? { Authorization: `Basic ${Buffer.from(`api:${apiKey}`).toString("base64")}` }
+        : undefined,
+    }),
+    // TinyPNG returns 400 ("Input is empty") only after Basic auth succeeds; 401 means bad/missing key.
+    isAccepted: (status, hasKey) => hasKey && (status === 400 || (status >= 200 && status < 400)),
+  },
+  ocrspace: {
+    label: "OCR.space",
+    hostSuffix: "api.ocr.space",
+    buildRequest: (parsedUrl, apiKey) => ({
+      url: `${parsedUrl.origin}/parse/image`,
+      method: "POST",
+      headers: apiKey ? { apikey: apiKey } : undefined,
+    }),
+    // OCR.space returns 403 for invalid apikey, and 200/400 when apikey passes gateway check.
+    isAccepted: (status, hasKey) => hasKey && (status === 400 || (status >= 200 && status < 400)),
+  },
+  adobe: {
+    label: "Adobe PDF Services",
+    hostSuffix: "pdf-services.adobe.io",
+    needsClientSecret: true,
+    buildRequest: (parsedUrl, apiKey, clientSecret) => ({
+      url: `${parsedUrl.origin}/token`,
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:
+        apiKey && clientSecret
+          ? new URLSearchParams({ client_id: apiKey, client_secret: clientSecret }).toString()
+          : undefined,
+    }),
+    isAccepted: (status) => status >= 200 && status < 400,
+  },
 }
 
 export default async function handler(req: any, res: any) {
@@ -181,10 +280,44 @@ export default async function handler(req: any, res: any) {
 
     const start = Date.now()
 
-    let verdict = await probe(parsedUrl.toString(), "HEAD")
+    let verdict: { status: number; timedOut: boolean; error: string }
+    const spec =
+      typeof body.provider === "string" &&
+      PROVIDER_SPECS[body.provider] &&
+      hostname.endsWith(PROVIDER_SPECS[body.provider].hostSuffix)
+        ? PROVIDER_SPECS[body.provider]
+        : null
 
-    if (verdict.status === 0 && !verdict.timedOut) {
-      verdict = await probe(parsedUrl.toString(), "GET")
+    let hasCredentials = false
+
+    if (spec) {
+      const submittedKey = typeof body.apiKey === "string" ? body.apiKey.trim() : ""
+      const submittedSecret = typeof body.clientSecret === "string" ? body.clientSecret.trim() : ""
+      let apiKey = submittedKey && !submittedKey.includes("••••") ? submittedKey : ""
+      let clientSecret = submittedSecret && !submittedSecret.includes("••••") ? submittedSecret : ""
+
+      if ((!apiKey || (spec.needsClientSecret && !clientSecret)) && typeof body.id === "string" && body.id.trim()) {
+        const rows = await import("../../server/_lib/db.ts")
+          .then(({ query }) =>
+            query<{ api_key_secret: string | null; client_secret: string | null }>(
+              `select api_key_secret, client_secret from api_keys where id = $1 limit 1`,
+              [body.id.trim()],
+            ),
+          )
+          .catch(() => [])
+        if (!apiKey) apiKey = rows[0]?.api_key_secret || ""
+        if (!clientSecret) clientSecret = rows[0]?.client_secret || ""
+      }
+
+      hasCredentials = spec.needsClientSecret ? !!(apiKey && clientSecret) : !!apiKey
+      const reqSpec = spec.buildRequest(parsedUrl, apiKey, clientSecret)
+      verdict = await probe(reqSpec.url, reqSpec.method, reqSpec.headers, reqSpec.body)
+    } else {
+      verdict = await probe(parsedUrl.toString(), "HEAD")
+
+      if (verdict.status === 0 && !verdict.timedOut) {
+        verdict = await probe(parsedUrl.toString(), "GET")
+      }
     }
 
     const latencyMs = Math.max(1, Date.now() - start)
@@ -199,15 +332,18 @@ export default async function handler(req: any, res: any) {
       return
     }
 
-    const accepted = verdict.status >= 200 && verdict.status < 400
+    const accepted = spec ? spec.isAccepted(verdict.status, hasCredentials) : verdict.status >= 200 && verdict.status < 400
+    const failureMessage = spec
+      ? hasCredentials
+        ? `${spec.label} rejected the API credentials (HTTP ${verdict.status}, ${latencyMs}ms).`
+        : `${spec.label} endpoint is reachable, but API credentials are required (HTTP ${verdict.status}, ${latencyMs}ms).`
+      : `Reached the host, but it returned HTTP ${verdict.status} (${latencyMs}ms).`
 
     send(200, {
       ok: accepted,
       latencyMs,
       httpStatus: verdict.status,
-      message: accepted
-        ? `Connected & Ready (${latencyMs}ms)`
-        : `Reached the host, but it returned HTTP ${verdict.status} (${latencyMs}ms).`,
+      message: accepted ? `Connected & Ready (${latencyMs}ms)` : failureMessage,
     })
   } catch (err: any) {
     send(500, { ok: false, error: err?.message || "Failed to ping cloud endpoint." })

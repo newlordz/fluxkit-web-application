@@ -301,6 +301,7 @@ export default function AdminPanel({
     getCloudApis(),
   )
   const [testingApiId, setTestingApiId] = useState<string | null>(null)
+  const [savingApiId, setSavingApiId] = useState<string | null>(null)
   const [apiHealthResults, setApiHealthResults] =
     useState<Record<string, ApiHealthResult>>({})
   const [showApiSecrets, setShowApiSecrets] = useState<Record<string, boolean>>(
@@ -388,6 +389,7 @@ export default function AdminPanel({
   const [adminEmailInput, setAdminEmailInput] = useState(
     () => getAdminConfig().email,
   )
+  const [adminCurrentPassInput, setAdminCurrentPassInput] = useState("")
   const [adminPassInput, setAdminPassInput] = useState("")
   const [adminConfirmPassInput, setAdminConfirmPassInput] = useState("")
   const [adminShowPassText, setAdminShowPassText] = useState(false)
@@ -7197,6 +7199,7 @@ export default function AdminPanel({
                   const isFirst = index === 0
                   const isLast = index === filteredList.length - 1
                   const isTesting = testingApiId === api.id
+                  const isSaving = savingApiId === api.id
                   const health = apiHealthResults[api.id]
                   const showSecret = !!showApiSecrets[api.id]
                   const isEditing = editingApiId === api.id
@@ -7798,6 +7801,7 @@ export default function AdminPanel({
                               <button
                                 type="button"
                                 className="primary"
+                                disabled={isSaving}
                                 onClick={async () => {
                                   const updated = cloudApis.map((a) => {
                                     if (a.id === api.id) {
@@ -7813,16 +7817,21 @@ export default function AdminPanel({
                                     return a
                                   })
                                   setCloudApis(updated)
-                                  const saveRes = await saveCloudApis(updated)
-                                  setEditingApiId(null)
-                                  if (saveRes.syncedToServer) {
-                                    showToast(
-                                      `${api.name} configuration saved to server database & this device.`,
-                                    )
-                                  } else {
-                                    showToast(
-                                      `${api.name} configuration saved on this device.`,
-                                    )
+                                  setSavingApiId(api.id)
+                                  try {
+                                    const saveRes = await saveCloudApis(updated)
+                                    setEditingApiId(null)
+                                    if (saveRes.syncedToServer) {
+                                      showToast(
+                                        `${api.name} configuration saved to server database & this device.`,
+                                      )
+                                    } else {
+                                      showToast(
+                                        `${api.name} configuration saved on this device.`,
+                                      )
+                                    }
+                                  } finally {
+                                    setSavingApiId(null)
                                   }
                                 }}
                                 style={{
@@ -7832,9 +7841,11 @@ export default function AdminPanel({
                                   display: "inline-flex",
                                   alignItems: "center",
                                   gap: "4px",
+                                  opacity: isSaving ? 0.7 : 1,
+                                  cursor: isSaving ? "wait" : "pointer",
                                 }}
                               >
-                                <Save size={11} /> Save
+                                <Save size={11} /> {isSaving ? "Saving..." : "Save"}
                               </button>
                               <button
                                 type="button"
@@ -8316,15 +8327,21 @@ export default function AdminPanel({
                       "New password and confirmation do not match.",
                     )
                   }
-                  if (adminPassInput && adminPassInput.length < 8) {
+                  if (adminPassInput && !adminCurrentPassInput) {
                     throw new Error(
-                      "New password must be at least 8 characters long.",
+                      "Please enter your current password to set a new password.",
+                    )
+                  }
+                  if (adminPassInput && adminPassInput.length < 12) {
+                    throw new Error(
+                      "New password must be at least 12 characters long.",
                     )
                   }
 
                   const res = await updateAdminSettings({
                     newName: adminNameInput,
                     newEmail: adminEmailInput,
+                    currentPassword: adminCurrentPassInput || undefined,
                     newPassword: adminPassInput || undefined,
                     overrideAuthCheck: true,
                   })
@@ -8332,6 +8349,7 @@ export default function AdminPanel({
                   setAdminConfig(getAdminConfig())
                   setAdminSaveStatus({ type: "success", msg: res.message })
                   showToast(res.message)
+                  setAdminCurrentPassInput("")
                   setAdminPassInput("")
                   setAdminConfirmPassInput("")
                 } catch (err: any) {
@@ -8459,6 +8477,35 @@ export default function AdminPanel({
                     }}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--muted)",
+                    display: "block",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Current Password (required when changing password)
+                </label>
+                <input
+                  aria-label="Current Password"
+                  autoComplete="off"
+                  type={adminShowPassText ? "text" : "password"}
+                  value={adminCurrentPassInput}
+                  onChange={(e) => setAdminCurrentPassInput(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    fontSize: "13px",
+                    borderRadius: "6px",
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                  }}
+                />
               </div>
 
               <div

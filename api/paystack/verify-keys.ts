@@ -32,10 +32,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const persist = async (status: "success" | "failed", message: string) => {
       await query(
-        `update payment_gateways
-            set test_status = $2, test_message = $3, last_tested_at = now(), updated_at = now(),
-                secret_key = coalesce($4, secret_key), public_key = coalesce($5, public_key)
-          where id = 'paystack'`,
+        `insert into payment_gateways
+            (id, name, test_status, test_message, last_tested_at, updated_at, secret_key, public_key)
+          values ('paystack', 'Paystack', $1, $2, now(), now(), $3, $4)
+          on conflict (id) do update set
+            test_status = excluded.test_status,
+            test_message = excluded.test_message,
+            last_tested_at = now(),
+            updated_at = now(),
+            secret_key = coalesce(excluded.secret_key, payment_gateways.secret_key),
+            public_key = coalesce(excluded.public_key, payment_gateways.public_key)`,
         [
           status,
           message,

@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_DB_URL",
     "SUPABASE_DB_URL_DIRECT",
+    "FALLBACK_DB_URL",
   ]) {
     if (localEnv[key] && !process.env[key]) process.env[key] = localEnv[key]
   }

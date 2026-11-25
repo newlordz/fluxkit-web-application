@@ -212,4 +212,23 @@ test("Suite: server database pool resilience", async (t) => {
       process.env.SUPABASE_DB_URL = saved
     }
   })
+
+  await t.test("P.8 falls back to FALLBACK_DB_URL when primary stays unreachable", async () => {
+    const saved = process.env.FALLBACK_DB_URL
+    process.env.FALLBACK_DB_URL = "postgres://fixture@fallback.example:5432/fluxkit"
+    try {
+      const state = freshState({ staleFailures: 2 })
+      const db = loadDbModule(state)
+
+      const rows = await db.query("select 42")
+      assert.equal(rows[0].echo, "select 42")
+      assert.equal(
+        state.pools[state.pools.length - 1].config.connectionString,
+        process.env.FALLBACK_DB_URL,
+      )
+    } finally {
+      if (saved === undefined) delete process.env.FALLBACK_DB_URL
+      else process.env.FALLBACK_DB_URL = saved
+    }
+  })
 })
