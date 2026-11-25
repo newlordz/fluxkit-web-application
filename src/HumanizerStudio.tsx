@@ -111,16 +111,53 @@ export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioP
     }, 16)
   }
 
-  const loadFile = (file: File | undefined) => {
+  const loadFile = async (file: File | undefined) => {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : ""
+    try {
+      if (/\.docx$/i.test(file.name)) {
+        const jszipMod = await import("jszip")
+        const JSZip = (jszipMod.default || jszipMod) as any
+        const zip = await JSZip.loadAsync(await file.arrayBuffer())
+        const docXmlFile = zip.file("word/document.xml")
+        if (!docXmlFile) {
+          setError("Could not find document text inside this .docx file.")
+          return
+        }
+        const xml = await docXmlFile.async("text")
+        const pMatches = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi) || []
+        const decode = (s: string) =>
+          s
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+        const paras: string[] = []
+        for (const pXml of pMatches) {
+          const tMatches = pXml.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || []
+          const text = decode(tMatches.map((t: string) => t.replace(/<[^>]+>/g, "")).join("")).trim()
+          if (text) paras.push(text)
+        }
+        const extracted = paras.join("\n\n")
+        if (!extracted) {
+          setError("No readable text found inside this .docx file.")
+          return
+        }
+        setSource(extracted.slice(0, HUMANIZER_LIMITS.maxChars))
+        setError("")
+        return
+      }
+
+      const text = await file.text()
+      if (text.startsWith("PK\x03\x04") || /[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 500))) {
+        setError("Unsupported binary file. Please load a .txt, .md, or .docx document.")
+        return
+      }
       setSource(text.slice(0, HUMANIZER_LIMITS.maxChars))
       setError("")
+    } catch {
+      setError("That file could not be read in the browser.")
     }
-    reader.onerror = () => setError("That file could not be read in the browser.")
-    reader.readAsText(file)
   }
 
   const acceptSafeSuggestions = () => {
@@ -204,12 +241,12 @@ export default function HumanizerStudio({ toolId, onComplete }: HumanizerStudioP
               className="humanizer-link-button"
               onClick={() => fileRef.current && fileRef.current.click()}
             >
-              <FileText size={14} aria-hidden="true" /> Load .txt or .md
+              <FileText size={14} aria-hidden="true" /> Load .txt, .md, or .docx
             </button>
             <input
               ref={fileRef}
               type="file"
-              accept=".txt,.md,text/plain"
+              accept=".txt,.md,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               className="humanizer-file-input"
               tabIndex={-1}
               aria-hidden="true"
