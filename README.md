@@ -17,6 +17,7 @@ Install with `pnpm install`, then run `pnpm dev` outside Figma Make. Inside Make
 - Text-to-PDF with title, word wrapping, multiple pages and download. Standard Helvetica supports Latin text; unsupported glyphs report an error rather than producing a misleading success.
 - Real session activity; empty until a tool succeeds. Session activity is in memory only.
 - Theme, first name and sidebar preference stored locally. File contents and QR values are not persisted. No authentication is connected; the account is a local profile.
+- Humanizer (`#humanizer`): rule-based prose review that runs entirely in the browser. Numbers, dates, amounts, emails, URLs, file names and quoted text are frozen as protected spans before any rule runs, so the engine cannot rewrite them; every change is listed with its kind, confidence and a plain-English reason, and deletions, certainty words, passive-to-active rewrites and rhythm edits are suggestions the writer applies rather than silent edits. The tool claims no AI-detector behaviour, and no text leaves the device.
 - Audio to Text upload interface: single-file selection/drop, size/type validation, remove/replace confirmation, capability-driven language/options, job status, real upload progress, retry, editable transcript, copy and TXT download. **Transcription requires a backend**; the default state does not upload or fabricate a transcript.
 
 All remaining file, AI, document-storage and collaboration tools are explicitly marked **Coming soon**. No remote processing or storage is simulated.
@@ -34,6 +35,7 @@ All remaining file, AI, document-storage and collaboration tools are explicitly 
 - `src/AudioToText.tsx`, `src/audio.css`: audio input, connection state, job feedback and transcript editor in both themes.
 - `src/transcriptionService.ts`: provider-neutral capability lookup, multipart upload and job-status polling.
 - `src/AuthPage.tsx`, `src/auth.css`: responsive branded authentication layout, reusable labeled fields/password controls, validation, disabled/loading/error/success feedback.
+- `src/humanizer.ts`, `src/HumanizerStudio.tsx`, `src/humanizer.css`: the local prose-review engine (protected-span masking, sentence units, per-goal rule sets, rhythm candidates, fidelity self-audit) and the draft/marked/original review UI. No network calls.
 - `src/authService.ts`: typed authentication adapter boundary; no provider is configured.
 - `src/Notifications.tsx`, `src/ErrorBoundary.tsx`: transient notifications and render-failure recovery.
 
@@ -47,7 +49,7 @@ Lucide provides consistent icons; `qrcode` produces scannable codes; `pdf-lib` p
 - Format check: `pnpm exec oxfmt --check src README.md`
 - Format: `pnpm format`
 
-No lint framework is installed. `tests/workspace.test.cjs` checks the disconnected authentication boundary, catalog uniqueness/audio classification, and server-rendering smoke checks for 18 workspace/auth/unknown routes. These do not replace browser interaction, responsive visual, or real-provider integration tests. Do not interpret the build as an automated interaction test.
+No lint framework is installed. `tests/workspace.test.cjs` checks the disconnected authentication boundary, catalog uniqueness/audio classification, and server-rendering smoke checks for 18 workspace/auth/unknown routes. `tests/humanizer.test.cjs` locks the Humanizer contract: protected facts survive every goal and intensity, reverting all edits returns the original byte for byte, and uncertain edits never enter the default draft. These do not replace browser interaction, responsive visual, or real-provider integration tests. Do not interpret the build as an automated interaction test.
 
 ## Authentication integration (not connected)
 
