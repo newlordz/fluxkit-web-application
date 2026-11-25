@@ -9551,15 +9551,6 @@ export default function ToolPage({
               </div>
             )}
 
-            <div className="processing-location">
-              <ShieldCheck size={16} />
-              {tool.id === "image-to-excel"
-                ? "Local-first · cloud help only after sign-in and consent"
-                : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
-                  ? "Local-first · a cloud engine may process this file"
-                  : "Processed locally · no upload required"}
-            </div>
-
             {tool.id !== "passport-photo" &&
               !(tool.id === "qr" && kind === "Image / Photo Showcase") && (
                 <>

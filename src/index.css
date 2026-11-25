@@ -1273,18 +1273,7 @@ main:has(.pro-paywall-panel) {
 }
 
 .processing-location {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 18px;
-  padding: 11px 13px;
-  border: 1px solid var(--accent-border);
-  border-radius: 9px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.5;
+  display: none !important;
 }
 
 .processing-location svg {

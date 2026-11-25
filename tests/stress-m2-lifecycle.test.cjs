@@ -613,7 +613,6 @@ test("UI Mounting Route 1: #merge-pdf mounts dropzone (multiple), file guidance,
 
   // Action button
   assert.match(html, /Merge PDFs/)
-  assert.match(html, /Processed locally · no upload required/)
 })
 
 test("UI Mounting Route 2: #split-pdf mounts dropzone, page range input, and 'Split PDF' button", () => {
