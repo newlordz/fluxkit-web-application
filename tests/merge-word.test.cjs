@@ -125,3 +125,116 @@ test("Word Documents Arrange Modal - Trash button immediately propagates deletio
   assert.ok(dpmContent.includes("dpm-file-preview-card__actions"), "Preview card must render actions container")
   assert.ok(dpmContent.includes("onMouseDown={(e) => e.stopPropagation()}"), "Buttons must stop mousedown propagation from draggable card")
 })
+
+test("Word Documents Merge - Preserves Word XML namespaces, remaps reordered rels/hyperlinks, and avoids duplicate Content_Types", async () => {
+  const ts = require("typescript")
+  const vm = require("node:vm")
+  const servicesSrc = fs.readFileSync(path.join(__dirname, "../src/services.ts"), "utf8")
+  const transpiled = ts.transpileModule(servicesSrc, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText.replaceAll("import.meta.env", "(typeof process !== 'undefined' ? process.env : {})")
+  const mod = { exports: {} }
+  vm.runInNewContext(transpiled, {
+    module: mod,
+    exports: mod.exports,
+    require: (id) => (id.startsWith(".") ? {} : require(id)),
+    console,
+    TextEncoder,
+    TextDecoder,
+    Uint8Array,
+    Blob,
+    URL,
+    setTimeout,
+    clearTimeout,
+  })
+  const { mergeWordFiles } = mod.exports
+
+  async function buildWordDoc({ text, extraNs = "", ignorable = "", relsXml, contentTypesXml, media }) {
+    const zip = new JSZip()
+    zip.file(
+      "[Content_Types].xml",
+      contentTypesXml ||
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+    )
+    zip.file(
+      "_rels/.rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`,
+    )
+    zip.file(
+      "word/_rels/document.xml.rels",
+      relsXml ||
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+    )
+    zip.file(
+      "word/document.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ${extraNs} ${ignorable}>
+  <w:body>
+    ${text}
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>
+  </w:body>
+</w:document>`,
+    )
+    if (media) zip.file(media.path, media.bytes)
+    return await zip.generateAsync({ type: "uint8array" })
+  }
+
+  const doc1 = await buildWordDoc({
+    text: `<w:p><w:r><w:t>First Doc</w:t></w:r></w:p>`,
+    extraNs: `xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex"`,
+    ignorable: `mc:Ignorable="w16se"`,
+  })
+
+  const doc2 = await buildWordDoc({
+    text: `<w:p><w:hyperlink r:id="rId2"><w:r><w:t>Visit Link</w:t></w:r></w:hyperlink><w:drawing><a:blip r:embed="rId3"/></w:drawing></w:p>`,
+    extraNs: `xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`,
+    relsXml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="https://example.com" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Id="rId2" TargetMode="External"/>
+  <Relationship Target="media/image1.png" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Id="rId3"/>
+</Relationships>`,
+    media: { path: "word/media/image1.png", bytes: new Uint8Array([137, 80, 78, 71]) },
+  })
+
+  const result = await mergeWordFiles(
+    [
+      { name: "doc1.docx", data: doc1 },
+      { name: "doc2.docx", data: doc2 },
+    ],
+    { pageBreakBetween: true },
+  )
+
+  const outZip = await JSZip.loadAsync(await result.blob.arrayBuffer())
+  const outDocXml = await outZip.file("word/document.xml").async("string")
+  const outRelsXml = await outZip.file("word/_rels/document.xml.rels").async("string")
+  const outContentTypes = await outZip.file("[Content_Types].xml").async("string")
+
+  // 1. Namespaces preserved
+  assert.ok(outDocXml.includes("xmlns:w16se="), "Must preserve xmlns:w16se from doc1")
+  assert.ok(outDocXml.includes("xmlns:wps="), "Must preserve xmlns:wps from doc2")
+  assert.ok(outDocXml.includes('mc:Ignorable="w16se"'), "Must preserve valid mc:Ignorable")
+
+  // 2. Reordered rels & hyperlinks remapped
+  assert.ok(outRelsXml.includes('Target="https://example.com"'), "Must preserve external hyperlink")
+  assert.ok(outRelsXml.includes("media/doc2_rId3.png"), "Must remap image media target")
+  assert.ok(!outDocXml.includes('r:id="rId2"'), "Must remap doc2 rId2")
+  assert.ok(!outDocXml.includes('r:embed="rId3"'), "Must remap doc2 rId3")
+
+  // 3. No duplicate Extension="jpg" in [Content_Types].xml
+  const jpgMatches = outContentTypes.match(/Extension="jpg"/gi) || []
+  assert.equal(jpgMatches.length, 1, "Must not duplicate existing Extension=jpg")
+  const pngMatches = outContentTypes.match(/Extension="png"/gi) || []
+  assert.equal(pngMatches.length, 1, "Must register Extension=png once")
+})

@@ -942,13 +942,103 @@ function extractDocxBodyParts(xml: string): {
   const bodyMatch = xml.match(/<w:body\b[^>]*>([\s\S]*?)<\/w:body>/i)
   if (!bodyMatch) return { bodyContent: "", sectPr: "" }
   let content = bodyMatch[1]
-  const sectPrMatch = content.match(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>\s*$/i)
+  // Match only a trailing top-level <w:sectPr>...</w:sectPr> or self-closing <w:sectPr .../>
+  const sectPrMatch = content.match(
+    /(?:<w:sectPr\b[^>]*\/>|<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>)\s*$/i,
+  )
   let sectPr = ""
-  if (sectPrMatch) {
-    sectPr = sectPrMatch[0]
+  if (sectPrMatch && !sectPrMatch[0].includes("</w:pPr>")) {
+    sectPr = sectPrMatch[0].trim()
     content = content.substring(0, content.length - sectPrMatch[0].length)
   }
   return { bodyContent: content, sectPr }
+}
+
+function extractXmlNamespaces(xml: string): Record<string, string> {
+  const docTagMatch = xml.match(/<w:document\b([^>]*)>/i)
+  const namespaces: Record<string, string> = {}
+  if (!docTagMatch) return namespaces
+  const attrMatches = docTagMatch[1].matchAll(
+    /(\S+?)\s*=\s*(?:"([^"]*)"|'([^']*)')/g,
+  )
+  for (const m of attrMatches) {
+    const key = m[1]
+    const val = m[2] ?? m[3] ?? ""
+    if (key.startsWith("xmlns:") || key === "xmlns") {
+      namespaces[key] = val
+    }
+  }
+  return namespaces
+}
+
+function extractMcIgnorable(xml: string): string[] {
+  const docTagMatch = xml.match(/<w:document\b([^>]*)>/i)
+  if (!docTagMatch) return []
+  const ignorableMatch = docTagMatch[1].match(
+    /mc:Ignorable\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  )
+  if (!ignorableMatch) return []
+  return (ignorableMatch[1] ?? ignorableMatch[2] ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+interface ParsedRelationship {
+  id: string
+  type: string
+  target: string
+  targetMode?: string
+}
+
+function parseRelationshipsXml(relsXml: string): ParsedRelationship[] {
+  const rels: ParsedRelationship[] = []
+  const tagMatches = relsXml.matchAll(/<Relationship\b([^>]*?)\/?>/gi)
+  for (const m of tagMatches) {
+    const attrs = m[1]
+    const id = attrs.match(/\bId\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    const type = attrs.match(/\bType\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    const target = attrs.match(/\bTarget\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    const targetMode = attrs.match(/\bTargetMode\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    const idVal = id?.[1] ?? id?.[2]
+    const typeVal = type?.[1] ?? type?.[2]
+    const targetVal = target?.[1] ?? target?.[2]
+    if (idVal && typeVal && targetVal) {
+      rels.push({
+        id: idVal,
+        type: typeVal,
+        target: targetVal,
+        targetMode: targetMode?.[1] ?? targetMode?.[2],
+      })
+    }
+  }
+  return rels
+}
+
+function ensureContentTypeExtension(
+  contentTypesXml: string,
+  ext: string,
+): string {
+  const lower = ext.toLowerCase()
+  const mimeMap: Record<string, string> = {
+    png: "image/png",
+    jpeg: "image/jpeg",
+    jpg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+  }
+  const mime = mimeMap[lower]
+  if (!mime) return contentTypesXml
+  const existsRegex = new RegExp(
+    `Extension\\s*=\\s*["']${lower}["']`,
+    "i",
+  )
+  if (existsRegex.test(contentTypesXml)) return contentTypesXml
+  return contentTypesXml.replace(
+    /<\/Types>/i,
+    `  <Default Extension="${lower}" ContentType="${mime}"/>\n</Types>`,
+  )
 }
 
 function convertTextToWordXml(text: string): string {
@@ -1052,6 +1142,19 @@ export async function mergeWordFiles(
   let masterRelsXml = ""
   let maxRelId = 1
   let firstDocIdx = -1
+  const mergedNamespaces: Record<string, string> = {
+    "xmlns:w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "xmlns:r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "xmlns:m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    "xmlns:wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    "xmlns:a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "xmlns:pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+    "xmlns:mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+    "xmlns:w14": "http://schemas.microsoft.com/office/word/2010/wordml",
+    "xmlns:w15": "http://schemas.microsoft.com/office/word/2012/wordml",
+  }
+  const ignorablePrefixes = new Set<string>()
+  const usedMediaExtensions = new Set<string>()
 
   for (let i = 0; i < docEntries.length; i++) {
     const { bytes } = docEntries[i]
@@ -1063,6 +1166,8 @@ export async function mergeWordFiles(
           masterZip = testZip
           firstDocIdx = i
           const docXml = await docXmlFile.async("string")
+          Object.assign(mergedNamespaces, extractXmlNamespaces(docXml))
+          for (const p of extractMcIgnorable(docXml)) ignorablePrefixes.add(p)
           const extracted = extractDocxBodyParts(docXml)
           masterSectPr = extracted.sectPr
           const relsFile = masterZip.file("word/_rels/document.xml.rels")
@@ -1116,6 +1221,11 @@ export async function mergeWordFiles(
           const docFile = docZip.file("word/document.xml")
           if (docFile) {
             const docXml = await docFile.async("string")
+            for (const [k, v] of Object.entries(extractXmlNamespaces(docXml))) {
+              if (!mergedNamespaces[k]) mergedNamespaces[k] = v
+            }
+            for (const p of extractMcIgnorable(docXml)) ignorablePrefixes.add(p)
+
             const parts = extractDocxBodyParts(docXml)
             docBody = parts.bodyContent
             const pCount = (docBody.match(/<w:p\b/g) || []).length
@@ -1125,35 +1235,55 @@ export async function mergeWordFiles(
               const relsFile = docZip.file("word/_rels/document.xml.rels")
               if (relsFile) {
                 const relsXml = await relsFile.async("string")
-                const relMatches = relsXml.matchAll(
-                  /<Relationship\s+([^>]*?)Id="([^"]+)"([^>]*?)Type="([^"]+)"([^>]*?)Target="([^"]+)"([^>]*?)\/>/gi,
-                )
-                for (const match of relMatches) {
-                  const origId = match[2]
-                  const relType = match[4]
-                  const target = match[6]
+                const rels = parseRelationshipsXml(relsXml)
+                const relIdMap = new Map<string, string>()
 
-                  if (target.includes("media/") || relType.includes("image")) {
-                    const normTarget = target.replace(/^\.\.\//, "").replace(/^word\//, "")
+                for (const rel of rels) {
+                  if (
+                    rel.targetMode?.toLowerCase() === "external" ||
+                    rel.type.includes("/hyperlink")
+                  ) {
+                    maxRelId++
+                    const newRelId = `rIdMerge${maxRelId}`
+                    const newRelTag = `<Relationship Id="${newRelId}" Type="${escapeXml(rel.type)}" Target="${escapeXml(rel.target)}" TargetMode="External"/>`
+                    masterRelsXml = masterRelsXml.replace(
+                      /<\/Relationships>/i,
+                      `  ${newRelTag}\n</Relationships>`,
+                    )
+                    relIdMap.set(rel.id, newRelId)
+                  } else if (rel.target.includes("media/") || rel.type.includes("image")) {
+                    const normTarget = rel.target.replace(/^\.\.\//, "").replace(/^word\//, "")
                     const mediaInZip = docZip.file("word/" + normTarget) || docZip.file(normTarget)
                     if (mediaInZip) {
                       const mediaBytes = await mediaInZip.async("uint8array")
-                      const ext = normTarget.split(".").pop() || "png"
-                      const newTarget = `media/doc${idx + 1}_${origId}.${ext}`
+                      const ext = (normTarget.split(".").pop() || "png").toLowerCase()
+                      usedMediaExtensions.add(ext)
+                      const newTarget = `media/doc${idx + 1}_${rel.id}.${ext}`
                       masterZip.file("word/" + newTarget, mediaBytes)
 
                       maxRelId++
                       const newRelId = `rIdMerge${maxRelId}`
-                      const newRelTag = `<Relationship Id="${newRelId}" Type="${relType}" Target="${newTarget}"/>`
+                      const newRelTag = `<Relationship Id="${newRelId}" Type="${escapeXml(rel.type)}" Target="${newTarget}"/>`
                       masterRelsXml = masterRelsXml.replace(
-                        "</Relationships>",
+                        /<\/Relationships>/i,
                         `  ${newRelTag}\n</Relationships>`,
                       )
-
-                      docBody = docBody.replaceAll(`"${origId}"`, `"${newRelId}"`)
+                      relIdMap.set(rel.id, newRelId)
                     }
                   }
                 }
+
+                // Remap known relationship IDs (r:id, r:embed, r:link) safely without colliding
+                docBody = docBody.replace(
+                  /\b(r:(?:id|embed|link))\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
+                  (full, attrName, dVal, sVal) => {
+                    const origId = dVal ?? sVal ?? ""
+                    const mapped = relIdMap.get(origId)
+                    if (mapped) return `${attrName}="${mapped}"`
+                    // Avoid dangling relationship IDs from Doc 2+ pointing to wrong targets in Doc 1
+                    return ""
+                  },
+                )
               }
             }
           }
@@ -1205,23 +1335,33 @@ export async function mergeWordFiles(
   })
 
   let contentTypesXml = (await masterZip.file("[Content_Types].xml")?.async("string")) || ""
-  if (contentTypesXml && !contentTypesXml.includes('Extension="png"')) {
-    contentTypesXml = contentTypesXml.replace(
-      "</Types>",
-      '  <Default Extension="png" ContentType="image/png"/>\n  <Default Extension="jpeg" ContentType="image/jpeg"/>\n  <Default Extension="jpg" ContentType="image/jpeg"/>\n</Types>',
-    )
+  if (contentTypesXml) {
+    for (const ext of usedMediaExtensions) {
+      contentTypesXml = ensureContentTypeExtension(contentTypesXml, ext)
+    }
     masterZip.file("[Content_Types].xml", contentTypesXml)
   }
 
   masterZip.file("word/_rels/document.xml.rels", masterRelsXml)
 
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">
+  const nsAttrStr = Object.entries(mergedNamespaces)
+    .map(([k, v]) => `${k}="${escapeXml(v)}"`)
+    .join(" ")
+  const validIgnorable = Array.from(ignorablePrefixes).filter(
+    (p) => mergedNamespaces[`xmlns:${p}`],
+  )
+  const ignorableAttr =
+    validIgnorable.length > 0 ? ` mc:Ignorable="${validIgnorable.join(" ")}"` : ""
+
+  const rawDocumentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document ${nsAttrStr}${ignorableAttr}>
   <w:body>
     ${unifiedBodyXml}
     ${masterSectPr || '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'}
   </w:body>
 </w:document>`
+
+  const documentXml = rawDocumentXml.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
 
   masterZip.file("word/document.xml", documentXml)
 
