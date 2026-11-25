@@ -42,6 +42,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  EyeOff,
   FileArchive,
   FileCheck2,
   FileSpreadsheet,
@@ -1247,6 +1248,10 @@ export default function ToolPage({
   const isSigDrawingRef = useRef(false)
 
   const [sigHasDrawn, setSigHasDrawn] = useState(false)
+
+  const [showWifiPassword, setShowWifiPassword] = useState(false)
+
+  const [showDocPassword, setShowDocPassword] = useState(false)
 
   const [sigInkColor, setSigInkColor] = useState("#0f172a")
 
@@ -6888,11 +6893,59 @@ export default function ToolPage({
                           : kind === "Email"
                             ? "Subject (optional)"
                             : "Message (optional)"}
-                        <input
-                          type={kind === "Wi-Fi" ? "password" : "text"}
-                          value={extra}
-                          onChange={(e) => setExtra(e.target.value)}
-                        />
+                        {kind === "Wi-Fi" ? (
+                          <div style={{ position: "relative", width: "100%" }}>
+                            <input
+                              type={showWifiPassword ? "text" : "password"}
+                              value={extra}
+                              onChange={(e) => setExtra(e.target.value)}
+                              autoComplete="off"
+                              style={{ width: "100%", paddingRight: "40px" }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={
+                                showWifiPassword
+                                  ? "Hide Wi-Fi password"
+                                  : "Show Wi-Fi password"
+                              }
+                              title={
+                                showWifiPassword
+                                  ? "Hide password"
+                                  : "Show password"
+                              }
+                              onClick={() =>
+                                setShowWifiPassword((prev) => !prev)
+                              }
+                              style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                background: "transparent",
+                                border: "none",
+                                padding: "4px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {showWifiPassword ? (
+                                <EyeOff size={16} />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={extra}
+                            onChange={(e) => setExtra(e.target.value)}
+                          />
+                        )}
                       </label>
                     )}
                   </>
@@ -8409,13 +8462,51 @@ export default function ToolPage({
                     {optionA === "unlock" ? (
                       <label style={{ marginTop: "12px" }}>
                         Document Password
-                        <input
-                          aria-label="Password to unlock"
-                          type="password"
-                          value={extra}
-                          onChange={(e) => setExtra(e.target.value)}
-                          placeholder="Enter password to unlock"
-                        />
+                        <div style={{ position: "relative", width: "100%" }}>
+                          <input
+                            aria-label="Password to unlock"
+                            type={showDocPassword ? "text" : "password"}
+                            value={extra}
+                            onChange={(e) => setExtra(e.target.value)}
+                            placeholder="Enter password to unlock"
+                            autoComplete="off"
+                            style={{ width: "100%", paddingRight: "40px" }}
+                          />
+                          <button
+                            type="button"
+                            aria-label={
+                              showDocPassword
+                                ? "Hide password"
+                                : "Show password"
+                            }
+                            title={
+                              showDocPassword
+                                ? "Hide password"
+                                : "Show password"
+                            }
+                            onClick={() => setShowDocPassword((prev) => !prev)}
+                            style={{
+                              position: "absolute",
+                              right: "10px",
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "transparent",
+                              border: "none",
+                              padding: "4px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {showDocPassword ? (
+                              <EyeOff size={16} />
+                            ) : (
+                              <Eye size={16} />
+                            )}
+                          </button>
+                        </div>
                       </label>
                     ) : (
                       <div
@@ -8431,22 +8522,102 @@ export default function ToolPage({
                       >
                         <label>
                           Protection Password
-                          <input
-                            type="password"
-                            value={extra}
-                            onChange={(e) => setExtra(e.target.value)}
-                            placeholder="Min 4 characters"
-                          />
+                          <div style={{ position: "relative", width: "100%" }}>
+                            <input
+                              type={showDocPassword ? "text" : "password"}
+                              value={extra}
+                              onChange={(e) => setExtra(e.target.value)}
+                              placeholder="Min 4 characters"
+                              autoComplete="off"
+                              style={{ width: "100%", paddingRight: "40px" }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={
+                                showDocPassword
+                                  ? "Hide protection password"
+                                  : "Show protection password"
+                              }
+                              title={
+                                showDocPassword
+                                  ? "Hide password"
+                                  : "Show password"
+                              }
+                              onClick={() =>
+                                setShowDocPassword((prev) => !prev)
+                              }
+                              style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                background: "transparent",
+                                border: "none",
+                                padding: "4px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {showDocPassword ? (
+                                <EyeOff size={16} />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                            </button>
+                          </div>
                         </label>
                         <label>
                           Confirm Password
-                          <input
-                            aria-label="Repeat password"
-                            type="password"
-                            value={optionB}
-                            onChange={(e) => setOptionB(e.target.value)}
-                            placeholder="Repeat password"
-                          />
+                          <div style={{ position: "relative", width: "100%" }}>
+                            <input
+                              aria-label="Repeat password"
+                              type={showDocPassword ? "text" : "password"}
+                              value={optionB}
+                              onChange={(e) => setOptionB(e.target.value)}
+                              placeholder="Repeat password"
+                              autoComplete="off"
+                              style={{ width: "100%", paddingRight: "40px" }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={
+                                showDocPassword
+                                  ? "Hide repeat password"
+                                  : "Show repeat password"
+                              }
+                              title={
+                                showDocPassword
+                                  ? "Hide password"
+                                  : "Show password"
+                              }
+                              onClick={() =>
+                                setShowDocPassword((prev) => !prev)
+                              }
+                              style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                background: "transparent",
+                                border: "none",
+                                padding: "4px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "var(--muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {showDocPassword ? (
+                                <EyeOff size={16} />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                            </button>
+                          </div>
                         </label>
                       </div>
                     )}
