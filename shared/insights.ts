@@ -24,6 +24,8 @@ export const TOOL_IDS = [
   "pdf-to-ppt",
   "pdf-to-excel",
   "image-to-excel",
+  "image-crop",
+  "image-resize",
   "passport-photo",
   "word-to-pdf",
   "ppt-to-pdf",
