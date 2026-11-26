@@ -123,7 +123,9 @@ export interface PassportRenderOptions {
   zoom: number
   focusX: number
   focusY: number
+  crop?: PassportCrop
   removeBackground: boolean
+  fillBackground?: boolean
   backgroundColor: string
   backgroundTolerance: number
   format: "image/jpeg" | "image/png"
@@ -235,6 +237,7 @@ export async function loadPassportImage(file: File): Promise<HTMLImageElement> {
   }
 
   const objectUrl = URL.createObjectURL(file)
+  let keepObjectUrl = false
   try {
     const image = new Image()
     image.src = objectUrl
@@ -245,12 +248,13 @@ export async function loadPassportImage(file: File): Promise<HTMLImageElement> {
     if (image.naturalWidth * image.naturalHeight > MAX_SOURCE_PIXELS) {
       throw new Error("This photo is too large. Choose an image below 40 megapixels.")
     }
+    keepObjectUrl = true
     return image
   } catch (error) {
     if (error instanceof Error && error.message.includes("photo")) throw error
     throw new Error("This image could not be decoded. Try a JPG or PNG photo.")
   } finally {
-    URL.revokeObjectURL(objectUrl)
+    if (!keepObjectUrl) URL.revokeObjectURL(objectUrl)
   }
 }
 
@@ -365,7 +369,7 @@ export async function renderPassportPhoto(
   options: PassportRenderOptions,
 ): Promise<PassportRenderResult> {
   const output = resolveOutputDimensions(options.width, options.height, options.unit, options.dpi)
-  const crop = getPassportCrop(
+  const crop = options.crop || getPassportCrop(
     image.naturalWidth,
     image.naturalHeight,
     output.width,
@@ -374,6 +378,17 @@ export async function renderPassportPhoto(
     options.focusX,
     options.focusY,
   )
+  if (
+    ![crop.x, crop.y, crop.width, crop.height].every(Number.isFinite) ||
+    crop.x < 0 ||
+    crop.y < 0 ||
+    crop.width <= 0 ||
+    crop.height <= 0 ||
+    crop.x + crop.width > image.naturalWidth + 0.001 ||
+    crop.y + crop.height > image.naturalHeight + 0.001
+  ) {
+    throw new Error("The selected crop is outside this photo. Reset the crop and try again.")
+  }
 
   const sourceCanvas = document.createElement("canvas")
   sourceCanvas.width = output.width
@@ -408,7 +423,7 @@ export async function renderPassportPhoto(
   outputCanvas.height = output.height
   const outputContext = outputCanvas.getContext("2d")
   if (!outputContext) throw new Error("Your browser could not create the export canvas.")
-  if (options.removeBackground || options.format === "image/jpeg") {
+  if (options.removeBackground || options.fillBackground || options.format === "image/jpeg") {
     outputContext.fillStyle = options.backgroundColor
     outputContext.fillRect(0, 0, output.width, output.height)
   }
