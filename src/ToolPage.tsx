@@ -20,6 +20,8 @@ import QRCodeStudioModal, {
   type QRCodeStudioModalHandle,
 } from "./QRCodeStudioModal"
 
+import QRPrintModal from "./QRPrintModal"
+
 import MergeLoadingModal from "./MergeLoadingModal"
 
 import { getEngineRunSince } from "./apiPoolService"
@@ -41,6 +43,7 @@ import {
   Check,
   CheckCircle2,
   Circle,
+  Clock3,
   Copy,
   Database,
   Download,
@@ -53,6 +56,7 @@ import {
   FileText,
   GripVertical,
   Image,
+  Infinity as InfinityIcon,
   Languages,
   Layers,
   LayoutGrid,
@@ -69,6 +73,7 @@ import {
   PenLine,
   PenTool,
   Presentation,
+  Printer,
   QrCode,
   Redo2,
   RefreshCw,
@@ -902,7 +907,11 @@ export default function ToolPage({
 
   const [showQRStudio, setShowQRStudio] = useState(false)
 
+  const [showQRPrint, setShowQRPrint] = useState(false)
+
   const [rawQrPayload, setRawQrPayload] = useState("")
+
+  const isHostedShowcaseQr = rawQrPayload.includes("#showcase")
 
   const [kind, setKind] = useState(() => {
     if (tool.id === "qr" && typeof window !== "undefined") {
@@ -2455,6 +2464,7 @@ export default function ToolPage({
     setTextOutput("")
 
     setQr("")
+    setShowQRPrint(false)
 
     setStatus("processing")
 
@@ -11966,6 +11976,25 @@ export default function ToolPage({
                       alt="Generated QR code"
                     />
                     <div
+                      className={`qr-lifetime-card ${isHostedShowcaseQr ? "is-hosted" : ""}`}
+                    >
+                      <span className="qr-lifetime-icon" aria-hidden="true">
+                        {isHostedShowcaseQr ? <Clock3 size={18} /> : <InfinityIcon size={18} />}
+                      </span>
+                      <div>
+                        <strong>
+                          {isHostedShowcaseQr
+                            ? "Hosted page: 30 days"
+                            : "No QR expiry"}
+                        </strong>
+                        <p>
+                          {isHostedShowcaseQr
+                            ? "The QR symbol keeps working, but its hosted showcase expires 30 days after creation. For a permanent destination, use a URL QR pointing to a page you control."
+                            : "This QR stores its content directly and has no expiry. The linked website, Wi-Fi network, or contact details must remain available."}
+                        </p>
+                      </div>
+                    </div>
+                    <div
                       style={{
                         display: "flex",
 
@@ -11987,6 +12016,25 @@ export default function ToolPage({
                       >
                         <Download size={16} /> Download PNG
                       </a>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "12px 17px",
+                          border: "1px solid var(--border)",
+                          borderRadius: "6px",
+                          background: "var(--surface)",
+                          color: "var(--text)",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                        }}
+                        onClick={() => setShowQRPrint(true)}
+                      >
+                        <Printer size={16} /> A4 Print Preview
+                      </button>
                       {tool.id === "qr-vcard" && result && (
                         <button
                           type="button"
@@ -12005,7 +12053,7 @@ export default function ToolPage({
                           <Download size={16} /> Download Calendar (.ics)
                         </button>
                       )}
-                      {rawQrPayload && rawQrPayload.includes("#showcase") && (
+                      {isHostedShowcaseQr && (
                         <button
                           type="button"
                           className="secondary"
@@ -13234,6 +13282,15 @@ export default function ToolPage({
 
             notify("Customized QR code updated successfully!", "success")
           }}
+        />
+      )}
+
+      {qr && (
+        <QRPrintModal
+          isOpen={showQRPrint}
+          qrDataUrl={qr}
+          onClose={() => setShowQRPrint(false)}
+          onDownload={handleDownload}
         />
       )}
 
