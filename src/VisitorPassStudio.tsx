@@ -335,10 +335,12 @@ export default function VisitorPassStudio({
     notify("Visitor form cleared.", "info")
   }
 
-  // Load the shared facility log on mount, then keep localStorage as the offline copy
-
+  // Visitor records contain personal data, so the offline copy is scoped to this tab.
   useEffect(() => {
     let cancelled = false
+    try {
+      window.localStorage?.removeItem("masterfilepro_visitor_log")
+    } catch {}
 
     void (async () => {
       const remote = await fetchVisitorLog()
@@ -349,7 +351,7 @@ export default function VisitorPassStudio({
         setVisitorLog(remote.records)
 
         try {
-          localStorage.setItem(
+          sessionStorage.setItem(
             "masterfilepro_visitor_log",
             JSON.stringify(remote.records),
           )
@@ -361,7 +363,7 @@ export default function VisitorPassStudio({
       }
 
       try {
-        const stored = localStorage.getItem("masterfilepro_visitor_log")
+        const stored = sessionStorage.getItem("masterfilepro_visitor_log")
 
         if (stored) {
           setVisitorLog(JSON.parse(stored))
@@ -504,7 +506,7 @@ export default function VisitorPassStudio({
 
           setVisitorLog(initialLog)
 
-          localStorage.setItem(
+          sessionStorage.setItem(
             "masterfilepro_visitor_log",
             JSON.stringify(initialLog),
           )
@@ -521,7 +523,7 @@ export default function VisitorPassStudio({
 
   const writeLocalLog = (records: VisitorRecord[]) => {
     try {
-      localStorage.setItem("masterfilepro_visitor_log", JSON.stringify(records))
+      sessionStorage.setItem("masterfilepro_visitor_log", JSON.stringify(records))
     } catch {
       /* ignore */
     }

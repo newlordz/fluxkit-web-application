@@ -22,11 +22,9 @@ import type { Tool } from "./config"
 import type { UserAccount } from "./authService"
 
 import {
-  activateProSimulatedPayment,
   requestProApproval,
   getFormattedToolPrice,
   getToolPrice,
-  unlockSingleToolForUser,
 } from "./adminService"
 
 import {
@@ -66,8 +64,6 @@ export default function ProActivationModal({
 
   const [errorMessage, setErrorMessage] = useState("")
 
-  const [isUnlocked, setIsUnlocked] = useState(false)
-
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">(
     "monthly",
   )
@@ -78,12 +74,6 @@ export default function ProActivationModal({
   const exchangeRate = getExchangeRate()
 
   const isYearly = billingCycle === "yearly"
-
-  useEffect(() => {
-    if (successMessage) {
-      setIsUnlocked(true)
-    }
-  }, [successMessage])
 
   useEffect(() => {
     const onCurrChange = (e: any) => {
@@ -97,6 +87,10 @@ export default function ProActivationModal({
   }, [])
 
   const isPending = currentUser?.proStatus === "pending"
+
+  const isUnlocked =
+    (currentUser?.subscriptionTier === "pro" && currentUser?.proStatus === "active") ||
+    !!currentUser?.unlockedTools?.includes(tool.id)
 
   const activeGateway = getActiveGateway()
 
@@ -137,190 +131,68 @@ export default function ProActivationModal({
     }
   }
 
-  const handleBuySingleTool = () => {
-    if (!currentUser) {
-      handleRequireAuth(`subscription to ${tool.name}`)
-      return
-    }
-
-    setLoading("payment")
-
-    setErrorMessage("")
-
-    setTimeout(() => {
-      const updated = unlockSingleToolForUser(
-        currentUser.id,
-        tool.id,
-        billingCycle,
-      )
-
-      setLoading(null)
-
-      const renewsPeriod = isYearly ? "1 year" : "1 month"
-
-      setSuccessMessage(
-        `Success! You subscribed to ${tool.name} (${billingCycle.toUpperCase()} plan). Auto-renews in ${renewsPeriod}. Access is now active on your account!`,
-      )
-
-      if (onActivated) {
-        onActivated(updated)
-      }
-    }, 600)
-  }
-
-  const handleBuySingleToolLive = () => {
+  const handleBuySingleToolLive = async () => {
     if (!currentUser) {
       handleRequireAuth(`subscription to ${tool.name}`)
       return
     }
 
     setErrorMessage("")
-
-    if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
-      setLoading("payment")
-
-      const userEmail = currentUser.email || "customer@masterfilepro.com"
-
-      const subunits =
-        activeGateway.currency === "GHS"
-          ? Math.round(singleToolUsd * exchangeRate * 100)
-          : activeGateway.currency === "NGN"
-            ? Math.round(singleToolUsd * 1500 * 100)
-            : Math.round(singleToolUsd * 100)
-
-      triggerLivePaystackCheckout({
-        publicKey: activeGateway.publicKey,
-
-        email: userEmail,
-
-        amountInSubunits: subunits,
-
-        currency: activeGateway.currency,
-
-        onSuccess: (ref) => {
-          const updated = unlockSingleToolForUser(
-            currentUser.id,
-            tool.id,
-            billingCycle,
-          )
-
-          setLoading(null)
-
-          setSuccessMessage(
-            `Live Paystack Payment Verified! (Ref: ${ref}). ${tool.name} ${billingCycle.toUpperCase()} subscription active on your account!`,
-          )
-
-          if (onActivated) {
-            onActivated(updated)
-          }
-        },
-
-        onClose: () => {
-          setLoading(null)
-        },
-
-        onError: (err) => {
-          setLoading(null)
-
-          setErrorMessage(
-            err.message ||
-              "Paystack checkout was closed or encountered an error.",
-          )
-        },
-      })
-
-      return
-    }
-
-    handleBuySingleTool()
-  }
-
-  const handleSimulatedPayment = () => {
-    if (!currentUser) {
-      handleRequireAuth("All-Access Pro subscription")
+    if (activeGateway?.id !== "paystack" || !activeGateway.publicKey) {
+      setErrorMessage("Online checkout is not configured. Please contact the administrator.")
       return
     }
 
     setLoading("payment")
+    const subunits =
+      activeGateway.currency === "GHS"
+        ? Math.round(singleToolUsd * exchangeRate * 100)
+        : activeGateway.currency === "NGN"
+          ? Math.round(singleToolUsd * 1500 * 100)
+          : Math.round(singleToolUsd * 100)
 
-    setErrorMessage("")
-
-    setTimeout(() => {
-      const updated = activateProSimulatedPayment(currentUser.id)
-
+    try {
+      await triggerLivePaystackCheckout({
+        tool: tool.id,
+        amountInSubunits: subunits,
+        currency: activeGateway.currency,
+      })
+    } catch (error: any) {
       setLoading(null)
-
-      setSuccessMessage(
-        `Payment verified via ${activeGateway?.name || "Paystack"} (${activeGateway?.mode?.toUpperCase() || "TEST"}). Pro subscription unlocked for your account.`,
-      )
-
-      if (onActivated) {
-        onActivated(updated)
-      }
-    }, 600)
+      setErrorMessage(error?.message || "Paystack checkout could not be started.")
+    }
   }
 
-  const handleLivePayment = () => {
+  const handleLivePayment = async () => {
     if (!currentUser) {
       handleRequireAuth("All-Access Pro subscription")
       return
     }
 
     setErrorMessage("")
-
-    if (activeGateway?.id === "paystack" && activeGateway.publicKey) {
-      setLoading("payment")
-
-      const userEmail = currentUser.email || "customer@masterfilepro.com"
-
-      const subunits =
-        activeGateway.currency === "GHS"
-          ? Math.round(allAccessUsd * exchangeRate * 100)
-          : activeGateway.currency === "NGN"
-            ? Math.round(allAccessUsd * 1500 * 100)
-            : Math.round(allAccessUsd * 100)
-
-      triggerLivePaystackCheckout({
-        publicKey: activeGateway.publicKey,
-
-        email: userEmail,
-
-        amountInSubunits: subunits,
-
-        currency: activeGateway.currency,
-
-        onSuccess: (ref) => {
-          const updated = activateProSimulatedPayment(currentUser.id)
-
-          setLoading(null)
-
-          setSuccessMessage(
-            `Live Paystack Payment Verified! (Ref: ${ref}). Pro subscription unlocked for your account.`,
-          )
-
-          if (onActivated) {
-            onActivated(updated)
-          }
-        },
-
-        onClose: () => {
-          setLoading(null)
-        },
-
-        onError: (err) => {
-          setLoading(null)
-
-          setErrorMessage(
-            err.message ||
-              "Paystack checkout was closed or encountered an error.",
-          )
-        },
-      })
-
+    if (activeGateway?.id !== "paystack" || !activeGateway.publicKey) {
+      setErrorMessage("Online checkout is not configured. Please contact the administrator.")
       return
     }
 
-    handleSimulatedPayment()
+    setLoading("payment")
+    const subunits =
+      activeGateway.currency === "GHS"
+        ? Math.round(allAccessUsd * exchangeRate * 100)
+        : activeGateway.currency === "NGN"
+          ? Math.round(allAccessUsd * 1500 * 100)
+          : Math.round(allAccessUsd * 100)
+
+    try {
+      await triggerLivePaystackCheckout({
+        tool: isYearly ? "pro-yearly" : "pro-monthly",
+        amountInSubunits: subunits,
+        currency: activeGateway.currency,
+      })
+    } catch (error: any) {
+      setLoading(null)
+      setErrorMessage(error?.message || "Paystack checkout could not be started.")
+    }
   }
 
   const handleRequestApproval = () => {

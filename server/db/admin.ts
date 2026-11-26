@@ -84,14 +84,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
       // Credentials are never edited through this endpoint; salt/hash from the client is ignored.
       if (body.email || body.name) {
-        await query(
-          `update users
-             set email = coalesce($2, email),
-                 name = coalesce($3, name),
-                 updated_at = now()
-           where id = $1`,
-          [actor.id, body.email ? String(body.email).trim().toLowerCase() : null, body.name ? String(body.name) : null],
-        )
+        await transact(async (sql) => {
+          await sql(
+            `update users
+               set email = coalesce($2, email),
+                   name = coalesce($3, name),
+                   updated_at = now()
+             where id = $1`,
+            [actor.id, body.email ? String(body.email).trim().toLowerCase() : null, body.name ? String(body.name) : null],
+          )
+          await sql(
+            `update password_resets set used_at = now()
+              where user_id = $1 and used_at is null
+                and lower(email::text) <> lower((select email from users where id = $1))`,
+            [actor.id],
+          )
+        })
       }
 
       await query(`insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`, [

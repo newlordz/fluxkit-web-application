@@ -15,8 +15,6 @@ import {
   saveCurrentUser,
   getRegisteredAccounts,
   saveRegisteredAccounts,
-  generateSalt,
-  hashPassword,
   SEEDED_ADMIN_ACCOUNT,
   SEEDED_ADMIN_CREDENTIALS,
 } from "./authService"
@@ -28,8 +26,6 @@ import {
 } from "./sessionService"
 
 export const ADMIN_CONFIG_KEY = "masterfilepro-admin-config"
-
-export const CREDENTIALS_KEY = "masterfilepro-credentials"
 
 export interface AdminDatabaseRecord {
   id: string
@@ -304,8 +300,6 @@ export async function updateAdminSettings(options: {
       )
     }
 
-    // The session was revoked by the change, so the new password is signed in again.
-    await serverSignIn(cleanEmail, newPassword)
   } else if (cleanEmail !== currentConfig.email && !options.overrideAuthCheck) {
     if (!currentPassword) {
       throw new Error(
@@ -333,33 +327,6 @@ export async function updateAdminSettings(options: {
   // 1. Save to localStorage cache
 
   saveAdminConfigToLocal(updatedRecord)
-
-  // 2. Keep the offline sign-in mirror under the new address
-
-  const storage = getStorage()
-
-  if (storage) {
-    try {
-      const rawCreds = storage.getItem(CREDENTIALS_KEY)
-
-      const creds = rawCreds ? JSON.parse(rawCreds) : {}
-
-      if (cleanEmail !== currentConfig.email.toLowerCase()) {
-        delete creds[currentConfig.email.toLowerCase()]
-      }
-
-      if (newPassword) {
-        const mirrorSalt = generateSalt()
-
-        creds[cleanEmail] = {
-          salt: mirrorSalt,
-          hash: hashPassword(newPassword, mirrorSalt),
-        }
-      }
-
-      storage.setItem(CREDENTIALS_KEY, JSON.stringify(creds))
-    } catch {}
-  }
 
   // 3. Update registered accounts collection so user table displays new admin info
 

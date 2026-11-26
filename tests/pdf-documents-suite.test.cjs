@@ -90,7 +90,7 @@ test("addPageNumbersPDF stamps numbering and respects skipFirstPage", async () =
   assert.match(res.previewSnippet, /across 2 pages/)
 })
 
-test("redactPDF applies redaction boxes and rejects empty redaction list", async () => {
+test("redactPDF rejects empty regions and never falls back to extractable text", async () => {
   const { redactPDF } = loadServices()
   const pdfBytes = await makeSamplePdf(2)
 
@@ -99,13 +99,13 @@ test("redactPDF applies redaction boxes and rejects empty redaction list", async
     /Draw at least one redaction box/,
   )
 
-  const res = await redactPDF(pdfBytes, {
-    regions: [{ pageNumber: 1, xPct: 0.1, yPct: 0.1, wPct: 0.3, hPct: 0.1 }],
-  })
-  assert.equal(res.pageCount, 2)
-  assert.ok(res.name.endsWith("-redacted.pdf"))
-  const outDoc = await PDFDocument.load(new Uint8Array(await res.blob.arrayBuffer()))
-  assert.equal(outDoc.getPageCount(), 2)
+  await assert.rejects(
+    () =>
+      redactPDF(pdfBytes, {
+        regions: [{ pageNumber: 1, xPct: 0.1, yPct: 0.1, wPct: 0.3, hPct: 0.1 }],
+      }),
+    /Secure redaction requires browser canvas rendering.*No file was exported/,
+  )
 })
 
 test("inspectPDFMetadata and cleanPDFMetadata inspect and strip metadata", async () => {

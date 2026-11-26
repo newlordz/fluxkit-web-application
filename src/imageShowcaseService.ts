@@ -1,3 +1,5 @@
+import { authHeaders } from "./sessionService"
+
 /**
  * Image Showcase Service
  * Manages storage, retrieval, and encoding for Image QR Code landing pages.
@@ -268,7 +270,7 @@ export function decodeShowcaseFromHash(hash: string): ImageShowcaseData | null {
 }
 
 /**
- * Saves a showcase to local storage, in-memory cache, and asynchronously syncs to backend API.
+ * Publishes a showcase server-side before caching it locally for instant access.
  */
 
 export async function saveShowcase(
@@ -278,39 +280,25 @@ export async function saveShowcase(
 
   url: string
 }> {
-  inMemoryCache.set(data.id, data)
+  const response = await fetch("/api/showcase", {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  })
+  const result = await response.json().catch(() => null)
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.error || "The showcase could not be published. Please try again.")
+  }
 
-  // 1. Store in localStorage
+  inMemoryCache.set(data.id, data)
 
   if (typeof window !== "undefined" && window.localStorage) {
     try {
-      window.localStorage.setItem(
-        `${STORAGE_PREFIX}${data.id}`,
-
-        JSON.stringify(data),
-      )
+      window.localStorage.setItem(`${STORAGE_PREFIX}${data.id}`, JSON.stringify(data))
     } catch (err) {
       console.warn("Local storage write warning:", err)
     }
   }
-
-  // 2. Asynchronously sync to backend API (fire and forget with error boundary)
-
-  try {
-    fetch("/api/showcase", {
-      method: "POST",
-
-      headers: { "Content-Type": "application/json" },
-
-      body: JSON.stringify(data),
-    }).catch(() => {
-      // Backend sync error silently handled; local and hash fallback exist
-    })
-  } catch {
-    // ignore
-  }
-
-  // 3. Construct target URL with clean ID (keeps payload under 50 chars for reliable QR generation)
 
   const origin =
     typeof window !== "undefined" && window.location.origin

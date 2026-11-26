@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useImperativeHandle,
+} from "react"
+import { createPortal } from "react-dom"
 import { renderToStaticMarkup } from "react-dom/server"
 import QRCode from "qrcode"
 import {
@@ -34,6 +40,10 @@ export interface QRCodeStudioModalProps {
   isOpen: boolean
   onClose: () => void
   onApply: (dataUrl: string) => void
+}
+
+export interface QRCodeStudioModalHandle {
+  renderValue: (value: string) => Promise<string>
 }
 
 type DotStyle = "square" | "rounded" | "dots" | "classy"
@@ -115,6 +125,30 @@ export function presetIconDataUri(id: string, size: number, color: string): stri
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
 }
 
+export function normalizeSvgLogoSource(src: string, fallbackColor: string): string {
+  if (!src.startsWith("data:image/svg+xml")) return src
+
+  const commaIndex = src.indexOf(",")
+  if (commaIndex === -1) return src
+
+  const header = src.slice(0, commaIndex)
+  const payload = src.slice(commaIndex + 1)
+  const markup = /;base64$/i.test(header)
+    ? new TextDecoder().decode(
+        Uint8Array.from(atob(payload), (character) => character.charCodeAt(0)),
+      )
+    : decodeURIComponent(payload)
+  const svgTag = markup.match(/<svg\b[^>]*>/i)?.[0]
+  if (!svgTag || /\scolor\s*=/i.test(svgTag)) return src
+
+  const safeColor = fallbackColor.replace(/[&"<>]/g, "")
+  const normalized = markup.replace(
+    svgTag,
+    svgTag.replace(/^<svg\b/i, `<svg color="${safeColor}"`),
+  )
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalized)}`
+}
+
 function loadCanvasImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const image = new window.Image()
@@ -124,12 +158,10 @@ function loadCanvasImage(src: string): Promise<HTMLImageElement | null> {
   })
 }
 
-export default function QRCodeStudioModal({
-  value,
-  isOpen,
-  onClose,
-  onApply,
-}: QRCodeStudioModalProps) {
+const QRCodeStudioModal = React.forwardRef<
+  QRCodeStudioModalHandle,
+  QRCodeStudioModalProps
+>(function QRCodeStudioModal({ value, isOpen, onClose, onApply }, ref) {
   // Active configuration tabs
   const [activeTab, setActiveTab] =
     useState<"colors" | "shapes" | "logo" | "frame" | "settings">("colors")
@@ -177,6 +209,16 @@ export default function QRCodeStudioModal({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const renderVersionRef = useRef(0)
+  const restoreAppliedDesignRef = useRef<(() => void) | null>(null)
+
+  useImperativeHandle(ref, () => ({
+    renderValue: async (nextValue: string) => {
+      const renderVersion = ++renderVersionRef.current
+      const dataUrl = await renderCustomQR(renderVersion, nextValue)
+      if (!dataUrl) throw new Error("Failed to render customized QR code.")
+      return dataUrl
+    },
+  }))
 
   // Auto-switch to High error correction if logo is enabled to ensure 100% scan integrity
   useEffect(() => {
@@ -306,9 +348,12 @@ export default function QRCodeStudioModal({
   }
 
   // Main Render Function
-  async function renderCustomQR(renderVersion: number) {
+  async function renderCustomQR(
+    renderVersion: number,
+    qrValue: string = value,
+  ): Promise<string | null> {
     try {
-      const qrData = QRCode.create(value, {
+      const qrData = QRCode.create(qrValue, {
         errorCorrectionLevel: ecl,
       })
 
@@ -336,7 +381,7 @@ export default function QRCodeStudioModal({
       canvas.width = totalWidth
       canvas.height = totalHeight
       const ctx = canvas.getContext("2d")
-      if (!ctx) return
+      if (!ctx) return null
 
       // Smooth rendering
       ctx.imageSmoothingEnabled = true
@@ -531,13 +576,11 @@ export default function QRCodeStudioModal({
         ctx.restore()
 
         // Draw Image / Icon inside badge
-        const iconSource = uploadedLogo?.src || presetIconDataUri(
-          selectedPresetLogo,
-          logoSizePx,
-          fgColor,
-        )
+        const iconSource = uploadedLogo
+          ? normalizeSvgLogoSource(uploadedLogo.src, fgColor)
+          : presetIconDataUri(selectedPresetLogo, logoSizePx, fgColor)
         const iconImage = await loadCanvasImage(iconSource)
-        if (!iconImage || renderVersion !== renderVersionRef.current) return
+        if (!iconImage || renderVersion !== renderVersionRef.current) return null
 
         ctx.save()
         ctx.beginPath()
@@ -578,6 +621,7 @@ export default function QRCodeStudioModal({
           const bannerX = (canvasSize - bannerW) / 2
 
           ctx.fillStyle = frameColor
+          ctx.beginPath()
           drawRoundRect(ctx, bannerX, bannerY, bannerW, bannerH, bannerH * 0.3)
           ctx.fill()
 
@@ -602,6 +646,7 @@ export default function QRCodeStudioModal({
           const pillY = canvasSize
 
           ctx.fillStyle = frameColor
+          ctx.beginPath()
           drawRoundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2)
           ctx.fill()
 
@@ -615,11 +660,13 @@ export default function QRCodeStudioModal({
       }
 
       // 8. Output DataURL and update state
-      if (renderVersion !== renderVersionRef.current) return
+      if (renderVersion !== renderVersionRef.current) return null
       const url = canvas.toDataURL("image/png")
       setCurrentDataUrl(url)
+      return url
     } catch (err) {
       console.error("Failed to render custom QR code", err)
+      return null
     }
   }
 
@@ -826,9 +873,9 @@ export default function QRCodeStudioModal({
           logoShape === "circle"
             ? `<circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="${logoSize / 2}" />`
             : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="${logoShape === "rounded" ? logoSize * 0.2 : 0}" />`
-        const iconSource =
-          uploadedLogo?.src ||
-          presetIconDataUri(selectedPresetLogo, logoSize, fgColor)
+        const iconSource = uploadedLogo
+          ? normalizeSvgLogoSource(uploadedLogo.src, fgColor)
+          : presetIconDataUri(selectedPresetLogo, logoSize, fgColor)
         logoDefs = `<filter id="qr-logo-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="${canvasSize * 0.005}" stdDeviation="${canvasSize * 0.0075}" flood-color="#000000" flood-opacity="0.14" /></filter><clipPath id="qr-logo-clip" clipPathUnits="userSpaceOnUse">${clipShape}</clipPath>`
         logoMarkup = `<g fill="${escapeXml(logoBgColor)}" filter="url(#qr-logo-shadow)">${badgeShape}</g><image href="${escapeXml(iconSource)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="none" clip-path="url(#qr-logo-clip)" />`
       }
@@ -889,11 +936,47 @@ export default function QRCodeStudioModal({
     }
   }
 
+  function handleClose() {
+    if (restoreAppliedDesignRef.current) {
+      restoreAppliedDesignRef.current()
+    } else {
+      handleReset()
+    }
+    setCopied(false)
+    setActiveTab("colors")
+    onClose()
+  }
+
   // Apply to Main Result Panel
   function handleApply() {
     if (currentDataUrl) {
+      restoreAppliedDesignRef.current = () => {
+        setColorMode(colorMode)
+        setFgColor(fgColor)
+        setFgColor2(fgColor2)
+        setBgColor(bgColor)
+        setIsTransparent(isTransparent)
+        setCustomEyeColor(customEyeColor)
+        setEyeColor(eyeColor)
+        setDotStyle(dotStyle)
+        setCornerOuterStyle(cornerOuterStyle)
+        setCornerInnerStyle(cornerInnerStyle)
+        setHasLogo(hasLogo)
+        setSelectedPresetLogo(selectedPresetLogo)
+        setUploadedLogo(uploadedLogo)
+        setLogoShape(logoShape)
+        setLogoSizePercent(logoSizePercent)
+        setLogoBgColor(logoBgColor)
+        setFrameStyle(frameStyle)
+        setFrameText(frameText)
+        setFrameColor(frameColor)
+        setFrameTextColor(frameTextColor)
+        setEcl(ecl)
+        setMargin(margin)
+        setResolution(resolution)
+      }
       onApply(currentDataUrl)
-      onClose()
+      handleClose()
     }
   }
 
@@ -924,9 +1007,9 @@ export default function QRCodeStudioModal({
     setResolution(1000)
   }
 
-  if (!isOpen) return null
+  if (!isOpen || typeof document === "undefined") return null
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -943,7 +1026,7 @@ export default function QRCodeStudioModal({
         padding: "16px",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) handleClose()
       }}
     >
       <div
@@ -1053,7 +1136,7 @@ export default function QRCodeStudioModal({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               style={{
                 width: "36px",
                 height: "36px",
@@ -2674,6 +2757,9 @@ export default function QRCodeStudioModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
-}
+})
+
+export default QRCodeStudioModal

@@ -131,7 +131,7 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
   "settings",
 ]
 
-export const ADMIN_TAB_STORAGE_KEY = "fluxkit-admin-tab"
+export const ADMIN_TAB_STORAGE_KEY = "masterfilepro-admin-tab"
 
 export function resolveInitialAdminTab(initialTab?: AdminTab): AdminTab {
   if (initialTab && VALID_ADMIN_TABS.includes(initialTab)) {

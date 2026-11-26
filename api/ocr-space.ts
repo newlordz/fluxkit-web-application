@@ -34,7 +34,7 @@ export default async function handler(req: any, res: any) {
     return
   }
 
-  const actor = await requirePaidAccess(req, res, "ocrspace")
+  const actor = await requirePaidAccess(req, res, "ocrspace", "ocr")
   if (!actor) return
 
   try {

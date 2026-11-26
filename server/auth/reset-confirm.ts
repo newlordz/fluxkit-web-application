@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody } from "../_lib/db.ts"
+import { cors, json, queryAuthoritative, readBody } from "../_lib/db.ts"
 import { resetPasswordWithCode } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -19,14 +19,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (!/^\d{6}$/.test(code)) {
       return json(res, 400, { ok: false, error: "Enter the 6-digit verification code." })
     }
-    if (newPassword.length < 12) {
-      return json(res, 400, { ok: false, error: "Password must be at least 12 characters." })
+    if (newPassword.length < 12 || newPassword.length > 1024) {
+      return json(res, 400, { ok: false, error: "Password must be between 12 and 1024 characters." })
     }
 
     const result = await resetPasswordWithCode(email, code, newPassword)
     if (!result.ok) return json(res, 400, { ok: false, error: result.error })
 
-    const [user] = await query<any>(
+    const [user] = await queryAuthoritative<any>(
       `select id, email, name, role, subscription_tier, pro_status, unlocked_tools from users where id = $1`,
       [result.userId],
     )
@@ -39,6 +39,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
             id: user.id,
             email: user.email,
             name: user.name,
+            provider: user.provider,
             role: user.role,
             subscriptionTier: user.subscription_tier,
             proStatus: user.pro_status,
@@ -46,7 +47,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           }
         : null,
     })
-  } catch (err: any) {
-    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
+  } catch (err) {
+    console.error("Password reset confirmation failed", err)
+    return json(res, 500, { ok: false, error: "Password reset is temporarily unavailable. Please try again." })
   }
 }

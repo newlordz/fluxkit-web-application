@@ -15,8 +15,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const user = await currentUser(req)
     if (!user) return json(res, 401, { ok: false, error: "Not signed in" })
-    return json(res, 200, { ok: true, user })
-  } catch (err: any) {
-    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
+    return json(res, 200, {
+      ok: true,
+      mustResetPassword: user.must_reset_password,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        provider: user.provider,
+        role: user.role,
+        subscriptionTier: user.subscription_tier,
+        proStatus: user.pro_status,
+        unlockedTools: user.unlocked_tools,
+      },
+    })
+  } catch (err) {
+    console.error("Session check failed", err)
+    return json(res, 500, { ok: false, error: "Session check is temporarily unavailable. Please try again." })
   }
 }

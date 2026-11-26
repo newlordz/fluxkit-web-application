@@ -81,7 +81,7 @@ export interface LocalFeedbackEntry {
   createdAt: string
 }
 
-const LOCAL_FEEDBACK_KEY = "fluxkit-local-feedback"
+const LOCAL_FEEDBACK_KEY = "masterfilepro-local-feedback"
 
 export function getLocalFeedbackEntries(): LocalFeedbackEntry[] {
   try {

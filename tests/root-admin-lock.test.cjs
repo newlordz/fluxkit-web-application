@@ -9,12 +9,13 @@ function createHarness() {
   const moduleCache = new Map()
   const storage = new Map([
     [
-      "masterfilepro-registered-accounts",
+      "masterfilepro-accounts",
       JSON.stringify([
         {
           id: "usr_admin_default",
           name: "Masterfilepro Administrator",
           email: "admin@masterfilepro.com",
+          provider: "email",
           role: "admin",
           subscriptionTier: "pro",
           proStatus: "active",
@@ -39,11 +40,13 @@ function createHarness() {
         id: "usr_admin_default",
         name: "Masterfilepro Administrator",
         email: "admin@masterfilepro.com",
+        provider: "email",
         role: "admin",
         subscriptionTier: "pro",
         proStatus: "active",
       }),
     ],
+    ["masterfilepro-session-token", "admin-server-token"],
   ])
 
   const mockLocalStorage = {
@@ -53,8 +56,17 @@ function createHarness() {
     clear: () => storage.clear(),
   }
 
+  const sessionStorage = new Map()
+  const mockSessionStorage = {
+    getItem: (key) => sessionStorage.get(key) || null,
+    setItem: (key, value) => sessionStorage.set(key, String(value)),
+    removeItem: (key) => sessionStorage.delete(key),
+    clear: () => sessionStorage.clear(),
+  }
+
   const mockWindow = {
     localStorage: mockLocalStorage,
+    sessionStorage: mockSessionStorage,
     dispatchEvent: () => true,
     CustomEvent: class CustomEvent {
       constructor(type, init) {
@@ -79,7 +91,7 @@ function createHarness() {
       },
     }).outputText.replace(/import\.meta\.env/g, "process.env")
 
-    const wrapper = `(function(exports, require, module, __filename, __dirname, window, localStorage) {\n${code}\n})`
+    const wrapper = `(function(exports, require, module, __filename, __dirname, window, localStorage, fetch) {\n${code}\n})`
     const compiled = vm.runInThisContext(wrapper, { filename: fullPath })
     const mod = { exports: {} }
 
@@ -106,6 +118,7 @@ function createHarness() {
       path.dirname(fullPath),
       mockWindow,
       mockLocalStorage,
+      async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }),
     )
 
     return mod.exports
@@ -150,8 +163,28 @@ test("Root Admin Lock: Status is locked and cannot be demoted, revoked, or strip
   )
 })
 
+test("Root Admin Lock: deleting another user preserves the current administrator", () => {
+  const harness = createHarness()
+  const accounts = JSON.parse(harness.storage.get("masterfilepro-accounts"))
+  const auth = harness.load("authService")
+  auth.saveRegisteredAccounts(accounts)
+  const admin = harness.load("adminService")
+
+  admin.deleteUser("usr_regular_1")
+
+  assert.deepEqual(
+    admin.getAllUsers().map((user) => user.id),
+    ["usr_admin_default"],
+  )
+  assert.equal(auth.getCurrentUser()?.id, "usr_admin_default")
+  assert.equal(auth.getCurrentUser()?.role, "admin")
+})
+
 test("Root Admin Lock: updateUserDetails locks status, role, tier, and name, but allows email and password update", async () => {
   const harness = createHarness()
+  const accounts = JSON.parse(harness.storage.get("masterfilepro-accounts"))
+  const auth = harness.load("authService")
+  auth.saveRegisteredAccounts(accounts)
   const admin = harness.load("adminService")
 
   // Try changing name, role, tier, proStatus, and email on root admin

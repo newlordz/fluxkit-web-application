@@ -6,6 +6,9 @@
  */
 
 import { authHeaders } from "./sessionService"
+import { clearLegacyProviderSecrets } from "./securityStorage"
+
+clearLegacyProviderSecrets()
 
 export interface CloudApiConfig {
   id: string
@@ -62,6 +65,15 @@ export interface ApiHealthResult {
 }
 
 const STORAGE_KEY = "masterfilepro_cloud_apis_config_v2"
+const STORED_SECRET = "••••••••"
+
+function sanitizeApi(api: CloudApiConfig): CloudApiConfig {
+  return {
+    ...api,
+    apiKey: api.apiKey ? STORED_SECRET : "",
+    clientSecret: api.clientSecret ? STORED_SECRET : "",
+  }
+}
 
 // CloudConvert and ConvertAPI were listed as failover priorities #3 and #4 but no
 // tool ever sent a request to them, so the pool must not advertise or select them
@@ -356,6 +368,7 @@ export function getCloudApis(category?: string): CloudApiConfig[] {
     const raw = localStorage.getItem(STORAGE_KEY)
 
     let list: CloudApiConfig[] = raw ? JSON.parse(raw) : []
+    if (Array.isArray(list)) list = list.map(sanitizeApi)
 
     if (!Array.isArray(list) || list.length === 0) {
       list = DEFAULT_CLOUD_APIS
@@ -459,12 +472,13 @@ export async function saveCloudApis(
 
   try {
     const sorted = [...apis].sort((a, b) => a.priority - b.priority)
+    const sanitized = sorted.map(sanitizeApi)
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized))
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent("masterfilepro-apis-updated", { detail: { apis: sorted } }),
+        new CustomEvent("masterfilepro-apis-updated", { detail: { apis: sanitized } }),
       )
     }
 
@@ -801,9 +815,6 @@ export async function testApiHealth(
 
           provider: api.provider,
 
-          apiKey: api.apiKey,
-
-          clientSecret: api.clientSecret,
         }),
       })
 
@@ -889,39 +900,9 @@ export async function syncCloudApisWithServer(): Promise<CloudApiConfig[]> {
       const data = await res.json()
 
       if (Array.isArray(data.apis) && data.apis.length > 0) {
-        const local = getCloudApis()
-
-        // Merge without losing local unmasked credentials if response had masked tokens
-
         const merged = data.apis
           .filter((srvApi: CloudApiConfig) => !RETIRED_ENGINE_IDS.includes(srvApi.id))
-          .map((srvApi: CloudApiConfig) => {
-          const locApi = local.find((l) => l.id === srvApi.id)
-
-          if (!locApi) return srvApi
-
-          const copy = { ...srvApi }
-
-          if (
-            copy.apiKey &&
-            copy.apiKey.includes("••••") &&
-            locApi.apiKey &&
-            !locApi.apiKey.includes("••••")
-          ) {
-            copy.apiKey = locApi.apiKey
-          }
-
-          if (
-            copy.clientSecret &&
-            copy.clientSecret.includes("••••") &&
-            locApi.clientSecret &&
-            !locApi.clientSecret.includes("••••")
-          ) {
-            copy.clientSecret = locApi.clientSecret
-          }
-
-          return copy
-        })
+          .map(sanitizeApi)
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
 

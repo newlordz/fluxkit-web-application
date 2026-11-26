@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db.ts"
-import { currentUser, requireAdmin } from "../server/_lib/auth.ts"
+import { cors, json, queryAuthoritative, readBody, type ApiRequest } from "../server/_lib/db.ts"
+import { requireActiveUser, requireAdmin } from "../server/_lib/auth.ts"
 
 const PASS_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{2,63}$/
 const MAX_RECORDS = 2000
@@ -18,13 +18,16 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
   try {
     if (req.method === "GET") {
-      const actor = await currentUser(req)
+      const actor = await requireActiveUser(req)
       if (!actor) return json(res, 401, { ok: false, error: "Sign-in required to read the visitor log." })
 
-      const rows = await query<{ id: string; payload: any }>(
+      const isAdmin = actor.role === "admin" || actor.role === "sub-admin"
+      const rows = await queryAuthoritative<{ id: string; payload: any }>(
         `select id, payload from visitor_passes
+          ${isAdmin ? "" : "where owner_user_id = $1"}
           order by created_at desc
           limit 500`,
+        isAdmin ? [] : [actor.id],
       )
 
       return json(res, 200, {
@@ -35,7 +38,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
     if (req.method !== "POST") return json(res, 405, { ok: false, error: "Method not allowed" })
 
-    const actor = await currentUser(req)
+    const actor = await requireActiveUser(req)
     if (!actor) return json(res, 401, { ok: false, error: "Sign-in required." })
 
     const body = await readBody(req, MAX_PAYLOAD_SIZE)
@@ -50,8 +53,8 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       const admin = await requireAdmin(req)
       if (!admin) return json(res, 403, { ok: false, error: "Administrator sign-in required." })
 
-      await query(`delete from visitor_passes where id = $1`, [id])
-      await query(`insert into audit_log (actor_user_id, action, target) values ($1, 'visitor.pass.remove', $2)`, [
+      await queryAuthoritative(`delete from visitor_passes where id = $1`, [id])
+      await queryAuthoritative(`insert into audit_log (actor_user_id, action, target) values ($1, 'visitor.pass.remove', $2)`, [
         admin.id,
         id,
       ])
@@ -69,26 +72,39 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     const fullName = String(record.fullName || "").slice(0, 120)
     const event = String(record.hostName || fullName || "visitor").slice(0, 120)
 
-    const [previous] = await query<{ payload: any }>(`select payload from visitor_passes where id = $1`, [id])
+    const isAdmin = actor.role === "admin" || actor.role === "sub-admin"
+    const [previous] = await queryAuthoritative<{ owner_user_id: string | null; payload: any }>(
+      `select owner_user_id, payload from visitor_passes where id = $1`,
+      [id],
+    )
+    if (previous && !isAdmin && previous.owner_user_id !== actor.id) {
+      return json(res, 403, { ok: false, error: "This visitor pass belongs to another account." })
+    }
 
-    await query(
+    const saved = await queryAuthoritative<{ id: string }>(
       `insert into visitor_passes (id, owner_user_id, event, payload, created_at)
        values ($1, $2, $3, $4::jsonb, coalesce($5::timestamptz, now()))
        on conflict (id) do update
-          set payload = excluded.payload, event = excluded.event, owner_user_id = excluded.owner_user_id`,
+          set payload = excluded.payload, event = excluded.event
+          where visitor_passes.owner_user_id = $2 or $6
+       returning id`,
       [
         id,
         actor.id,
         event,
         JSON.stringify({ ...record, id }),
         previous ? null : new Date(record.visitDate || Date.now()),
+        isAdmin,
       ],
     )
+    if (!saved.length) {
+      return json(res, 403, { ok: false, error: "This visitor pass belongs to another account." })
+    }
 
     // The movement history is append-only: every status transition is its own row.
     const previousStatus = String(previous?.payload?.status || "")
     if (previousStatus !== status) {
-      await query(
+      await queryAuthoritative(
         `insert into visitor_checkins (pass_id, checked_in_by, payload)
          values ($1, $2, $3::jsonb)`,
         [
@@ -104,15 +120,18 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       )
     }
 
-    await query(
+    await queryAuthoritative(
       `delete from visitor_passes where id in (
-         select id from visitor_passes order by created_at desc offset $1
+         select id from visitor_passes
+          ${isAdmin ? "" : "where owner_user_id = $2"}
+          order by created_at desc offset $1
        )`,
-      [MAX_RECORDS],
+      isAdmin ? [MAX_RECORDS] : [MAX_RECORDS, actor.id],
     )
 
     return json(res, 200, { ok: true, id, status })
-  } catch (err: any) {
-    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
+  } catch (err) {
+    console.error("Visitor log request failed", err)
+    return json(res, 500, { ok: false, error: "Visitor log is temporarily unavailable." })
   }
 }

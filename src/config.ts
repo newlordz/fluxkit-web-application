@@ -526,7 +526,7 @@ export const tools: Tool[] = [
   tool(
     "flatten-pdf",
     "Flatten PDF",
-    "Convert fillable form fields and annotations into a permanent, non-editable PDF.",
+    "Convert interactive PDF form fields into permanent, non-editable page content.",
     "File tools",
     Layers,
     true,

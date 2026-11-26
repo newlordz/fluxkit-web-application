@@ -1,14 +1,20 @@
 import {
   authHeaders,
+  getSessionToken,
   serverConfirmPasswordReset,
   serverRequestPasswordReset,
   serverResetPassword,
   serverSignIn,
   serverSignOut,
   serverSignUp,
+  setSessionToken,
   verifySession,
   type ServerSession,
 } from "./sessionService"
+import { clearLegacyAuthStorage, clearLegacyProviderSecrets } from "./securityStorage"
+
+clearLegacyAuthStorage()
+clearLegacyProviderSecrets()
 
 export interface SignInValues {
   email: string
@@ -103,10 +109,7 @@ export interface AuthAdapter {
 
   signUp(values: SignUpValues): Promise<UserAccount>
 
-  requestPasswordReset(email: string): Promise<{
-    message: string
-    code?: string
-  }>
+  requestPasswordReset(email: string): Promise<{ message: string }>
 }
 
 export const SEEDED_ADMIN_ACCOUNT: UserAccount = {
@@ -137,345 +140,28 @@ export const SEEDED_ADMIN_CREDENTIALS = {
 
 const CURRENT_USER_KEY = "masterfilepro-current-user"
 
-const REGISTERED_ACCOUNTS_KEY = "masterfilepro-accounts"
-
-const CREDENTIALS_KEY = "masterfilepro-credentials"
-
-const GOOGLE_CLIENT_ID_KEY = "masterfilepro-google-client-id"
-
-const RESET_TOKENS_KEY = "masterfilepro-reset-tokens"
-
-const LOGIN_ATTEMPTS_KEY = "masterfilepro-login-attempts"
-
-interface ResetTokenRecord {
-  code: string
-  expiresAt: number
-  attempts?: number
-  lastRequestedAt?: number
-}
-
-interface LoginAttemptRecord {
-  count: number
-  lockoutUntil?: number
-}
-
-interface StoredCredential {
-  salt: string
-
-  hash: string
-}
+let registeredAccounts: UserAccount[] = []
 
 function getStorage(): Storage | null {
-  if (typeof window !== "undefined" && window.localStorage) {
-    try {
-      return window.localStorage
-    } catch {
-      return null
-    }
-  }
-
-  if (typeof localStorage !== "undefined") {
-    try {
-      return localStorage
-    } catch {
-      return null
-    }
-  }
-
-  return null
-}
-
-export function getStoredCredentials(): Record<string, StoredCredential> {
-  const storage = getStorage()
-
-  if (!storage) return {}
-
   try {
-    const raw = storage.getItem(CREDENTIALS_KEY)
-
-    if (!raw) return {}
-
-    return JSON.parse(raw) as Record<string, StoredCredential>
+    return typeof window !== "undefined" ? window.localStorage : null
   } catch {
-    return {}
+    return null
   }
 }
 
-export function saveStoredCredential(
-  email: string,
-  salt: string,
-  hash: string,
-): void {
-  const storage = getStorage()
-
-  if (!storage || typeof storage.setItem !== "function") return
-
+function getUserStorage(): Storage | null {
   try {
-    const creds = getStoredCredentials()
-
-    creds[email.toLowerCase()] = { salt, hash }
-
-    storage.setItem(CREDENTIALS_KEY, JSON.stringify(creds))
+    return typeof window !== "undefined" ? window.sessionStorage : null
   } catch {
-    /* storage might fail */
+    return null
   }
 }
 
-export function getStoredResetTokens(): Record<string, ResetTokenRecord> {
-  const storage = getStorage()
-
-  if (!storage) return {}
-
+function removeLegacyCurrentUser(): void {
   try {
-    const raw = storage.getItem(RESET_TOKENS_KEY)
-
-    if (!raw) return {}
-
-    return JSON.parse(raw) as Record<string, ResetTokenRecord>
-  } catch {
-    return {}
-  }
-}
-
-export function saveStoredResetToken(email: string, code: string): void {
-  const storage = getStorage()
-
-  if (!storage || typeof storage.setItem !== "function") return
-
-  try {
-    const tokens = getStoredResetTokens()
-
-    tokens[email.toLowerCase()] = {
-      code,
-      expiresAt: Date.now() + 15 * 60 * 1000,
-      attempts: 0,
-      lastRequestedAt: Date.now(),
-    }
-
-    storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
-  } catch {
-    /* storage might fail */
-  }
-}
-
-export function clearStoredResetToken(email: string): void {
-  const storage = getStorage()
-
-  if (!storage || typeof storage.setItem !== "function") return
-
-  try {
-    const tokens = getStoredResetTokens()
-
-    delete tokens[email.toLowerCase()]
-
-    storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
-  } catch {
-    /* storage might fail */
-  }
-}
-
-export function getStoredLoginAttempts(): Record<string, LoginAttemptRecord> {
-  const storage = getStorage()
-
-  if (!storage) return {}
-
-  try {
-    const raw = storage.getItem(LOGIN_ATTEMPTS_KEY)
-
-    if (!raw) return {}
-
-    return JSON.parse(raw) as Record<string, LoginAttemptRecord>
-  } catch {
-    return {}
-  }
-}
-
-export function checkLoginLockout(email: string): void {
-  const cleanEmail = (email || "").trim().toLowerCase()
-  if (!cleanEmail) return
-
-  const attempts = getStoredLoginAttempts()
-  const record = attempts[cleanEmail]
-  if (!record) return
-
-  if (record.lockoutUntil && Date.now() < record.lockoutUntil) {
-    const remainingSec = Math.ceil((record.lockoutUntil - Date.now()) / 1000)
-    const mins = Math.ceil(remainingSec / 60)
-    throw new Error(
-      `Too many failed sign-in attempts. Account temporarily locked for security. Please try again in ${mins} minute${
-        mins > 1 ? "s" : ""
-      }.`,
-    )
-  }
-}
-
-export function recordFailedLogin(email: string): void {
-  const cleanEmail = (email || "").trim().toLowerCase()
-  if (!cleanEmail) return
-
-  const storage = getStorage()
-  if (!storage || typeof storage.setItem !== "function") return
-
-  try {
-    const attempts = getStoredLoginAttempts()
-    const record = attempts[cleanEmail] || { count: 0 }
-    record.count = (record.count || 0) + 1
-    if (record.count >= 5) {
-      record.lockoutUntil = Date.now() + 5 * 60 * 1000 // 5-minute lockout
-    }
-    attempts[cleanEmail] = record
-    storage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts))
+    window.localStorage?.removeItem(CURRENT_USER_KEY)
   } catch {}
-}
-
-export function clearFailedLogins(email: string): void {
-  const cleanEmail = (email || "").trim().toLowerCase()
-  if (!cleanEmail) return
-
-  const storage = getStorage()
-  if (!storage || typeof storage.setItem !== "function") return
-
-  try {
-    const attempts = getStoredLoginAttempts()
-    if (attempts[cleanEmail]) {
-      delete attempts[cleanEmail]
-      storage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts))
-    }
-  } catch {}
-}
-
-// Pure JavaScript synchronous SHA-256 implementation
-
-function sha256Pure(ascii: string): string {
-  function rightRotate(value: number, amount: number) {
-    return (value >>> amount) | (value << (32 - amount))
-  }
-
-  const mathPow = Math.pow
-
-  const maxWord = mathPow(2, 32)
-
-  const lengthProperty = "length"
-
-  let i: number, j: number
-
-  let result = ""
-
-  const words: number[] = []
-
-  const asciiBitLength = ascii[lengthProperty] * 8
-
-  let hash: number[] = []
-
-  const k: number[] = []
-
-  let primeCounter = 0
-
-  const isComposite: Record<number, number> = {}
-
-  for (let candidate = 2; primeCounter < 64; candidate++) {
-    if (!isComposite[candidate]) {
-      for (i = 0; i < 313; i += candidate) isComposite[i] = candidate
-
-      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0
-
-      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0
-    }
-  }
-
-  ascii += "\x80"
-
-  while ((ascii[lengthProperty] % 64) - 56) ascii += "\x00"
-
-  for (i = 0; i < ascii[lengthProperty]; i++) {
-    j = ascii.charCodeAt(i)
-
-    if (j >> 8) return ""
-
-    words[i >> 2] |= j << ((3 - (i % 4)) * 8)
-  }
-
-  words[words[lengthProperty]] = (asciiBitLength / maxWord) | 0
-
-  words[words[lengthProperty]] = asciiBitLength | 0
-
-  for (j = 0; j < words[lengthProperty]; ) {
-    const w = words.slice(j, (j += 16))
-
-    const oldHash = hash.slice(0)
-
-    for (i = 0; i < 64; i++) {
-      const w15 = w[i - 15],
-        w2 = w[i - 2]
-
-      const s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)
-
-      const s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10)
-
-      w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0
-
-      const ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6])
-
-      const maj =
-        (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2])
-
-      const temp1 =
-        hash[7] +
-        (rightRotate(hash[4], 6) ^
-          rightRotate(hash[4], 11) ^
-          rightRotate(hash[4], 25)) +
-        ch +
-        k[i] +
-        w[i]
-
-      const temp2 =
-        (rightRotate(hash[0], 2) ^
-          rightRotate(hash[0], 13) ^
-          rightRotate(hash[0], 22)) +
-        maj
-
-      hash = [(temp1 + temp2) | 0].concat(hash)
-
-      hash[4] = (hash[4] + temp1) | 0
-    }
-
-    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0
-  }
-
-  for (i = 0; i < 8; i++) {
-    for (j = 3; j + 1; j--) {
-      const b = (hash[i] >> (j * 8)) & 255
-
-      result += (b < 16 ? "0" : "") + b.toString(16)
-    }
-  }
-
-  return result
-}
-
-export function hashPassword(password: string, salt: string): string {
-  const combined = `${salt}:${password}`
-
-  if (typeof window === "undefined") {
-    try {
-      const g = globalThis as any
-
-      const nodeReq =
-        g?.require || (typeof require === "function" ? require : null)
-
-      if (nodeReq) {
-        const nodeCrypto = nodeReq("crypto")
-
-        if (nodeCrypto && typeof nodeCrypto.createHash === "function") {
-          return nodeCrypto.createHash("sha256").update(combined).digest("hex")
-        }
-      }
-    } catch {
-      /* fallback to pure JS below */
-    }
-  }
-
-  return sha256Pure(combined)
 }
 
 // --- Connection & Adapter State ---
@@ -572,22 +258,64 @@ function assertConnected(email?: string): void {
 
 // --- User Account & Session Persistence ---
 
+function isUserAccount(value: unknown): value is UserAccount {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const user = value as Record<string, unknown>
+  return (
+    typeof user.id === "string" &&
+    user.id.length > 0 &&
+    typeof user.name === "string" &&
+    user.name.length > 0 &&
+    typeof user.email === "string" &&
+    user.email.length > 0 &&
+    (user.provider === "email" || user.provider === "google") &&
+    (user.role === "admin" ||
+      user.role === "sub-admin" ||
+      user.role === "user") &&
+    (user.subscriptionTier === "standard" || user.subscriptionTier === "pro") &&
+    (user.proStatus === "none" ||
+      user.proStatus === "pending" ||
+      user.proStatus === "active") &&
+    (user.avatar === undefined || typeof user.avatar === "string") &&
+    (user.unlockedTools === undefined ||
+      (Array.isArray(user.unlockedTools) &&
+        user.unlockedTools.every((tool) => typeof tool === "string"))) &&
+    (user.requirePasswordReset === undefined ||
+      typeof user.requirePasswordReset === "boolean")
+  )
+}
+
 export function getCurrentUser(): UserAccount | null {
-  const storage = getStorage()
+  if (!getSessionToken()) {
+    removeLegacyCurrentUser()
+    return null
+  }
+  const storage = getUserStorage()
 
   if (!storage) return null
 
   try {
-    const raw = storage.getItem(CURRENT_USER_KEY)
+    let raw = storage.getItem(CURRENT_USER_KEY)
+    if (!raw) {
+      const legacy = window.localStorage?.getItem(CURRENT_USER_KEY)
+      if (legacy) {
+        storage.setItem(CURRENT_USER_KEY, legacy)
+        removeLegacyCurrentUser()
+        raw = legacy
+      }
+    }
 
     if (!raw) return null
 
-    const user = JSON.parse(raw) as UserAccount
+    const user: unknown = JSON.parse(raw)
+    if (!isUserAccount(user)) {
+      storage.removeItem(CURRENT_USER_KEY)
+      return null
+    }
 
     if (
-      user &&
-      (user.name === "Masterfilepro Administrator" ||
-        user.email === "admin@fluxkit.com")
+      user.name === "Masterfilepro Administrator" ||
+      user.email === "admin@fluxkit.com"
     ) {
       user.name = "Masterfilepro Administrator"
 
@@ -605,29 +333,12 @@ export function getCurrentUser(): UserAccount | null {
 }
 
 export function getRegisteredAccounts(): UserAccount[] {
-  const storage = getStorage()
-
-  if (!storage) return []
-
-  try {
-    const raw = storage.getItem(REGISTERED_ACCOUNTS_KEY)
-
-    if (!raw) return []
-
-    return JSON.parse(raw) as UserAccount[]
-  } catch {
-    return []
-  }
+  return registeredAccounts.map((account) => ({ ...account }))
 }
 
 export function saveRegisteredAccounts(accounts: UserAccount[]): void {
-  const storage = getStorage()
-
-  if (!storage) return
-
-  try {
-    storage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(accounts))
-  } catch {}
+  registeredAccounts = accounts.map((account) => ({ ...account }))
+  clearLegacyAuthStorage()
 }
 
 export async function pushUserToCloud(user: UserAccount): Promise<boolean> {
@@ -645,29 +356,14 @@ export async function pushUserToCloud(user: UserAccount): Promise<boolean> {
 }
 
 export function saveCurrentUser(user: UserAccount): void {
-  const storage = getStorage()
+  if (!isUserAccount(user) || !getSessionToken()) return
+  const storage = getUserStorage()
 
   if (!storage || typeof storage.setItem !== "function") return
 
   try {
     storage.setItem(CURRENT_USER_KEY, JSON.stringify(user))
-
-    // Update registered accounts collection
-
-    const accounts = getRegisteredAccounts()
-
-    const existingIndex = accounts.findIndex(
-      (a) =>
-        a.id === user.id || a.email.toLowerCase() === user.email.toLowerCase(),
-    )
-
-    if (existingIndex >= 0) {
-      accounts[existingIndex] = { ...accounts[existingIndex], ...user }
-    } else {
-      accounts.push(user)
-    }
-
-    storage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(accounts))
+    removeLegacyCurrentUser()
 
     // Automatically sync updated account with serverless cloud database
     pushUserToCloud(user)
@@ -701,7 +397,7 @@ export function updateRegisteredAccount(user: UserAccount): void {
       accounts.push(user)
     }
 
-    storage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(accounts))
+    saveRegisteredAccounts(accounts)
 
     // Automatically sync updated account with serverless cloud database
     pushUserToCloud(user)
@@ -721,7 +417,10 @@ export function updateRegisteredAccount(user: UserAccount): void {
 }
 
 export function clearCurrentUser(): void {
-  const storage = getStorage()
+  registeredAccounts = []
+  clearLegacyAuthStorage()
+  removeLegacyCurrentUser()
+  const storage = getUserStorage()
 
   if (storage && typeof storage.removeItem === "function") {
     try {
@@ -766,104 +465,37 @@ export function formatNameFromEmail(email: string): string {
     .join(" ")
 }
 
-function generateUserId(): string {
-  const c =
-    typeof crypto !== "undefined"
-      ? crypto
-      : typeof globalThis !== "undefined"
-        ? (globalThis as any).crypto
-        : undefined
-
-  if (c && typeof c.randomUUID === "function") {
-    try {
-      return `usr_${c.randomUUID().replace(/-/g, "").slice(0, 12)}`
-    } catch {
-      /* fallback */
-    }
-  }
-
-  return `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-export function generateSalt(): string {
-  return `salt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-/** Browser-side copy of a credential, used only when the API is unreachable. */
-function mirrorStoredCredential(email: string, newPassword: string): void {
-  const salt = generateSalt()
-  saveStoredCredential(email, salt, hashPassword(newPassword, salt))
-}
-
-export async function changeAccountPassword(
-  email: string,
-
-  newPassword: string,
-): Promise<void> {
+export async function changeAccountPassword(email: string, newPassword: string): Promise<void> {
   const cleanEmail = (email || "").trim().toLowerCase()
-
   if (!cleanEmail) throw new Error("Email is required.")
-
-  if (!newPassword || newPassword.length < 12) {
-    throw new Error("Password must be at least 12 characters long.")
+  if (!newPassword || newPassword.length < 12 || newPassword.length > 1024) {
+    throw new Error("Password must be between 12 and 1024 characters.")
   }
 
-  const salt = generateSalt()
-
-  const hash = hashPassword(newPassword, salt)
-
-  saveStoredCredential(cleanEmail, salt, hash)
+  const result = await serverResetPassword(cleanEmail, newPassword)
+  if (!result) throw new Error("Password update is unavailable. Please sign in again and retry.")
+  if (!result.ok) throw new Error(result.error || "Could not update that password.")
+  if (result.token) setSessionToken(result.token)
+  clearLegacyAuthStorage()
 
   if (isRootAdmin(cleanEmail)) {
-    saveStoredCredential("admin@masterfilepro.com", salt, hash)
-    saveStoredCredential("admin@fluxkit.com", salt, hash)
-    const activeAdminEmail = getActiveAdminEmail()
-    if (activeAdminEmail) {
-      saveStoredCredential(activeAdminEmail, salt, hash)
-    }
-
     const storage = getStorage()
     if (storage) {
       try {
         const raw = storage.getItem("masterfilepro-admin-config")
         const parsed = raw ? JSON.parse(raw) : {}
-        const updatedConfig = {
-          ...parsed,
-          updatedAt: new Date().toISOString(),
-          lastPasswordChange: new Date().toISOString(),
-        }
+        const updatedConfig = { ...parsed, updatedAt: new Date().toISOString(), lastPasswordChange: new Date().toISOString() }
         storage.setItem("masterfilepro-admin-config", JSON.stringify(updatedConfig))
         if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("masterfilepro-admin-config-changed", {
-              detail: updatedConfig,
-            }),
-          )
+          window.dispatchEvent(new CustomEvent("masterfilepro-admin-config-changed", { detail: updatedConfig }))
         }
       } catch {}
     }
   }
 
-  // The server owns the credential that actually grants access; the local
-  // mirror above only keeps an offline sign-in working.
-  const result = await serverResetPassword(cleanEmail, newPassword)
-
-  if (result && !result.ok) {
-    throw new Error(result.error || "Could not update that password.")
-  }
-
   const current = getCurrentUser()
-
-  if (
-    current &&
-    (current.email.toLowerCase() === cleanEmail ||
-      (isRootAdmin(current) && isRootAdmin(cleanEmail)))
-  ) {
-    saveCurrentUser({
-      ...current,
-
-      lastLoginAt: new Date().toISOString(),
-    })
+  if (current && (current.email.toLowerCase() === cleanEmail || (isRootAdmin(current) && isRootAdmin(cleanEmail)))) {
+    saveCurrentUser({ ...current, requirePasswordReset: false, lastLoginAt: new Date().toISOString() })
   }
 }
 
@@ -904,6 +536,8 @@ async function localSignUp(values: SignUpValues): Promise<UserAccount> {
       role: session.user.role,
       subscriptionTier: session.user.subscriptionTier,
       proStatus: session.user.proStatus,
+      unlockedTools: session.user.unlockedTools || [],
+      requirePasswordReset: session.mustResetPassword === true,
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       message: "Account created.",
@@ -915,50 +549,7 @@ async function localSignUp(values: SignUpValues): Promise<UserAccount> {
     return created
   }
 
-  // Duplicate check
-
-  const accounts = getRegisteredAccounts()
-
-  if (
-    accounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
-    cleanEmail === SEEDED_ADMIN_CREDENTIALS.email.toLowerCase()
-  ) {
-    throw new Error("An account with this email address already exists.")
-  }
-
-  const now = new Date().toISOString()
-
-  const salt = generateSalt()
-
-  const hash = hashPassword(password, salt)
-
-  const newUser: UserAccount = {
-    id: generateUserId(),
-
-    name: cleanName,
-
-    email: cleanEmail,
-
-    provider: "email",
-
-    role: "user",
-
-    subscriptionTier: "standard",
-
-    proStatus: "none",
-
-    createdAt: now,
-
-    lastLoginAt: now,
-
-    message: "Account created successfully.",
-  }
-
-  saveStoredCredential(cleanEmail, salt, hash)
-
-  saveCurrentUser(newUser)
-
-  return newUser
+  throw new Error(error || "Account creation is unavailable. Please try again.")
 }
 
 function userFromServerSession(session: ServerSession): UserAccount {
@@ -973,47 +564,44 @@ function userFromServerSession(session: ServerSession): UserAccount {
     name: session.user.name || known?.name || formatNameFromEmail(email),
     email: session.user.email,
     avatar: known?.avatar,
-    provider: "email",
+    provider: session.user.provider || "email",
     role: session.user.role,
     subscriptionTier: session.user.subscriptionTier,
     proStatus: session.user.proStatus,
-    unlockedTools: session.user.unlockedTools,
+    unlockedTools: session.user.unlockedTools || [],
+    requirePasswordReset: session.mustResetPassword === true,
     createdAt: known?.createdAt || new Date().toISOString(),
     lastLoginAt: new Date().toISOString(),
     message: "Successfully signed in.",
   }
 }
 
-/**
- * Re-asks the server who this browser is before the workspace trusts its cache.
- * An unreachable server leaves the signed-in state untouched; a rejected
- * session clears it, so a revoked account cannot keep browsing.
- */
-export async function reconcileSessionWithServer(): Promise<"signed-in" | "signed-out" | "unchanged"> {
+/** Re-asks the server before the workspace trusts any cached role or entitlement. */
+export async function reconcileSessionWithServer(): Promise<"signed-in" | "signed-out" | "unavailable"> {
   const check = await verifySession()
 
-  if (check.state === "offline" || check.state === "none") return "unchanged"
+  if (check.state === "valid") {
+    const serverUser = userFromServerSession(check.session)
+    const local = getCurrentUser()
 
-  if (check.state === "expired") {
-    if (getCurrentUser()) clearCurrentUser()
-    return "signed-out"
+    if (
+      !local ||
+      local.id !== serverUser.id ||
+      local.role !== serverUser.role ||
+      local.subscriptionTier !== serverUser.subscriptionTier ||
+      local.proStatus !== serverUser.proStatus ||
+      local.provider !== serverUser.provider ||
+      local.requirePasswordReset !== serverUser.requirePasswordReset ||
+      JSON.stringify(local.unlockedTools || []) !== JSON.stringify(serverUser.unlockedTools || [])
+    ) {
+      saveCurrentUser(serverUser)
+    }
+
+    return "signed-in"
   }
 
-  const serverUser = userFromServerSession(check.session)
-
-  const local = getCurrentUser()
-
-  if (
-    !local ||
-    local.id !== serverUser.id ||
-    local.role !== serverUser.role ||
-    local.subscriptionTier !== serverUser.subscriptionTier ||
-    local.proStatus !== serverUser.proStatus
-  ) {
-    saveCurrentUser(serverUser)
-  }
-
-  return "signed-in"
+  if (getCurrentUser()) clearCurrentUser()
+  return check.state === "expired" ? "signed-out" : "unavailable"
 }
 
 async function localSignIn(values: SignInValues): Promise<UserAccount> {
@@ -1021,198 +609,33 @@ async function localSignIn(values: SignInValues): Promise<UserAccount> {
 
   const password = values.password || ""
 
-  checkLoginLockout(cleanEmail)
-
   if (!cleanEmail || !password) {
     throw new Error("Email and password are required.")
   }
 
-  // Server sign-in first. Privileged /api endpoints only accept a token the
-  // server issued, so the local checks below cannot grant them.
   const session = await serverSignIn(cleanEmail, password)
 
-  if (session) {
-    clearFailedLogins(cleanEmail)
-
-    const serverUser = userFromServerSession(session)
-
-    saveCurrentUser(serverUser)
-
-    return serverUser
+  if (!session) {
+    throw new Error("Invalid email or password, or sign-in is temporarily unavailable.")
   }
 
-  // 1. Seeded or Custom Admin Account Check (supports password & email change backed by database)
+  const serverUser = userFromServerSession(session)
 
-  const activeAdminEmail = getActiveAdminEmail()
+  saveCurrentUser(serverUser)
 
-  if (
-    cleanEmail === SEEDED_ADMIN_CREDENTIALS.email.toLowerCase() ||
-    cleanEmail === "admin@fluxkit.com" ||
-    cleanEmail === "admin@masterfilepro.com" ||
-    cleanEmail === activeAdminEmail
-  ) {
-    const creds = getStoredCredentials()
-
-    const customAdminCred =
-      creds[cleanEmail] ||
-      creds[activeAdminEmail] ||
-      creds["admin@masterfilepro.com"] ||
-      creds["admin@fluxkit.com"] ||
-      creds[SEEDED_ADMIN_CREDENTIALS.email.toLowerCase()]
-
-    // Check multiple valid credentials layers:
-
-    const isCustomMatch = customAdminCred
-      ? hashPassword(password, customAdminCred.salt) === customAdminCred.hash
-      : false
-
-    // Only a credential produced by a previous successful sign-in is accepted
-    // offline; the server is the authority on first use.
-    if (!isCustomMatch) {
-      recordFailedLogin(cleanEmail)
-      throw new Error("Invalid email or password.")
-    }
-
-    clearFailedLogins(cleanEmail)
-
-    const storage = getStorage()
-
-    let adminName = SEEDED_ADMIN_ACCOUNT.name
-
-    if (storage) {
-      try {
-        const raw = storage.getItem("masterfilepro-admin-config")
-
-        if (raw) {
-          const parsed = JSON.parse(raw)
-
-          if (parsed?.name) {
-            adminName =
-              parsed.name === "Masterfilepro Administrator"
-                ? "Masterfilepro Administrator"
-                : parsed.name
-          }
-        }
-      } catch {}
-    }
-
-    const now = new Date().toISOString()
-
-    const adminUser: UserAccount = {
-      ...SEEDED_ADMIN_ACCOUNT,
-
-      name: adminName,
-
-      email: cleanEmail,
-
-      lastLoginAt: now,
-
-      message: "Signed in as administrator.",
-    }
-
-    saveCurrentUser(adminUser)
-
-    return adminUser
-  }
-
-  // 2. Standard User Account Check
-
-  const accounts = getRegisteredAccounts()
-
-  const found = accounts.find((a) => a.email.toLowerCase() === cleanEmail)
-
-  if (!found) {
-    recordFailedLogin(cleanEmail)
-    throw new Error("Invalid email or password.")
-  }
-
-  const creds = getStoredCredentials()
-
-  const userCred = creds[cleanEmail]
-
-  if (!userCred) {
-    if (found.provider === "google") {
-      throw new Error(
-        "This account uses Google Sign-In. Please sign in with Google.",
-      )
-    }
-
-    recordFailedLogin(cleanEmail)
-    throw new Error("Invalid email or password.")
-  }
-
-  const computedHash = hashPassword(password, userCred.salt)
-
-  if (computedHash !== userCred.hash) {
-    recordFailedLogin(cleanEmail)
-    throw new Error("Invalid email or password.")
-  }
-
-  clearFailedLogins(cleanEmail)
-
-  const now = new Date().toISOString()
-
-  const updatedUser: UserAccount = {
-    ...found,
-
-    lastLoginAt: now,
-
-    message: "Successfully signed in.",
-  }
-
-  saveCurrentUser(updatedUser)
-
-  return updatedUser
+  return serverUser
 }
 
-async function localRequestPasswordReset(
-  email: string,
-): Promise<{ message: string ; code?: string }> {
+async function localRequestPasswordReset(email: string): Promise<{ message: string }> {
   const cleanEmail = (email || "").trim().toLowerCase()
-
   if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     throw new Error("Please enter a valid email address.")
   }
 
-  // Rate limiting: prevent spamming reset code generation (30-second cooldown)
-  const tokens = getStoredResetTokens()
-  const existing = tokens[cleanEmail]
-  if (
-    existing &&
-    existing.lastRequestedAt &&
-    Date.now() - existing.lastRequestedAt < 30 * 1000
-  ) {
-    const waitSec = Math.ceil(
-      (30 * 1000 - (Date.now() - existing.lastRequestedAt)) / 1000,
-    )
-    throw new Error(
-      `Please wait ${waitSec} second${
-        waitSec > 1 ? "s" : ""
-      } before requesting another reset code.`,
-    )
-  }
-
-  // The server issues and verifies the code; generating one in the browser is
-  // only the fallback for when the endpoint cannot be reached at all.
   const server = await serverRequestPasswordReset(cleanEmail)
-
-  if (server) {
-    if (!server.ok)
-      throw new Error(server.error || "Could not start a password reset.")
-    return {
-      message:
-        server.message ||
-        "If that address is registered, a reset code has been sent.",
-      code: server.devCode,
-    }
-  }
-
-  const code = Math.floor(100000 + Math.random() * 900000).toString()
-  saveStoredResetToken(cleanEmail, code)
-  return {
-    message: "Password reset verification code generated.",
-    code,
-  }
+  if (!server) throw new Error("Password reset is unavailable. Please check your connection and try again.")
+  if (!server.ok) throw new Error(server.error || "Could not start a password reset.")
+  return { message: server.message || "If that address is registered, password recovery instructions will be sent." }
 }
 
 // Synchronous connection check prior to returning promises
@@ -1233,51 +656,12 @@ export function signUp(values: SignUpValues): Promise<UserAccount> {
   return localSignUp(values)
 }
 
-export function requestPasswordReset(
-  email: string,
-): Promise<{ message: string ; code?: string }> {
+export function requestPasswordReset(email: string): Promise<{ message: string }> {
   assertConnected(email)
 
   if (customAdapter) return customAdapter.requestPasswordReset(email)
 
   return localRequestPasswordReset(email)
-}
-
-export function verifyResetCode(email: string, code: string): boolean {
-  const cleanEmail = (email || "").trim().toLowerCase()
-  const cleanCode = (code || "").trim()
-  if (!cleanEmail || !cleanCode) return false
-
-  const storage = getStorage()
-  const tokens = getStoredResetTokens()
-  const record = tokens[cleanEmail]
-  if (!record) return false
-
-  if (Date.now() > record.expiresAt) {
-    clearStoredResetToken(cleanEmail)
-    return false
-  }
-
-  // Enforce brute-force attempt lockout on reset codes (max 5 tries)
-  if (record.attempts !== undefined && record.attempts >= 5) {
-    clearStoredResetToken(cleanEmail)
-    throw new Error(
-      "Too many failed verification attempts. This reset code has been invalidated for security. Please request a new code.",
-    )
-  }
-
-  if (record.code !== cleanCode) {
-    record.attempts = (record.attempts || 0) + 1
-    if (storage && typeof storage.setItem === "function") {
-      try {
-        tokens[cleanEmail] = record
-        storage.setItem(RESET_TOKENS_KEY, JSON.stringify(tokens))
-      } catch {}
-    }
-    return false
-  }
-
-  return true
 }
 
 export async function completePasswordReset(
@@ -1296,55 +680,28 @@ export async function completePasswordReset(
     throw new Error("Password must be at least 12 characters long.")
   }
 
-  // The code lives in Postgres, so the server is the authority on it. Local
-  // verification is only used when the endpoint could not be reached.
   const server = await serverConfirmPasswordReset(
     cleanEmail,
     (code || "").trim(),
     newPassword,
   )
 
-  if (server && !server.ok) {
-    throw new Error(server.error || "Invalid or expired verification code.")
+  if (!server) {
+    throw new Error("Password reset is unavailable. Please check your connection and try again.")
   }
+  if (!server.ok) throw new Error(server.error || "Invalid or expired verification code.")
 
-  if (server) {
-    mirrorStoredCredential(cleanEmail, newPassword)
-  } else {
-    if (!verifyResetCode(cleanEmail, code)) {
-      throw new Error("Invalid or expired 6-digit verification code.")
-    }
-    await changeAccountPassword(cleanEmail, newPassword)
-  }
+  clearLegacyAuthStorage()
 
   const accounts = getRegisteredAccounts()
   let user = accounts.find((a) => a.email.toLowerCase() === cleanEmail)
 
   if (!user) {
-    if (
-      cleanEmail === "admin@masterfilepro.com" ||
-      cleanEmail === "admin@fluxkit.com"
-    ) {
-      user = {
-        ...SEEDED_ADMIN_ACCOUNT,
-        email: cleanEmail,
-        lastLoginAt: new Date().toISOString(),
-      }
-    } else {
-      user = {
-        id: generateUserId(),
-        name: formatNameFromEmail(cleanEmail),
-        email: cleanEmail,
-        provider: "email",
-        role: "user",
-        subscriptionTier: "standard",
-        proStatus: "none",
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      }
-      accounts.push(user)
-      saveRegisteredAccounts(accounts)
+    const current = getCurrentUser()
+    if (!current || current.email.toLowerCase() !== cleanEmail) {
+      throw new Error("Your password was reset. Please sign in with your new password.")
     }
+    user = current
   } else {
     user.requirePasswordReset = false
     const existingIdx = accounts.findIndex(
@@ -1358,9 +715,6 @@ export async function completePasswordReset(
       saveRegisteredAccounts(accounts)
     }
   }
-
-  clearStoredResetToken(cleanEmail)
-  clearFailedLogins(cleanEmail)
 
   return {
     success: true,
@@ -1406,16 +760,18 @@ export async function completeForcedPasswordReset(
     updatedUser = accounts[idx]
   } else {
     const current = getCurrentUser()
+    if (!current || current.email.toLowerCase() !== cleanEmail) {
+      throw new Error("Your password was updated. Please sign in again.")
+    }
     updatedUser = {
-      ...(current || SEEDED_ADMIN_ACCOUNT),
-      email: cleanEmail,
+      ...current,
       requirePasswordReset: false,
       lastLoginAt: new Date().toISOString(),
     }
   }
 
   saveCurrentUser(updatedUser)
-  clearFailedLogins(cleanEmail)
+  clearLegacyAuthStorage()
 
   return {
     success: true,
@@ -1425,117 +781,55 @@ export async function completeForcedPasswordReset(
   }
 }
 
-/**
- * Modern PBKDF2 Password Hashing with SHA-256 and configurable iterations (default 100,000)
- * Uses browser Web Cryptography API where available with graceful fallback.
- */
-export async function hashPasswordPBKDF2(
-  password: string,
-  salt: string,
-  iterations = 100000,
-): Promise<string> {
-  if (
-    typeof crypto !== "undefined" &&
-    crypto.subtle &&
-    typeof crypto.subtle.importKey === "function"
-  ) {
-    try {
-      const enc = new TextEncoder()
-      const keyMaterial = await crypto.subtle.importKey(
-        "raw",
-        enc.encode(password),
-        { name: "PBKDF2" },
-        false,
-        ["deriveBits"],
-      )
-      const bits = await crypto.subtle.deriveBits(
-        {
-          name: "PBKDF2",
-          salt: enc.encode(salt),
-          iterations,
-          hash: "SHA-256",
-        },
-        keyMaterial,
-        256,
-      )
-      return Array.from(new Uint8Array(bits))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("")
-    } catch {
-      /* fallback below */
-    }
-  }
-  return hashPassword(password, salt)
-}
-
 // --- Client Google / Gmail Authentication & Account Management ---
 
-export async function signInWithGoogle(payload: {
-  email: string
+export async function signInWithGoogle(accessToken: string): Promise<UserAccount> {
+  if (!accessToken.trim()) throw new Error("Google sign-in did not return an access token.")
 
-  name?: string
-
-  avatar?: string
-}): Promise<UserAccount> {
-  const cleanEmail = payload.email.trim().toLowerCase()
-
-  if (!cleanEmail || !cleanEmail.includes("@")) {
-    throw new Error("Please enter a valid Gmail or Google email address.")
+  let response: Response
+  try {
+    response = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken }),
+    })
+  } catch {
+    throw new Error("Google sign-in is unavailable. Please try again or use email sign-in.")
   }
 
-  // Artificial short delay to give natural feedback
+  const data = await response.json().catch(() => null)
+  if (!response.ok || !data?.ok || !data?.token || !data?.user) {
+    throw new Error(data?.error || "Google sign-in could not be verified.")
+  }
 
-  await new Promise((resolve) => setTimeout(resolve, 350))
-
-  const existingAccounts = getRegisteredAccounts()
-
-  const existing = existingAccounts.find(
-    (a) => a.email.toLowerCase() === cleanEmail,
-  )
-
-  const derivedName = payload.name?.trim() || formatNameFromEmail(cleanEmail)
-
-  const now = new Date().toISOString()
-
-  const safeAvatar =
-    payload.avatar && /^https:\/\//i.test(payload.avatar.trim())
-      ? payload.avatar.trim()
-      : undefined
-
+  setSessionToken(data.token)
+  const existing = getRegisteredAccounts().find((account) => account.id === data.user.id)
   const account: UserAccount = {
-    id: existing ? existing.id : generateUserId(),
-
-    name: payload.name?.trim() || existing?.name || derivedName,
-
-    email: cleanEmail,
-
-    avatar:
-      safeAvatar ||
-      (existing?.avatar && /^https:\/\//i.test(existing.avatar.trim())
-        ? existing.avatar.trim()
-        : undefined),
-
+    id: data.user.id,
+    name: data.user.name,
+    email: data.user.email,
+    avatar: data.user.avatar,
     provider: "google",
-
-    role: existing?.role || "user",
-
-    subscriptionTier: existing?.subscriptionTier || "standard",
-
-    proStatus: existing?.proStatus || "none",
-
-    createdAt: existing?.createdAt || now,
-
-    lastLoginAt: now,
+    role: data.user.role,
+    subscriptionTier: data.user.subscriptionTier,
+    proStatus: data.user.proStatus,
+    unlockedTools: data.user.unlockedTools || [],
+    requirePasswordReset: data.mustResetPassword === true,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
   }
-
+  saveRegisteredAccounts([
+    ...getRegisteredAccounts().filter((item) => item.id !== account.id),
+    account,
+  ])
   saveCurrentUser(account)
-
   return account
 }
 
 export function signOut(): void {
   void serverSignOut()
   clearCurrentUser()
+  clearLegacyProviderSecrets()
 }
 
 export function onAuthStateChanged(
@@ -1569,39 +863,11 @@ export function onAuthStateChanged(
 // --- Live Google Cloud OAuth2 Support ---
 
 export function getGoogleClientId(): string {
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem(GOOGLE_CLIENT_ID_KEY)
-
-      if (stored) return stored
-    } catch {
-      /* ignore */
-    }
-  }
-
   try {
-    if (typeof process !== "undefined" && process.env) {
-      return process.env.VITE_GOOGLE_CLIENT_ID || ""
-    }
-  } catch {
-    /* ignore */
-  }
+    return process.env.VITE_GOOGLE_CLIENT_ID || ""
+  } catch {}
 
   return ""
-}
-
-export function setGoogleClientId(clientId: string): void {
-  if (typeof window !== "undefined") {
-    try {
-      if (clientId.trim()) {
-        localStorage.setItem(GOOGLE_CLIENT_ID_KEY, clientId.trim())
-      } else {
-        localStorage.removeItem(GOOGLE_CLIENT_ID_KEY)
-      }
-    } catch {
-      /* ignore */
-    }
-  }
 }
 
 export function triggerGoogleOAuthPopup(
@@ -1642,26 +908,7 @@ export function triggerGoogleOAuthPopup(
         }
 
         try {
-          const res = await fetch(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-
-            {
-              headers: {
-                Authorization: `Bearer ${tokenResponse.access_token}`,
-              },
-            },
-          )
-
-          const info = await res.json()
-
-          const account = await signInWithGoogle({
-            email: info.email,
-
-            name: info.name,
-
-            avatar: info.picture,
-          })
-
+          const account = await signInWithGoogle(tokenResponse.access_token)
           onSuccess(account)
         } catch (e) {
           onError(

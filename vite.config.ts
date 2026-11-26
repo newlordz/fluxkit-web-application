@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
     "SUPABASE_DB_URL",
     "SUPABASE_DB_URL_DIRECT",
     "FALLBACK_DB_URL",
+    "GOOGLE_CLIENT_ID",
   ]) {
     if (localEnv[key] && !process.env[key]) process.env[key] = localEnv[key]
   }
@@ -29,6 +30,11 @@ export default defineConfig(({ mode }) => {
     base: process.env.FIGMA_PUBLIC_URL
       ? `${process.env.FIGMA_PUBLIC_URL}/`
       : "/",
+    define: {
+      "process.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(
+        localEnv.VITE_GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "",
+      ),
+    },
     build: {
       sourcemap: emitSourcemaps ? true : false,
       minify: !emitSourcemaps,
@@ -72,7 +78,7 @@ export default defineConfig(({ mode }) => {
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: "/src/**/*.stories.{ts,tsx,js,jsx}" }),
-      fluxkitDatabasePlugin(),
+      masterfileproDatabasePlugin(),
     ],
     resolve: {
       alias: {
@@ -522,9 +528,9 @@ const DEV_API_ROUTES: Record<string, string> = {
   "/api/ocr-space": "/api/ocr-space.ts",
 }
 
-function fluxkitDatabasePlugin(): Plugin {
+function masterfileproDatabasePlugin(): Plugin {
   return {
-    name: "fluxkit-database-plugin",
+    name: "masterfilepro-database-plugin",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const rawUrl = req.url || ""

@@ -5,6 +5,9 @@
  */
 
 import { authHeaders } from "./sessionService"
+import { clearLegacyProviderSecrets } from "./securityStorage"
+
+clearLegacyProviderSecrets()
 
 export type PaymentProvider = "paystack" | "stripe" | "flutterwave" | "custom"
 
@@ -24,6 +27,10 @@ export interface PaymentGatewayConfig {
   secretKey: string
 
   webhookSecret?: string
+
+  hasSecretKey?: boolean
+
+  hasWebhookSecret?: boolean
 
   currency: string
 
@@ -165,6 +172,18 @@ function getStorage(): Storage | null {
   return null
 }
 
+const STORED_SECRET = "••••••••"
+
+function sanitizeGateway(gateway: PaymentGatewayConfig): PaymentGatewayConfig {
+  return {
+    ...gateway,
+    secretKey: gateway.secretKey ? STORED_SECRET : "",
+    webhookSecret: gateway.webhookSecret ? STORED_SECRET : "",
+    hasSecretKey: gateway.hasSecretKey === true || !!gateway.secretKey,
+    hasWebhookSecret: gateway.hasWebhookSecret === true || !!gateway.webhookSecret,
+  }
+}
+
 export function getAllGateways(): PaymentGatewayConfig[] {
   const storage = getStorage()
 
@@ -189,7 +208,9 @@ export function getAllGateways(): PaymentGatewayConfig[] {
       return match ? { ...def, ...match } : def
     })
 
-    return merged
+    const sanitized = merged.map(sanitizeGateway)
+    storage.setItem(STORAGE_KEY, JSON.stringify(sanitized))
+    return sanitized
   } catch {
     return DEFAULT_GATEWAYS
   }
@@ -210,7 +231,7 @@ export function saveGateway(config: PaymentGatewayConfig): void {
 
   if (storage && typeof storage.setItem === "function") {
     try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      storage.setItem(STORAGE_KEY, JSON.stringify(updated.map(sanitizeGateway)))
     } catch {
       /* ignore */
     }
@@ -240,10 +261,10 @@ export async function syncGatewaysWithServer(): Promise<PaymentGatewayConfig[]> 
         const storage = getStorage()
 
         if (storage) {
-          storage.setItem(STORAGE_KEY, JSON.stringify(data.gateways))
+          storage.setItem(STORAGE_KEY, JSON.stringify(data.gateways.map(sanitizeGateway)))
         }
 
-        return data.gateways
+        return data.gateways.map(sanitizeGateway)
       }
     }
   } catch {}
@@ -295,7 +316,7 @@ export async function testGatewayConnection(
   const now = new Date().toISOString()
 
   if (id === "paystack") {
-    if (!gateway.publicKey || !gateway.secretKey) {
+    if (!gateway.publicKey || (!gateway.hasSecretKey && !gateway.secretKey)) {
       const res = {
         success: false,
 
@@ -316,7 +337,8 @@ export async function testGatewayConnection(
     }
 
     const isKeyValid =
-      gateway.publicKey.startsWith("pk_") && gateway.secretKey.startsWith("sk_")
+      gateway.publicKey.startsWith("pk_") &&
+      (gateway.hasSecretKey || gateway.secretKey.startsWith("sk_"))
 
     if (!isKeyValid) {
       const res = {
@@ -353,7 +375,7 @@ export async function testGatewayConnection(
           headers: authHeaders({ "Content-Type": "application/json" }),
 
           body: JSON.stringify({
-            secretKey: gateway.secretKey,
+            ...(gateway.secretKey !== STORED_SECRET ? { secretKey: gateway.secretKey } : {}),
 
             publicKey: gateway.publicKey,
           }),
@@ -427,7 +449,7 @@ export async function testGatewayConnection(
   }
 
   if (id === "stripe") {
-    if (!gateway.publicKey || !gateway.secretKey) {
+    if (!gateway.publicKey || (!gateway.hasSecretKey && !gateway.secretKey)) {
       const res = {
         success: false,
 
@@ -449,7 +471,7 @@ export async function testGatewayConnection(
 
     if (
       !gateway.publicKey.startsWith("pk_") ||
-      !gateway.secretKey.startsWith("sk_")
+      (!gateway.hasSecretKey && !gateway.secretKey.startsWith("sk_"))
     ) {
       const res = {
         success: false,
@@ -490,7 +512,7 @@ export async function testGatewayConnection(
   }
 
   if (id === "flutterwave") {
-    if (!gateway.publicKey || !gateway.secretKey) {
+    if (!gateway.publicKey || (!gateway.hasSecretKey && !gateway.secretKey)) {
       const res = {
         success: false,
 
@@ -572,112 +594,43 @@ export async function testGatewayConnection(
   return { success: true, message: "Gateway tested." }
 }
 
-/**
- * Triggers a genuine Paystack Popup using Paystack Inline JS (https://js.paystack.co/v1/inline.js).
- * If running in a headless test or if Paystack SDK cannot be reached, gracefully invokes error/fallback.
- */
-
 export async function triggerLivePaystackCheckout(options: {
-  publicKey: string
-
-  email: string
-
+  tool: string
   amountInSubunits: number
-
   currency: string
-
-  onSuccess: (reference: string) => void
-
-  onClose?: () => void
-
-  onError?: (err: Error) => void
 }): Promise<void> {
-  if (typeof window === "undefined") {
-    options.onSuccess("ref_headless_" + Date.now())
+  if (typeof window === "undefined") throw new Error("Payment checkout requires a browser window.")
 
-    return
-  }
-
-  const g = window as any
-
-  if (!g.PaystackPop) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const existing = document.querySelector(
-          'script[src="https://js.paystack.co/v1/inline.js"]',
-        )
-
-        if (existing) {
-          if ((window as any).PaystackPop) {
-            resolve()
-
-            return
-          }
-
-          existing.addEventListener("load", () => resolve())
-
-          existing.addEventListener("error", () =>
-            reject(new Error("Failed to load Paystack Inline SDK script.")),
-          )
-
-          return
-        }
-
-        const script = document.createElement("script")
-
-        script.src = "https://js.paystack.co/v1/inline.js"
-
-        script.async = true
-
-        script.onload = () => resolve()
-
-        script.onerror = () =>
-          reject(new Error("Unable to connect to Paystack payment servers."))
-
-        document.head.appendChild(script)
-      })
-    } catch (err) {
-      if (options.onError) {
-        options.onError(
-          err instanceof Error
-            ? err
-            : new Error("Unable to reach Paystack servers."),
-        )
-      }
-
-      return
-    }
-  }
-
-  try {
-    const handler = (window as any).PaystackPop.setup({
-      key: options.publicKey,
-
-      email: options.email,
-
+  const callbackUrl = new URL("/", window.location.origin)
+  const response = await fetch("/api/paystack/initialize", {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      tool: options.tool,
       amount: options.amountInSubunits,
-
       currency: options.currency,
-
-      ref: "fk_" + Math.floor(Math.random() * 1000000000 + 1),
-
-      callback: (response: { reference: string }) => {
-        options.onSuccess(response.reference)
-      },
-
-      onClose: () => {
-        if (options.onClose) options.onClose()
-      },
-    })
-
-    handler.openIframe()
-  } catch (err) {
-    if (options.onError) {
-      options.onError(
-        err instanceof Error
-          ? err
-          : new Error("Failed to launch Paystack checkout window."),
-      )
-    }
+      callback_url: callbackUrl.toString(),
+    }),
+  })
+  const data = await response.json().catch(() => null)
+  if (!response.ok || !data?.status || !data?.data?.authorization_url) {
+    throw new Error(data?.message || "Paystack checkout could not be started.")
   }
+
+  const checkout = new URL(data.data.authorization_url)
+  if (checkout.protocol !== "https:" || !["paystack.com", "www.paystack.com", "checkout.paystack.com"].includes(checkout.hostname)) {
+    throw new Error("Paystack returned an invalid checkout address.")
+  }
+  window.location.assign(checkout.toString())
+}
+
+export async function verifyLivePaystackPayment(reference: string): Promise<any> {
+  const response = await fetch(`/api/paystack/verify?reference=${encodeURIComponent(reference)}`, {
+    headers: authHeaders(),
+  })
+  const data = await response.json().catch(() => null)
+  if (!response.ok || !data?.ok || data?.status !== "success") {
+    throw new Error(data?.message || "Payment verification is still pending.")
+  }
+  return data
 }

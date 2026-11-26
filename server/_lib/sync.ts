@@ -7,7 +7,7 @@ interface SyncTableSpec {
   updatedAtCol: string | null
   columns: string[]
   jsonCols?: string[]
-  specialConflictSet?: string
+  authoritativeOnly?: boolean
 }
 
 const SYNC_TABLES: SyncTableSpec[] = [
@@ -16,18 +16,19 @@ const SYNC_TABLES: SyncTableSpec[] = [
     conflictCol: "id",
     updatedAtCol: "updated_at",
     columns: [
-      "id", "email", "name", "avatar", "provider", "role",
+      "id", "email", "name", "avatar", "provider", "google_sub", "role",
       "subscription_tier", "pro_status", "unlocked_tools",
       "password_salt", "password_hash", "must_reset_password",
       "failed_attempts", "locked_until", "created_at", "last_login_at", "updated_at",
     ],
+    authoritativeOnly: true,
   },
   {
     name: "sessions",
     conflictCol: "token",
     updatedAtCol: null,
     columns: ["token", "user_id", "created_at", "expires_at", "revoked_at"],
-    specialConflictSet: "revoked_at = coalesce(excluded.revoked_at, sessions.revoked_at)",
+    authoritativeOnly: true,
   },
   {
     name: "payment_gateways",
@@ -45,6 +46,7 @@ const SYNC_TABLES: SyncTableSpec[] = [
     conflictCol: "key",
     updatedAtCol: "updated_at",
     columns: ["key", "tier", "price", "updated_at"],
+    authoritativeOnly: true,
   },
   {
     name: "api_keys",
@@ -70,6 +72,7 @@ const SYNC_TABLES: SyncTableSpec[] = [
     updatedAtCol: "updated_at",
     columns: ["id", "owner_user_id", "title", "published", "payload", "created_at", "updated_at"],
     jsonCols: ["payload"],
+    authoritativeOnly: true,
   },
   {
     name: "visitor_passes",
@@ -77,6 +80,7 @@ const SYNC_TABLES: SyncTableSpec[] = [
     updatedAtCol: null,
     columns: ["id", "owner_user_id", "event", "payload", "created_at"],
     jsonCols: ["payload"],
+    authoritativeOnly: true,
   },
   {
     name: "payments",
@@ -84,6 +88,7 @@ const SYNC_TABLES: SyncTableSpec[] = [
     updatedAtCol: "updated_at",
     columns: ["reference", "user_id", "email", "amount", "currency", "status", "gateway", "tool", "metadata", "created_at", "updated_at"],
     jsonCols: ["metadata"],
+    authoritativeOnly: true,
   },
 ]
 
@@ -101,7 +106,7 @@ function makeClient(connectionString: string): DbClient {
   }
   const pool = new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: true },
     max: 2,
     idleTimeoutMillis: 8000,
     connectionTimeoutMillis: 8000,
@@ -116,8 +121,12 @@ function makeClient(connectionString: string): DbClient {
 function buildUpsertSql(spec: SyncTableSpec): string {
   const cols = spec.columns.join(", ")
   const placeholders = spec.columns.map((_, i) => `$${i + 1}`).join(", ")
-  if (spec.specialConflictSet) {
-    return `insert into ${spec.name} (${cols}) values (${placeholders}) on conflict (${spec.conflictCol}) do update set ${spec.specialConflictSet}`
+  if (spec.authoritativeOnly) {
+    const updates = spec.columns
+      .filter((c) => c !== spec.conflictCol)
+      .map((c) => `${c} = excluded.${c}`)
+      .join(", ")
+    return `insert into ${spec.name} (${cols}) values (${placeholders}) on conflict (${spec.conflictCol}) do update set ${updates}`
   }
   if (!spec.updatedAtCol) {
     return `insert into ${spec.name} (${cols}) values (${placeholders}) on conflict (${spec.conflictCol}) do nothing`
@@ -132,9 +141,14 @@ function buildUpsertSql(spec: SyncTableSpec): string {
 async function syncDirection(
   source: DbClient,
   target: DbClient,
+  direction: "primaryToFallback" | "fallbackToPrimary",
 ): Promise<Record<string, number>> {
   const counts: Record<string, number> = {}
   for (const spec of SYNC_TABLES) {
+    if (spec.authoritativeOnly && direction === "fallbackToPrimary") {
+      counts[spec.name] = 0
+      continue
+    }
     const rows = await source.query(`select ${spec.columns.join(", ")} from ${spec.name}`)
     if (rows.length === 0) {
       counts[spec.name] = 0
@@ -168,10 +182,8 @@ export interface SyncResult {
 
 let inFlight: Promise<SyncResult> | null = null
 
-/**
- * Bidirectionally reconciles all application tables between primary (Supabase)
- * and fallback (Neon) using newest-`updated_at`-wins upserts.
- */
+// Configuration syncs both ways; security-sensitive rows only flow from the
+// authoritative primary to the fallback so stale backup data cannot regain control.
 export async function syncDatabases(options?: {
   primaryUrl?: string
   fallbackUrl?: string
@@ -189,8 +201,8 @@ export async function syncDatabases(options?: {
     const primary = makeClient(primaryUrl)
     const fallback = makeClient(fallbackUrl)
     try {
-      const primaryToFallback = await syncDirection(primary, fallback)
-      const fallbackToPrimary = await syncDirection(fallback, primary)
+      const primaryToFallback = await syncDirection(primary, fallback, "primaryToFallback")
+      const fallbackToPrimary = await syncDirection(fallback, primary, "fallbackToPrimary")
       return {
         ok: true,
         primaryToFallback,

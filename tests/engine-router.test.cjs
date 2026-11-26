@@ -378,7 +378,11 @@ test("pool: the offered engines are only the ones a tool can actually call", () 
   const mod = { exports: {} }
   vm.runInThisContext(`(function (exports, require, module) {\n${compiled}\n})`, {
     filename: path.resolve("src", "apiPoolService.ts"),
-  })(mod.exports, (id) => (id === "./sessionService" ? { authHeaders: () => ({}) } : require(id)), mod)
+  })(mod.exports, (id) => {
+    if (id === "./sessionService") return { authHeaders: () => ({}) }
+    if (id === "./securityStorage") return { clearLegacyProviderSecrets: () => {} }
+    return require(id)
+  }, mod)
 
   const offered = mod.exports.DEFAULT_CLOUD_APIS.filter((api) => api.category === "pdf-compression").map((api) => api.id)
   // CloudConvert and ConvertAPI sat at priorities 3 and 4 while no tool ever sent a
@@ -396,7 +400,11 @@ function loadPool() {
   const mod = { exports: {} }
   vm.runInThisContext(`(function (exports, require, module) {\n${compiled}\n})`, {
     filename: path.resolve("src", "apiPoolService.ts"),
-  })(mod.exports, (id) => (id === "./sessionService" ? { authHeaders: () => ({}) } : require(id)), mod)
+  })(mod.exports, (id) => {
+    if (id === "./sessionService") return { authHeaders: () => ({}) }
+    if (id === "./securityStorage") return { clearLegacyProviderSecrets: () => {} }
+    return require(id)
+  }, mod)
   return mod.exports
 }
 

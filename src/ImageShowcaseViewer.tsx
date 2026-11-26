@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import { useState, useEffect } from "react"
 
 import {
   Download,
@@ -6,11 +6,7 @@ import {
   ExternalLink,
   ZoomIn,
   X,
-  Sparkles,
-  QrCode,
-  ArrowLeft,
   Check,
-  Eye,
   AlertCircle,
   Loader2,
 } from "lucide-react"
@@ -22,21 +18,7 @@ import {
   type ShowcaseTheme,
 } from "./imageShowcaseService"
 
-interface ImageShowcaseViewerProps {
-  theme?: string
-
-  toggleTheme?: () => void
-
-  onNavigate?: (page: string) => void
-}
-
-export default function ImageShowcaseViewer({
-  theme = "light",
-
-  toggleTheme,
-
-  onNavigate,
-}: ImageShowcaseViewerProps) {
+export default function ImageShowcaseViewer() {
   const [loading, setLoading] = useState(true)
 
   const [data, setData] = useState<ImageShowcaseData | null>(null)
@@ -76,13 +58,9 @@ export default function ImageShowcaseViewer({
 
           // Update page document title
 
-          if (res.title) {
-            document.title = `${res.title} — Masterfilepro Showcase`
-          }
+          document.title = res.title || "Photo Showcase"
         } else {
-          setError(
-            "This image showcase could not be found or has expired. Create your own in Masterfilepro QR Studio!",
-          )
+          setError("This photo could not be found or the link has expired.")
         }
       })
 
@@ -94,6 +72,23 @@ export default function ImageShowcaseViewer({
         setLoading(false)
       })
   }, [])
+
+  useEffect(() => {
+    if (!isLightboxOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsLightboxOpen(false)
+    }
+
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [isLightboxOpen])
 
   const handleDownload = () => {
     if (!data?.imageDataUrl) return
@@ -125,7 +120,7 @@ export default function ImageShowcaseViewer({
         await navigator.share({
           title: data?.title || "Image Showcase",
 
-          text: data?.description || "Check out this image on Masterfilepro",
+          text: data?.description || "Check out this photo",
 
           url,
         })
@@ -159,17 +154,9 @@ export default function ImageShowcaseViewer({
           <AlertCircle size={28} />
         </div>
         <h1 className="text-xl font-bold mb-2">Showcase Not Found</h1>
-        <p className="text-sm text-slate-400 max-w-sm mb-6 leading-relaxed">
+        <p className="text-sm text-slate-400 max-w-sm leading-relaxed">
           {error || "The image link may have expired or is unavailable."}
         </p>
-        <button
-          onClick={() =>
-            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
-          }
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-all active:scale-[0.98]"
-        >
-          <QrCode size={16} /> Create an Image QR Code
-        </button>
       </div>
     )
   }
@@ -180,13 +167,23 @@ export default function ImageShowcaseViewer({
 
   // --------------------------------------------------------------------------
 
+  let ctaHref: string | null = null
+  try {
+    const target = new URL(data.ctaUrl || "")
+    if (target.protocol === "https:" || target.protocol === "http:") ctaHref = target.href
+  } catch {}
+
   const customPalette = getShowcaseCustomPalette(data.customColors)
-  const customControlClass = customPalette.isLight
-    ? "bg-black/10 hover:bg-black/15"
-    : "bg-white/10 hover:bg-white/15"
-  const customBorderClass = customPalette.isLight
-    ? "border-black/15"
-    : "border-white/15"
+  const isLightTheme =
+    data.theme === "polaroid" ||
+    data.theme === "editorial" ||
+    (data.theme === "custom" && customPalette.isLight)
+  const controlClass = isLightTheme
+    ? "border-black/10 bg-black/[0.04] hover:bg-black/[0.08]"
+    : "border-white/15 bg-white/10 hover:bg-white/15"
+  const badgeClass = isLightTheme
+    ? "border-indigo-700/15 bg-indigo-700/10 text-indigo-900"
+    : "border-indigo-300/25 bg-indigo-400/15 text-indigo-200"
 
   const getThemeWrapperClass = (t: ShowcaseTheme) => {
     switch (t) {
@@ -218,7 +215,7 @@ export default function ImageShowcaseViewer({
   const getImageContainerClass = (t: ShowcaseTheme) => {
     switch (t) {
       case "polaroid":
-        return "bg-white p-3.5 pb-8 rounded-sm shadow-[0_16px_36px_rgba(0,0,0,0.18)] rotate-[-1deg] border border-neutral-200"
+        return "bg-white p-3.5 rounded-sm border border-neutral-200 shadow-[0_16px_36px_rgba(0,0,0,0.18)] rotate-[-1deg] lg:rotate-[-0.5deg]"
 
       case "obsidian":
         return "rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6)] bg-slate-900"
@@ -246,7 +243,7 @@ export default function ImageShowcaseViewer({
 
   return (
     <div
-      className={`min-h-[100dvh] flex flex-col justify-between py-6 px-4 md:py-10 transition-colors duration-300 ${getThemeWrapperClass(
+      className={`relative isolate min-h-[100dvh] overflow-x-hidden px-4 py-5 transition-colors duration-300 sm:px-6 lg:px-10 lg:py-8 ${getThemeWrapperClass(
         data.theme,
       )}`}
       style={
@@ -258,163 +255,141 @@ export default function ImageShowcaseViewer({
           : undefined
       }
     >
-      {/* Top Header Bar */}
-      <header className="max-w-md mx-auto w-full flex items-center justify-between pb-4">
-        <button
-          onClick={() =>
-            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
-          }
-          className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full backdrop-blur-md transition-all active:scale-[0.98] ${
-            data.theme === "custom"
-              ? customControlClass
-              : "bg-white/10 hover:bg-white/15"
+      <header className="relative z-10 mx-auto flex w-full max-w-md items-center justify-between lg:max-w-6xl">
+        <div
+          className={`inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+            isLightTheme ? "text-slate-600" : "text-white/60"
           }`}
         >
-          <ArrowLeft size={13} /> Masterfilepro QR
-        </button>
-
-        <div className="flex items-center gap-2">
-          {data.badgeText && (
-            <span
-              className={`text-[10.5px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full border ${
-                data.theme === "custom" && customPalette.isLight
-                  ? "bg-black/10 text-indigo-950 border-indigo-950/20"
-                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
-              }`}
-            >
-              {data.badgeText}
-            </span>
-          )}
-          <button
-            onClick={handleShare}
-            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-md transition-all active:scale-[0.98] ${
-              data.theme === "custom"
-                ? customControlClass
-                : "bg-white/10 hover:bg-white/15"
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              isLightTheme ? "bg-indigo-600" : "bg-indigo-300"
             }`}
-            title="Share showcase link"
-          >
-            {copied ? (
-              <>
-                <Check size={13} className="text-emerald-400" /> Copied!
-              </>
-            ) : (
-              <>
-                <Share2 size={13} /> Share
-              </>
-            )}
-          </button>
+          />
+          Photo showcase
         </div>
+        <button
+          type="button"
+          onClick={handleShare}
+          className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold backdrop-blur-md transition-all active:scale-[0.98] ${controlClass}`}
+          title="Share photo link"
+        >
+          {copied ? (
+            <>
+              <Check size={13} className="text-emerald-500" /> Copied!
+            </>
+          ) : (
+            <>
+              <Share2 size={13} /> Share
+            </>
+          )}
+        </button>
       </header>
 
-      {/* Main Showcase Presentation Body */}
-      <main className="max-w-md mx-auto w-full flex-1 flex flex-col justify-center items-center py-2">
-        {/* The Framed Image Element */}
-        <div
-          className={`w-full max-w-[380px] transition-all duration-300 ${getImageContainerClass(data.theme)}`}
+      <main className="relative z-10 mx-auto flex min-h-[calc(100dvh-5rem)] w-full max-w-md flex-1 flex-col justify-center gap-5 py-4 sm:gap-6 lg:min-h-[calc(100dvh-7rem)] lg:max-w-6xl lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:items-center lg:gap-14 lg:py-6 xl:gap-20">
+        <figure
+          className={`mx-auto w-full max-w-[380px] transition-transform duration-300 sm:max-w-[420px] lg:mx-0 lg:max-w-none ${getImageContainerClass(
+            data.theme,
+          )}`}
         >
-          <div
-            className="relative group cursor-pointer overflow-hidden rounded-lg"
+          <button
+            type="button"
+            className="group relative block w-full cursor-zoom-in overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
             onClick={() => setIsLightboxOpen(true)}
+            aria-label={`Enlarge ${data.title || "showcase photo"}`}
           >
             <img
               src={data.imageDataUrl}
               alt={data.title || "Showcase Photo"}
-              className="w-full h-auto object-cover max-h-[65dvh] block"
+              className="block h-auto w-full object-cover max-h-[52dvh] lg:max-h-[76dvh]"
               loading="eager"
             />
-            {/* Hover / Tap to Inspect Pill */}
-            <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200">
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3.5 py-1.5 rounded-full bg-black/60 text-white backdrop-blur-md">
-                <ZoomIn size={14} /> Tap to Enlarge
+            <span className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3.5 py-1.5 text-xs font-medium text-white backdrop-blur-md">
+                <ZoomIn size={14} /> View full screen
               </span>
-            </div>
-          </div>
+            </span>
+          </button>
+        </figure>
 
-          {/* Polaroid Handwritten Caption Area */}
-          {data.theme === "polaroid" && (
-            <div className="pt-4 px-1 text-center font-serif">
-              <h2 className="text-lg font-bold tracking-tight text-slate-800">
-                {data.title}
-              </h2>
-              {data.description && (
-                <p className="text-xs text-slate-600 mt-1 line-clamp-2">
-                  {data.description}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Standard Content Info Area (Non-Polaroid) */}
-        {data.theme !== "polaroid" && (
-          <div className="w-full text-center mt-5 px-2">
-            <h1 className="text-2xl font-bold tracking-tight mb-1.5">
-              {data.title}
-            </h1>
-            {data.description && (
-              <p className="text-sm opacity-80 max-w-sm mx-auto leading-relaxed whitespace-pre-line">
-                {data.description}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Visitor Action Strip */}
-        <div className="w-full max-w-[380px] flex flex-col gap-2.5 mt-6 px-1">
-          {/* Custom Creator CTA Link */}
-          {data.ctaEnabled && data.ctaUrl && (
-            <a
-              href={data.ctaUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-indigo-600/20"
+        <section className="mx-auto w-full max-w-[420px] text-center lg:mx-0 lg:max-w-none lg:text-left">
+          {data.badgeText && (
+            <span
+              className={`mb-3 inline-flex rounded-full border px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider ${badgeClass}`}
             >
-              <span>{data.ctaLabel || "Visit Link"}</span>
-              <ExternalLink size={15} />
-            </a>
+              {data.badgeText}
+            </span>
           )}
-
-          {/* Download Photo Button */}
-          {data.downloadAllowed && (
-            <button
-              onClick={handleDownload}
-              className={`w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-current text-sm font-semibold border backdrop-blur-md transition-all active:scale-[0.98] ${
-                data.theme === "custom"
-                  ? `${customControlClass} ${customBorderClass}`
-                  : "bg-white/10 hover:bg-white/15 border-white/15"
+          <h1
+            className={`text-balance text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl xl:text-5xl ${
+              data.theme === "polaroid" ? "font-serif" : ""
+            }`}
+            style={
+              data.theme === "polaroid"
+                ? { fontFamily: "Georgia, 'Times New Roman', serif" }
+                : undefined
+            }
+          >
+            {data.title}
+          </h1>
+          {data.description && (
+            <p
+              className={`mx-auto mt-2 max-w-sm whitespace-pre-line text-sm leading-relaxed opacity-80 sm:text-base lg:mx-0 lg:mt-4 lg:max-w-lg lg:text-lg ${
+                data.theme === "polaroid" ? "font-serif" : ""
               }`}
             >
-              <Download size={15} />
-              <span>Save Full Resolution Photo</span>
-            </button>
+              {data.description}
+            </p>
           )}
-        </div>
-      </main>
 
-      {/* Footer Branding */}
-      <footer className="max-w-md mx-auto w-full pt-6 pb-2 text-center text-xs opacity-60 flex flex-col items-center gap-1.5">
-        <div className="flex items-center gap-1 font-medium">
-          <Sparkles size={12} className="text-teal-400" />
-          <span>Designed with Masterfilepro QR Studio</span>
-        </div>
-        <button
-          onClick={() =>
-            onNavigate ? onNavigate("qr") : (window.location.hash = "qr")
-          }
-          className="underline hover:opacity-100 transition-opacity"
-        >
-          Create your own Image QR Code for free
-        </button>
-      </footer>
+          <div className="mx-auto mt-5 flex w-full max-w-[380px] flex-col gap-2.5 sm:mt-6 lg:mx-0 lg:max-w-none lg:mt-8">
+            {data.ctaEnabled && ctaHref && (
+              <a
+                href={ctaHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 active:scale-[0.98]"
+              >
+                <span>{data.ctaLabel || "Visit Link"}</span>
+                <ExternalLink size={15} />
+              </a>
+            )}
+
+            {data.downloadAllowed && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold text-current backdrop-blur-md transition-all active:scale-[0.98] ${controlClass}`}
+              >
+                <Download size={15} />
+                <span>Save Full Resolution Photo</span>
+              </button>
+            )}
+          </div>
+
+          <p
+            className={`mt-4 flex items-center justify-center gap-1.5 text-[11px] ${
+              isLightTheme ? "text-slate-500" : "text-white/50"
+            } lg:justify-start`}
+          >
+            <ZoomIn size={12} />
+            <span className="lg:hidden">Tap the photo to enlarge</span>
+            <span className="hidden lg:inline">Select the photo to view full screen</span>
+          </p>
+        </section>
+      </main>
 
       {/* Full-Screen Lightbox Zoom Modal */}
       {isLightboxOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex flex-col items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Full-screen view of ${data.title || "showcase photo"}`}
           onClick={() => setIsLightboxOpen(false)}
         >
           <button
+            type="button"
             onClick={() => setIsLightboxOpen(false)}
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
             aria-label="Close enlarged preview"
@@ -430,6 +405,7 @@ export default function ImageShowcaseViewer({
           <div className="absolute bottom-5 flex items-center gap-3">
             {data.downloadAllowed && (
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation()
 

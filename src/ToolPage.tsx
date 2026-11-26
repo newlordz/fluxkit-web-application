@@ -16,7 +16,9 @@ import {
   type ImageTableAssessment,
 } from "./imageTableReconstruction"
 
-import QRCodeStudioModal from "./QRCodeStudioModal"
+import QRCodeStudioModal, {
+  type QRCodeStudioModalHandle,
+} from "./QRCodeStudioModal"
 
 import MergeLoadingModal from "./MergeLoadingModal"
 
@@ -896,6 +898,8 @@ export default function ToolPage({
 
   const [qr, setQr] = useState("")
 
+  const qrStudioRef = useRef<QRCodeStudioModalHandle | null>(null)
+
   const [showQRStudio, setShowQRStudio] = useState(false)
 
   const [rawQrPayload, setRawQrPayload] = useState("")
@@ -903,9 +907,9 @@ export default function ToolPage({
   const [kind, setKind] = useState(() => {
     if (tool.id === "qr" && typeof window !== "undefined") {
       try {
-        const preset = window.sessionStorage?.getItem("fluxkit-qr-kind-preset")
+        const preset = window.sessionStorage?.getItem("masterfilepro-qr-kind-preset")
         if (preset) {
-          window.sessionStorage.removeItem("fluxkit-qr-kind-preset")
+          window.sessionStorage.removeItem("masterfilepro-qr-kind-preset")
           return preset
         }
       } catch {}
@@ -7092,7 +7096,9 @@ export default function ToolPage({
 
                         try {
                           if (typeof generateQR === "function") {
-                            const qrImg = await generateQR(url)
+                            const qrImg = qrStudioRef.current
+                              ? await qrStudioRef.current.renderValue(url)
+                              : await generateQR(url)
 
                             setQr(qrImg)
 
@@ -9566,7 +9572,7 @@ export default function ToolPage({
 
                 {tool.id === "flatten-pdf" && (
                   <p className="processing-location-note">
-                    Converts interactive AcroForm fields, checkboxes, and signature widgets into permanent static page content so they can no longer be edited.
+                    Converts interactive AcroForm fields, including text fields and checkboxes, into permanent static page content so they can no longer be edited. Other annotations are not flattened.
                   </p>
                 )}
 
@@ -11981,6 +11987,24 @@ export default function ToolPage({
                       >
                         <Download size={16} /> Download PNG
                       </a>
+                      {tool.id === "qr-vcard" && result && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => handleDownload(result)}
+                        >
+                          <Download size={16} /> Download vCard
+                        </button>
+                      )}
+                      {tool.id === "qr-event" && result && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => handleDownload(result)}
+                        >
+                          <Download size={16} /> Download Calendar (.ics)
+                        </button>
+                      )}
                       {rawQrPayload && rawQrPayload.includes("#showcase") && (
                         <button
                           type="button"
@@ -11992,9 +12016,11 @@ export default function ToolPage({
 
                             gap: "8px",
                           }}
-                          onClick={() => window.open(rawQrPayload, "_blank")}
+                          onClick={() =>
+                            window.open(rawQrPayload, "_blank", "noopener,noreferrer")
+                          }
                         >
-                          <Eye size={16} /> Open Mobile Showcase View
+                          <Eye size={16} /> Open Showcase
                         </button>
                       )}
                       <button
@@ -13197,8 +13223,9 @@ export default function ToolPage({
       )}
 
       {/* QR Code Full Customization Studio Modal */}
-      {showQRStudio && (
+      {tool.id === "qr" && (
         <QRCodeStudioModal
+          ref={qrStudioRef}
           value={rawQrPayload || value.trim() || "https://masterfilepro.com"}
           isOpen={showQRStudio}
           onClose={() => setShowQRStudio(false)}

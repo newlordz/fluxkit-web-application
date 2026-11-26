@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
+import fs from "node:fs"
 import { Pool } from "pg"
 
 // package.json sets "type": "module", so Vercel emits these handlers as ES modules and
@@ -15,6 +16,7 @@ let fallbackPool: Pool | null = null
 let fallbackUntil = 0
 let wasInFallback = false
 const FALLBACK_TTL_MS = 60_000
+const supabaseCa = fs.readFileSync("server/certs/supabase-prod-ca-2021.crt", "utf8")
 
 export function isNeonHost(connectionString: string): boolean {
   try {
@@ -50,7 +52,7 @@ function getFallbackPool(connectionString: string): Pool {
   if (!fallbackPool) {
     fallbackPool = new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: true },
       max: 2,
       idleTimeoutMillis: 8000,
       connectionTimeoutMillis: 5000,
@@ -72,31 +74,6 @@ async function runOnFallbackQuery<T = Record<string, any>>(
   return res.rows as T[]
 }
 
-async function runOnFallbackTransact<T>(
-  fallbackUrl: string,
-  fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>,
-): Promise<T> {
-  if (isNeonHost(fallbackUrl)) {
-    return fn((text, params = []) => queryNeonHttp<T>(fallbackUrl, text, params))
-  }
-  const client = await getFallbackPool(fallbackUrl).connect()
-  try {
-    await client.query("begin")
-    const run = async (text: string, params: any[] = []) => {
-      const r = await client.query(text, params)
-      return r.rows
-    }
-    const out = await fn(run)
-    await client.query("commit")
-    return out
-  } catch (err) {
-    await client.query("rollback").catch(() => {})
-    throw err
-  } finally {
-    client.release()
-  }
-}
-
 function createPool(): Pool {
   const connectionString = process.env.SUPABASE_DB_URL
   if (!connectionString) {
@@ -104,7 +81,7 @@ function createPool(): Pool {
   }
   const fresh = new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: true, ca: supabaseCa },
     max: 2,
     idleTimeoutMillis: 8000,
     connectionTimeoutMillis: 5000,
@@ -164,6 +141,13 @@ function triggerBackgroundSync() {
     .catch(() => {})
 }
 
+export async function queryAuthoritative<T = Record<string, any>>(text: string, params: any[] = []): Promise<T[]> {
+  return withStaleRetry(async () => {
+    const res = await getPool().query(text, params)
+    return res.rows as T[]
+  })
+}
+
 export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<T[]> {
   const fallbackUrl = process.env.FALLBACK_DB_URL
   if (fallbackUrl && Date.now() < fallbackUntil) {
@@ -192,31 +176,16 @@ export async function query<T = Record<string, any>>(text: string, params: any[]
   }
 }
 
-export async function transact<T>(fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>): Promise<T> {
-  const fallbackUrl = process.env.FALLBACK_DB_URL
-  if (fallbackUrl && Date.now() < fallbackUntil) {
-    return runOnFallbackTransact<T>(fallbackUrl, fn)
-  }
-  try {
-    const out = await withStaleRetry(() => runTransaction(fn))
-    if (fallbackUrl && wasInFallback) {
-      wasInFallback = false
-      triggerBackgroundSync()
-    }
-    return out
-  } catch (err) {
-    if (fallbackUrl && isStaleConnection(err)) {
-      const out = await runOnFallbackTransact<T>(fallbackUrl, fn)
-      fallbackUntil = Date.now() + FALLBACK_TTL_MS
-      wasInFallback = true
-      return out
-    }
-    throw err
-  }
+type TransactionSql = <T = Record<string, any>>(text: string, params?: any[]) => Promise<T[]>
+
+export async function transact<T>(fn: (sql: TransactionSql) => Promise<T>): Promise<T> {
+  // A dropped connection during commit has an unknown outcome; replaying could
+  // consume a reset code twice or issue a second session.
+  return runTransaction(fn)
 }
 
 async function runTransaction<T>(
-  fn: (sql: (text: string, params?: any[]) => Promise<T[]>) => Promise<T>,
+  fn: (sql: TransactionSql) => Promise<T>,
 ): Promise<T> {
   const client = await getPool().connect()
   try {
@@ -237,25 +206,36 @@ async function runTransaction<T>(
 }
 
 export function cors(req: IncomingMessage, res: ServerResponse) {
+  res.setHeader("X-Content-Type-Options", "nosniff")
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin")
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST,PUT,DELETE")
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, X-Requested-With",
   )
-  res.setHeader("Access-Control-Allow-Credentials", "true")
+  res.setHeader("Access-Control-Allow-Credentials", "false")
   const origin = req.headers.origin
-  if (typeof origin === "string" && /^https?:\/\/([a-z0-9-]+\.)*(masterfilepro\.com|vercel\.app|localhost(:\d+)?)(:.*)?$/i.test(origin)) {
-    res.setHeader("Vary", "Origin")
-    res.setHeader("Access-Control-Allow-Origin", origin)
-  } else {
-    res.setHeader("Vary", "Origin")
-    res.setHeader("Access-Control-Allow-Origin", "null")
+  const allowedOrigins = new Set([
+    "https://masterfilepro.com",
+    "https://www.masterfilepro.com",
+    process.env.APP_ORIGIN,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
+  ])
+  if (typeof origin === "string" && /^https?:\/\/localhost(?::\d+)?$/i.test(origin)) {
+    allowedOrigins.add(origin)
   }
+  res.setHeader("Vary", "Origin")
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    typeof origin === "string" && allowedOrigins.has(origin) ? origin : "null",
+  )
 }
 
 export function json(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status
   res.setHeader("Content-Type", "application/json")
+  if (!res.getHeader("Cache-Control")) res.setHeader("Cache-Control", "no-store")
   res.end(JSON.stringify(payload))
 }
 

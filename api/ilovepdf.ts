@@ -1,6 +1,6 @@
 import { cors } from "../server/_lib/db.ts"
 import { getILovePdfCredentials, recordApiCall } from "../server/_lib/providers.ts"
-import { readPaidBody, requirePaidAccess } from "../server/_lib/gateway.ts"
+import { readPaidBody, requirePaidAccess, requireToolAccess } from "../server/_lib/gateway.ts"
 import JSZip from "jszip"
 
 const EXPECTED_MEMBER: Record<string, string[]> = {
@@ -105,7 +105,17 @@ export default async function handler(req: any, res: any) {
     return
   }
 
-  const actor = await requirePaidAccess(req, res, "ilovepdf")
+  const fixedTools: Record<string, string> = {
+    compress: "compress",
+    pdfword: "pdf-to-word",
+    pdfppt: "pdf-to-ppt",
+  }
+  const actor = await requirePaidAccess(
+    req,
+    res,
+    "ilovepdf",
+    action === "officepdf" ? undefined : fixedTools[action] || "compress",
+  )
   if (!actor) return
 
   try {
@@ -114,7 +124,6 @@ export default async function handler(req: any, res: any) {
 
     const fileBase64 = body.pdfBase64 || body.fileBase64
     const compressionLevel = body.compressionLevel || "recommended"
-    const { publicKey } = await getILovePdfCredentials()
 
     if (!fileBase64) {
       res.status?.(400)?.json?.({ error: "pdfBase64 is required" }) ||
@@ -126,7 +135,20 @@ export default async function handler(req: any, res: any) {
     const originalSize = fileBuffer.length
     // officepdf takes a PowerPoint or Word document, so the upload keeps the name and
     // type the caller sent instead of being labelled a PDF.
-    const uploadName = body.fileName || "document.pdf"
+    const uploadName = String(body.fileName || "document.pdf")
+    let toolId = fixedTools[action] || "compress"
+    if (action === "officepdf") {
+      toolId = /\.pptx?$/i.test(uploadName) ? "ppt-to-pdf" : "word-to-pdf"
+      try {
+        const archive = await JSZip.loadAsync(fileBuffer)
+        if (archive.file("ppt/presentation.xml")) toolId = "ppt-to-pdf"
+      } catch {
+        // Legacy Office files are identified by their supplied filename.
+      }
+    }
+    if (!(await requireToolAccess(actor, res, toolId))) return
+
+    const { publicKey } = await getILovePdfCredentials()
 
     const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
       method: "POST",

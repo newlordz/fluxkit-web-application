@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db.ts"
-import { currentUser } from "../server/_lib/auth.ts"
+import { cors, json, queryAuthoritative, readBody, type ApiRequest } from "../server/_lib/db.ts"
+import { requireActiveUser } from "../server/_lib/auth.ts"
 
 const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
 const TTL_DAYS = 30
@@ -19,7 +19,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
         return json(res, 400, { success: false, error: "Missing or malformed 'id' parameter." })
       }
 
-      const [row] = await query<{ payload: any }>(
+      const [row] = await queryAuthoritative<{ payload: any }>(
         `select payload from showcases
           where id = $1 and published and created_at > now() - ($2 || ' days')::interval`,
         [id, TTL_DAYS],
@@ -40,15 +40,32 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
           error: "Invalid showcase payload. A well-formed 'id' and 'imageDataUrl' are required.",
         })
       }
+      if (
+        typeof body.imageDataUrl !== "string" ||
+        !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(body.imageDataUrl) ||
+        body.imageDataUrl.length > MAX_PAYLOAD_SIZE
+      ) {
+        return json(res, 400, { success: false, error: "Showcase image must be a PNG, JPEG, WebP, or GIF data URL." })
+      }
+      if (body.ctaEnabled && body.ctaUrl) {
+        try {
+          const cta = new URL(body.ctaUrl)
+          if (!["http:", "https:"].includes(cta.protocol)) throw new Error("Unsafe URL")
+        } catch {
+          return json(res, 400, { success: false, error: "Showcase button link must use HTTP or HTTPS." })
+        }
+      }
 
-      const actor = await currentUser(req)
+      const actor = await requireActiveUser(req)
+      if (!actor) return json(res, 401, { success: false, error: "Sign-in required to publish a showcase." })
 
-      await query(
+      const saved = await queryAuthoritative<{ id: string }>(
         `insert into showcases (id, owner_user_id, title, published, payload, created_at, updated_at)
          values ($1, $2, $3, true, $4::jsonb, now(), now())
          on conflict (id) do update
-            set payload = excluded.payload, title = excluded.title,
-                owner_user_id = excluded.owner_user_id, updated_at = now()`,
+            set payload = excluded.payload, title = excluded.title, updated_at = now()
+            where showcases.owner_user_id = $2
+         returning id`,
         [
           String(body.id),
           actor?.id ?? null,
@@ -56,19 +73,25 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
           JSON.stringify(body),
         ],
       )
+      if (!saved.length) {
+        return json(res, 403, { success: false, error: "This showcase belongs to another account." })
+      }
 
-      // Keep the table bounded; the oldest showcases go first.
-      await query(
-        `delete from showcases where id in (
-           select id from showcases order by created_at desc offset 2000
+      await queryAuthoritative(
+        `delete from showcases where owner_user_id = $1 and id in (
+           select id from showcases
+            where owner_user_id = $1
+            order by created_at desc offset 2000
          )`,
+        [actor.id],
       )
 
       return json(res, 201, { success: true, id: body.id, message: "Showcase saved successfully." })
     }
 
     return json(res, 405, { error: "Method not allowed" })
-  } catch (err: any) {
-    return json(res, 500, { error: err?.message || "Internal server error" })
+  } catch (err) {
+    console.error("Showcase request failed", err)
+    return json(res, 500, { error: "Showcase service is temporarily unavailable." })
   }
 }

@@ -29,9 +29,19 @@ function getTranspiled(full) {
   return result
 }
 
-function createLoader(hash = "overview", initialStorage = {}) {
+function createLoader(hash = "overview", initialStorage = {}, fetchImpl = async () => {
+  throw new Error("Network unavailable in test")
+}) {
   const moduleCache = new Map()
   const storage = new Map(Object.entries(initialStorage))
+  const sessionStorage = new Map()
+
+  const mockSessionStorage = {
+    getItem: (key) => sessionStorage.get(key) || null,
+    setItem: (key, val) => sessionStorage.set(key, String(val)),
+    removeItem: (key) => sessionStorage.delete(key),
+    clear: () => sessionStorage.clear(),
+  }
 
   const mockLocalStorage = {
     getItem: (key) => storage.get(key) || null,
@@ -94,8 +104,10 @@ function createLoader(hash = "overview", initialStorage = {}) {
         process: { env: {} },
         location: { hash: `#${hash}` },
         localStorage: mockLocalStorage,
+        sessionStorage: mockSessionStorage,
         window: {
           localStorage: mockLocalStorage,
+          sessionStorage: mockSessionStorage,
           location: { hash: `#${hash}` },
           addEventListener: () => {},
           removeEventListener: () => {},
@@ -105,6 +117,8 @@ function createLoader(hash = "overview", initialStorage = {}) {
         Blob,
         File,
         URL,
+        atob,
+        TextDecoder,
         setTimeout,
         clearTimeout,
         CustomEvent: class CustomEvent {
@@ -115,6 +129,7 @@ function createLoader(hash = "overview", initialStorage = {}) {
         },
         AbortSignal,
         DOMException,
+        fetch: fetchImpl,
       },
       { filename },
     )
@@ -348,6 +363,25 @@ test("Tier 2 [QR Code Studio]: every preset renders distinct standalone SVG artw
   assert.match(whatsapp, /fill="#25D366"/)
   assert.match(whatsapp, /<path d="M17\.472/)
   assert.doesNotMatch(whatsapp, /MessageCircle/)
+})
+
+test("Tier 2 [QR Code Studio]: uploaded SVG logos keep brand colors and inherit the QR foreground", () => {
+  const { normalizeSvgLogoSource } = createLoader().load("QRCodeStudioModal")
+  const decode = (src) => decodeURIComponent(src.slice(src.indexOf(",") + 1))
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>Café</title><path fill="currentColor" d="M0 0h24v24H0z" /><path fill="#25D366" d="M0 0h12v12H0z" /></svg>'
+  const source = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`
+  const normalized = decode(normalizeSvgLogoSource(source, "#e11d48"))
+
+  assert.match(normalized, /^<svg color="#e11d48"/)
+  assert.match(normalized, /<title>Café<\/title>/)
+  assert.match(normalized, /fill="currentColor"/)
+  assert.match(normalized, /fill="#25D366"/)
+
+  const coloredSource = `data:image/svg+xml,${encodeURIComponent('<svg color="#123456"><path fill="currentColor" /></svg>')}`
+  assert.equal(normalizeSvgLogoSource(coloredSource, "#e11d48"), coloredSource)
+
+  const rasterSource = "data:image/png;base64,iVBORw0KGgo="
+  assert.equal(normalizeSvgLogoSource(rasterSource, "#e11d48"), rasterSource)
 })
 
 test("Tier 2 [QR Code Studio]: Email address format validation and URL escaping", () => {
@@ -642,17 +676,34 @@ test("Tier 4 [Scenario 1]: Multi-Tool Conference Materials Publishing Workflow",
 })
 
 test("Tier 4 [Scenario 2]: Authenticated User Session Continuity and Profile Transition", async () => {
-  const { load } = createLoader("overview")
+  const requests = []
+  const { load } = createLoader("overview", {}, async (url, init) => {
+    requests.push({ url, body: JSON.parse(init.body) })
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        token: "server-issued-token",
+        user: {
+          id: "usr_sarah",
+          email: "sarah.connor@cyberdyne.org",
+          name: "Sarah Connor",
+          role: "user",
+          subscriptionTier: "standard",
+          proStatus: "none",
+          unlockedTools: [],
+        },
+      }),
+    }
+  })
   const auth = load("authService")
 
-  // Initial guest state
   assert.equal(auth.getCurrentUser(), null)
-
-  // User signs in with Google OAuth
-  const user = await auth.signInWithGoogle({
-    email: "sarah.connor@cyberdyne.org",
-    name: "Sarah Connor",
-  })
+  const user = await auth.signInWithGoogle("google-access-token")
+  assert.deepEqual(requests.filter((request) => request.url === "/api/auth/google"), [
+    { url: "/api/auth/google", body: { accessToken: "google-access-token" } },
+  ])
 
   assert.ok(user.id.startsWith("usr_"))
   assert.equal(user.email, "sarah.connor@cyberdyne.org")

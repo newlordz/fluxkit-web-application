@@ -61,7 +61,11 @@ import ToolBadgeIcon from "./ToolBadgeIcon"
 import { useNotify } from "./Notifications"
 
 import {
+  clearCurrentUser,
   getCurrentUser,
+  getRegisteredAccounts,
+  saveCurrentUser,
+  saveRegisteredAccounts,
   signOut,
   onAuthStateChanged,
   reconcileSessionWithServer,
@@ -101,6 +105,7 @@ import ForcedPasswordResetModal from "./ForcedPasswordResetModal"
 import QuickFeedback from "./QuickFeedback"
 
 import { GoogleIcon } from "./GoogleAuth"
+import { verifyLivePaystackPayment } from "./paymentIntegrationService"
 
 const ToolPage = lazy(() => import("./ToolPage"))
 const AudioToText = lazy(() => import("./AudioToText"))
@@ -329,6 +334,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() =>
     getCurrentUser(),
   )
+  const [sessionReady, setSessionReady] = useState(() => {
+    const role = getCurrentUser()?.role
+    return role !== "admin" && role !== "sub-admin"
+  })
 
   const [page, setPage] = useState(() => {
     const fromHash = location.hash.slice(1)
@@ -386,7 +395,7 @@ export default function App() {
 
   const [accentMenu, setAccentMenu] = useState(false)
 
-  const [profile, setProfile] = useState(() => stored("masterfilepro-name", "Jamie"))
+  const [profile, setProfile] = useState(() => stored("masterfilepro-name", ""))
 
   const [saved, setSaved] = useState(false)
 
@@ -394,7 +403,7 @@ export default function App() {
   // accessible name as well (WCAG 2.5.3).
   const avatarInitial = currentUser
     ? (currentUser.name || "U").slice(0, 1).toUpperCase()
-    : `${profile.slice(0, 1).toUpperCase()}D`
+    : "G"
 
   const [activeCurrency, setActiveCurrencyState] =
     useState<SupportedCurrency>(getActiveCurrency)
@@ -443,6 +452,9 @@ export default function App() {
         notify("Your session expired. Please sign in again.", "info")
       }
 
+      setCurrentUser(getCurrentUser())
+      setSessionReady(true)
+
       // Both read the admin record, so they run together and share one request.
       const [status] = await Promise.all([
         initializeDatabaseSync(),
@@ -463,6 +475,12 @@ export default function App() {
 
       void syncLiveExchangeRate().catch(() => null)
       void syncUsersWithServer().catch(() => null)
+    }).catch(() => {
+      if (cancelled) return
+      clearCurrentUser()
+      setCurrentUser(null)
+      setSessionReady(true)
+      notify("Could not verify your session. Please sign in again.", "info")
     })
 
     const handleFocus = () => {
@@ -473,6 +491,48 @@ export default function App() {
     return () => {
       cancelled = true
       window.removeEventListener("focus", handleFocus)
+    }
+  }, [notify])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const reference = params.get("reference") || params.get("trxref")
+    if (!reference) return
+
+    let cancelled = false
+    void verifyLivePaystackPayment(reference)
+      .then((payment) => {
+        if (cancelled || !payment?.user) return
+        const existing = getCurrentUser()
+        const verified: UserAccount = {
+          id: payment.user.id,
+          email: payment.user.email,
+          name: payment.user.name,
+          avatar: existing?.avatar,
+          provider: existing?.provider || "email",
+          role: payment.user.role,
+          subscriptionTier: payment.user.subscriptionTier,
+          proStatus: payment.user.proStatus,
+          unlockedTools: payment.user.unlockedTools || [],
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        }
+        saveRegisteredAccounts([
+          ...getRegisteredAccounts().filter((account) => account.id !== verified.id),
+          verified,
+        ])
+        saveCurrentUser(verified)
+        notify("Payment verified. Your purchase is now active.", "success")
+      })
+      .catch((error: any) => {
+        if (!cancelled) notify(error?.message || "Payment verification is still pending.", "info")
+      })
+      .finally(() => {
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash)
+      })
+
+    return () => {
+      cancelled = true
     }
   }, [notify])
 
@@ -970,13 +1030,12 @@ export default function App() {
   if (page.startsWith("showcase") || page.startsWith("image-qr"))
     return (
       <Suspense fallback={<RouteLoading />}>
-        <ImageShowcaseViewer
-          theme={theme}
-          toggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-          onNavigate={navigate}
-        />
+        <ImageShowcaseViewer />
       </Suspense>
     )
+
+  if (!sessionReady && (page === "admin" || page.startsWith("admin-")))
+    return <RouteLoading />
 
   const isAdmin =
     currentUser?.role === "admin" || currentUser?.role === "sub-admin"
@@ -1227,7 +1286,11 @@ export default function App() {
             <button
               className="user-profile"
               onClick={() =>
-                isAdmin ? navigate("admin") : navigate("settings")
+                currentUser
+                  ? isAdmin
+                    ? navigate("admin")
+                    : navigate("settings")
+                  : navigate("sign-in")
               }
             >
               <span
@@ -1267,7 +1330,7 @@ export default function App() {
                     : "Masterfile Pro Administrator"
                   : currentUser
                     ? currentUser.name
-                    : "Masterfile Pro User"}
+                    : "Guest"}
                 <small>
                   {isAdmin
                     ? currentUser?.role === "sub-admin"
@@ -1275,7 +1338,7 @@ export default function App() {
                       : "Administrator"
                     : currentUser
                       ? currentUser.email
-                      : "Personal account"}
+                      : "Not signed in"}
                 </small>
               </span>
               <ChevronDown size={15} />
@@ -1534,17 +1597,9 @@ export default function App() {
                   <div className="popover-user-header">
                     <span className="avatar">{avatarInitial}</span>
                     <div className="popover-user-meta">
-                      <strong>
-                        {currentUser
-                          ? currentUser.name
-                          : profile
-                            ? `${profile} (Local Profile)`
-                            : "Masterfile Pro User"}
-                      </strong>
+                      <strong>{currentUser ? currentUser.name : "Guest"}</strong>
                       <p className="popover-email">
-                        {currentUser
-                          ? currentUser.email
-                          : "Local profile · Not signed in"}
+                        {currentUser ? currentUser.email : "Not signed in"}
                       </p>
                     </div>
                   </div>
@@ -1769,7 +1824,7 @@ export default function App() {
                           onClick={() => {
                             try {
                               window.sessionStorage?.setItem(
-                                "fluxkit-qr-kind-preset",
+                                "masterfilepro-qr-kind-preset",
                                 q.mode,
                               )
                             } catch {}
@@ -2549,7 +2604,7 @@ export default function App() {
                   onSubmit={(e) => {
                     e.preventDefault()
 
-                    persist("masterfilepro-name", profile.trim() || "Jamie")
+                    persist("masterfilepro-name", profile.trim())
 
                     setSaved(true)
 
@@ -2558,11 +2613,11 @@ export default function App() {
                 >
                   <h2>Personal profile</h2>
                   <label>
-                    First name
+                    First name (optional)
                     <input
                       aria-label="Personal profile"
-                      required
                       maxLength={40}
+                      placeholder="Your first name"
                       value={profile}
                       onChange={(e) => {
                         setProfile(e.target.value)

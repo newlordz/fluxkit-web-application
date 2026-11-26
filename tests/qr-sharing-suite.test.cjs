@@ -32,10 +32,13 @@ function loadServices() {
 test("QR & Sharing Suite - All 4 tools registered in config.ts and shared/insights.ts", () => {
   const configSrc = fs.readFileSync(path.join(__dirname, "../src/config.ts"), "utf8")
   const insightsSrc = fs.readFileSync(path.join(__dirname, "../shared/insights.ts"), "utf8")
+  const toolPageSrc = fs.readFileSync(path.join(__dirname, "../src/ToolPage.tsx"), "utf8")
   for (const id of ["qr-scanner", "qr-vcard", "qr-batch", "qr-event"]) {
     assert.ok(configSrc.includes(`"${id}"`), `config.ts missing ${id}`)
     assert.ok(insightsSrc.includes(`"${id}"`), `shared/insights.ts missing ${id}`)
   }
+  assert.ok(toolPageSrc.includes("Download vCard"))
+  assert.ok(toolPageSrc.includes("Download Calendar (.ics)"))
 })
 
 test("generateVCardQR builds valid vCard 3.0 payload, QR PNG, and .vcf file", async () => {
@@ -61,11 +64,29 @@ test("generateVCardQR builds valid vCard 3.0 payload, QR PNG, and .vcf file", as
   assert.equal(res.result.name, "jordan-taylor.vcf")
 })
 
+test("buildVCardPayload escapes text and uses CRLF line endings", () => {
+  const { buildVCardPayload } = loadServices()
+  const payload = buildVCardPayload({
+    fullName: "Jordan\\ Taylor, Jr.",
+    organization: "Acme; Studio",
+    note: "First line\nSecond line",
+  })
+
+  assert.ok(payload.includes("FN:Jordan\\\\ Taylor\\, Jr."))
+  assert.ok(payload.includes("ORG:Acme\\; Studio"))
+  assert.ok(payload.includes("NOTE:First line\\nSecond line"))
+  assert.ok(!/(?<!\r)\n/.test(payload))
+})
+
 test("generateEventQR builds valid ICS calendar payload, QR PNG, and .ics file", async () => {
   const { generateEventQR } = loadServices()
 
   await assert.rejects(() => generateEventQR({ summary: "", start: "2026-12-01T10:00" }), /Enter an event title/)
   await assert.rejects(() => generateEventQR({ summary: "Launch", start: "invalid-date" }), /valid start date/)
+  await assert.rejects(
+    () => generateEventQR({ summary: "Launch", start: "2026-12-01T11:00", end: "2026-12-01T10:00" }),
+    /end time must be after the start time/,
+  )
 
   const res = await generateEventQR({
     summary: "Annual Product Launch",
@@ -78,6 +99,9 @@ test("generateEventQR builds valid ICS calendar payload, QR PNG, and .ics file",
   assert.ok(res.payload.includes("BEGIN:VEVENT"))
   assert.ok(res.payload.includes("SUMMARY:Annual Product Launch"))
   assert.ok(res.payload.includes("LOCATION:Hall B"))
+  assert.match(res.payload, /UID:[^\r\n]+/)
+  assert.match(res.payload, /DTSTAMP:\d{8}T\d{6}Z/)
+  assert.ok(!/(?<!\r)\n/.test(res.payload))
   assert.ok(res.payload.includes("END:VCALENDAR"))
   assert.ok(res.qrDataUrl.startsWith("data:image/png;base64,"))
   assert.equal(res.result.name, "annual-product-launch.ics")
@@ -105,6 +129,20 @@ test("generateBatchQRs parses CSV and plain lines and packages PNGs + manifest.c
   const manifest = await zip.file("manifest.csv").async("string")
   assert.ok(manifest.includes("https://example.com/1"))
   assert.ok(manifest.includes("https://example.com/3"))
+})
+
+test("generateBatchQRs keeps every file when sanitized labels collide", async () => {
+  const { generateBatchQRs } = loadServices()
+  const res = await generateBatchQRs([
+    { label: "Table", payload: "https://example.com/1" },
+    { label: "Table", payload: "https://example.com/2" },
+    { label: "Table-2", payload: "https://example.com/3" },
+  ])
+
+  const zip = await JSZip.loadAsync(new Uint8Array(await res.blob.arrayBuffer()))
+  const files = Object.keys(zip.files).filter((name) => name.endsWith(".png"))
+  assert.deepEqual(files.sort(), ["table-2-2.png", "table-2.png", "table.png"])
+  assert.notEqual(await zip.file("table-2.png").async("base64"), await zip.file("table-2-2.png").async("base64"))
 })
 
 test("decodeQRFromImageData decodes a generated QR pixel matrix back to exact payload", async () => {

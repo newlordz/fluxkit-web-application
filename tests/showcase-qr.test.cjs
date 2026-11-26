@@ -19,7 +19,7 @@ function loadShowcaseService() {
   const wrapper = `(function (exports, require, module, __filename, __dirname) {\n${code}\n})`
   const compiled = vm.runInThisContext(wrapper, { filename: filePath })
   const mod = { exports: {} }
-  compiled(mod.exports, require, mod, filePath, path.dirname(filePath))
+  compiled(mod.exports, (id) => id === "./sessionService" ? { authHeaders: () => ({}) } : require(id), mod, filePath, path.dirname(filePath))
   return mod.exports
 }
 
@@ -115,4 +115,21 @@ test("Custom palette defaults missing or unsafe colors and selects readable text
   })
   assert.strictEqual(safe.startColor, defaults.startColor)
   assert.strictEqual(safe.endColor, defaults.endColor)
+})
+
+test("Showcase recipients stay in the shared photo and get distinct responsive layouts", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "../src/ImageShowcaseViewer.tsx"),
+    "utf8",
+  )
+
+  assert.doesNotMatch(source, /onNavigate|window\.location\.hash\s*=/)
+  assert.doesNotMatch(source, /Create an Image QR Code|Create your own Image QR Code|Designed with Masterfilepro QR Studio/)
+  assert.match(source, /lg:grid/)
+  assert.match(source, /lg:grid-cols-\[minmax\(0,1\.35fr\)_minmax\(320px,0\.65fr\)\]/)
+  assert.match(source, /max-h-\[52dvh\]/)
+  assert.match(source, /lg:max-h-\[76dvh\]/)
+
+  const appSource = fs.readFileSync(path.resolve(__dirname, "../src/App.tsx"), "utf8")
+  assert.match(appSource, /<ImageShowcaseViewer \/>/)
 })

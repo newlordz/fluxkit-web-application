@@ -1,15 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { cors, json, readBody } from "../_lib/db.ts"
-import {
-  clearFailedAttempts,
-  createSession,
-  findUserByEmail,
-  isLocked,
-  needsPasswordUpgrade,
-  registerFailedAttempt,
-  upgradePasswordHash,
-  verifyPassword,
-} from "../_lib/auth.ts"
+import { authenticatePassword } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)
@@ -17,49 +8,37 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return json(res, 405, { ok: false, error: "Method not allowed" })
 
   try {
-    const body = await readBody(req)
-    const email = typeof body?.email === "string" ? body.email : ""
+    const body = await readBody(req, 16 * 1024)
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : ""
     const password = typeof body?.password === "string" ? body.password : ""
     if (!email || !password) return json(res, 400, { ok: false, error: "Email and password are required" })
-
-    const user = await findUserByEmail(email)
-    // Same response for unknown email and bad password: no account enumeration.
-    if (!user) return json(res, 401, { ok: false, error: "Invalid email or password" })
-
-    if (isLocked(user)) {
-      return json(res, 423, { ok: false, error: "Account temporarily locked after repeated failed sign-ins" })
+    if (email.length > 254 || password.length > 1024) {
+      return json(res, 400, { ok: false, error: "Invalid email or password" })
     }
 
-    if (!(await verifyPassword(user, password))) {
-      await registerFailedAttempt(user.id)
+    const result = await authenticatePassword(email, password)
+    if (result.status === "locked" || result.status === "invalid") {
       return json(res, 401, { ok: false, error: "Invalid email or password" })
-    }
-
-    await clearFailedAttempts(user.id)
-    const { token, expiresAt } = await createSession(user.id)
-
-    // Opportunistic: the password is only in hand at sign-in. A failure here leaves
-    // the working legacy hash in place, so it must never break the login.
-    if (needsPasswordUpgrade(user)) {
-      await upgradePasswordHash(user.id, password).catch(() => null)
     }
 
     return json(res, 200, {
       ok: true,
-      token,
-      expiresAt: expiresAt.toISOString(),
-      mustResetPassword: user.must_reset_password,
+      token: result.token,
+      expiresAt: result.expiresAt.toISOString(),
+      mustResetPassword: result.user.must_reset_password,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        subscriptionTier: user.subscription_tier,
-        proStatus: user.pro_status,
-        unlockedTools: user.unlocked_tools,
+        id: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+        provider: result.user.provider || "email",
+        role: result.user.role,
+        subscriptionTier: result.user.subscription_tier,
+        proStatus: result.user.pro_status,
+        unlockedTools: result.user.unlocked_tools,
       },
     })
-  } catch (err: any) {
-    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
+  } catch (err) {
+    console.error("Sign-in failed", err)
+    return json(res, 500, { ok: false, error: "Sign-in is temporarily unavailable. Please try again." })
   }
 }

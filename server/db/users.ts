@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { cors, json, query, readBody } from "../_lib/db.ts"
-import { currentUser, requireRole } from "../_lib/auth.ts"
+import { cors, json, queryAuthoritative, readBody } from "../_lib/db.ts"
+import { requireActiveUser, requireRole } from "../_lib/auth.ts"
 
 interface UserRow {
   id: string
@@ -12,13 +12,21 @@ interface UserRow {
   subscription_tier: string
   pro_status: string
   unlocked_tools: string[]
+  must_reset_password: boolean
   created_at: string
   last_login_at: string | null
 }
 
 const SELECT = `select id, email, name, avatar, provider, role, subscription_tier, pro_status,
-                       unlocked_tools, created_at, last_login_at
+                       unlocked_tools, must_reset_password, created_at, last_login_at
                   from users`
+
+const ROOT_ADMIN_IDS = new Set(["usr_admin_default"])
+const ROOT_ADMIN_EMAILS = new Set(["admin@masterfilepro.com", "admin@fluxkit.com"])
+
+function isRootAdmin(row: { id: string; email: string }): boolean {
+  return ROOT_ADMIN_IDS.has(row.id) || ROOT_ADMIN_EMAILS.has(row.email.trim().toLowerCase())
+}
 
 function toClient(row: UserRow) {
   return {
@@ -31,6 +39,7 @@ function toClient(row: UserRow) {
     subscriptionTier: row.subscription_tier,
     proStatus: row.pro_status,
     unlockedTools: row.unlocked_tools,
+    requirePasswordReset: row.must_reset_password,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
   }
@@ -46,26 +55,29 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (req.method === "GET") {
       const actor = await requireRole(req, ["admin", "sub-admin"])
       if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
-      const rows = await query<UserRow>(`${SELECT} order by created_at desc`)
+      const rows = await queryAuthoritative<UserRow>(`${SELECT} order by created_at desc`)
       return json(res, 200, { ok: true, users: rows.map(toClient), count: rows.length })
     }
 
     if (req.method === "POST" || req.method === "PUT") {
-      const actor = await currentUser(req)
+      const actor = await requireActiveUser(req)
       if (!actor) return json(res, 401, { ok: false, error: "Sign-in required" })
 
       const body = await readBody(req)
 
       // Admin batch sync: the console pushes the whole registered-account list.
       if (Array.isArray(body?.users)) {
-        const actor = await requireRole(req, ["admin", "sub-admin"])
-        if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
+        const actor = await requireRole(req, ["admin"])
+        if (!actor) return json(res, 403, { ok: false, error: "Full administrator sign-in required" })
 
         let synced = 0
         for (const u of body.users) {
           if (!u?.id || !u?.email) continue
+          const id = String(u.id)
+          const email = String(u.email).trim().toLowerCase()
+          if (ROOT_ADMIN_IDS.has(id) || ROOT_ADMIN_EMAILS.has(email)) continue
           try {
-            await query(
+            await queryAuthoritative(
               `insert into users
                  (id, email, name, avatar, provider, role, subscription_tier, pro_status, unlocked_tools, last_login_at)
                values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -80,8 +92,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
                  last_login_at = excluded.last_login_at,
                  updated_at = now()`,
               [
-                String(u.id),
-                String(u.email).trim().toLowerCase(),
+                id,
+                email,
                 u.name ?? "",
                 u.avatar ?? null,
                 u.provider === "google" ? "google" : "email",
@@ -103,13 +115,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (body?.action === "delete" && body?.userId) {
         const actor = await requireRole(req, ["admin"])
         if (!actor) return json(res, 401, { ok: false, error: "Administrator sign-in required" })
-        if (String(body.userId) === actor.id) {
+        const userId = String(body.userId)
+        if (userId === actor.id) {
           return json(res, 400, { ok: false, error: "You cannot delete your own account here" })
         }
-        await query(`delete from users where id = $1`, [String(body.userId)])
-        await query(
+        const [target] = await queryAuthoritative<UserRow>(`${SELECT} where id = $1`, [userId])
+        if (target && isRootAdmin(target)) {
+          return json(res, 403, { ok: false, error: "The root administrator cannot be deleted" })
+        }
+        await queryAuthoritative(`delete from users where id = $1`, [userId])
+        await queryAuthoritative(
           `insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`,
-          [actor.id, "user.delete", String(body.userId), "{}"],
+          [actor.id, "user.delete", userId, "{}"],
         )
         return json(res, 200, { ok: true })
       }
@@ -125,9 +142,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         return json(res, 403, { ok: false, error: "You may only update your own profile" })
       }
 
-      // Privileged columns are only writable by an administrator.
-      if (isAdmin) {
-        await query(
+      const [target] = await queryAuthoritative<UserRow>(`${SELECT} where id = $1`, [targetId])
+      const rootSelf = !!target && isRootAdmin(target) && target.id === actor.id
+      if (target && isRootAdmin(target) && !rootSelf) {
+        return json(res, 403, { ok: false, error: "The root administrator cannot be modified" })
+      }
+      if (
+        actor.role === "sub-admin" &&
+        ((target?.role === "admin") || incoming.role === "admin")
+      ) {
+        return json(res, 403, { ok: false, error: "Sub-administrators cannot modify administrators" })
+      }
+
+      if (isAdmin && !rootSelf) {
+        await queryAuthoritative(
           `update users
              set name = coalesce($2, name),
                  avatar = coalesce($3, avatar),
@@ -135,32 +163,37 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
                  subscription_tier = coalesce($5, subscription_tier),
                  pro_status = coalesce($6, pro_status),
                  unlocked_tools = coalesce($7, unlocked_tools),
+                 must_reset_password = coalesce($8, must_reset_password),
                  updated_at = now()
            where id = $1`,
           [
             targetId,
             incoming.name ?? null,
             incoming.avatar ?? null,
-            incoming.role ?? null,
-            incoming.subscriptionTier ?? null,
-            incoming.proStatus ?? null,
+            ["admin", "sub-admin", "user"].includes(incoming.role) ? incoming.role : null,
+            incoming.subscriptionTier === "pro" ? "pro" : incoming.subscriptionTier === "standard" ? "standard" : null,
+            ["none", "pending", "active"].includes(incoming.proStatus) ? incoming.proStatus : null,
             Array.isArray(incoming.unlockedTools) ? incoming.unlockedTools : null,
+            typeof incoming.requirePasswordReset === "boolean" ? incoming.requirePasswordReset : null,
           ],
         )
+        if (incoming.requirePasswordReset === true) {
+          await queryAuthoritative(`update sessions set revoked_at = now() where user_id = $1 and revoked_at is null`, [targetId])
+        }
       } else {
-        await query(`update users set name = coalesce($2, name), avatar = coalesce($3, avatar), updated_at = now() where id = $1`, [
+        await queryAuthoritative(`update users set name = coalesce($2, name), avatar = coalesce($3, avatar), updated_at = now() where id = $1`, [
           targetId,
           incoming.name ?? null,
           incoming.avatar ?? null,
         ])
       }
 
-      const rows = await query<UserRow>(`${SELECT} where id = $1`, [targetId])
+      const rows = await queryAuthoritative<UserRow>(`${SELECT} where id = $1`, [targetId])
       if (!rows.length) return json(res, 404, { ok: false, error: "User not found" })
 
-      await query(
+      await queryAuthoritative(
         `insert into audit_log (actor_user_id, action, target, metadata) values ($1, $2, $3, $4)`,
-        [actor.id, isAdmin ? "user.update.privileged" : "user.update.self", targetId, JSON.stringify({ name: incoming.name ?? null })],
+        [actor.id, isAdmin && !rootSelf ? "user.update.privileged" : "user.update.self", targetId, JSON.stringify({ name: incoming.name ?? null })],
       )
 
       return json(res, 200, { ok: true, user: toClient(rows[0]) })
@@ -172,12 +205,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const id = new URLSearchParams(req.url?.split("?")[1] || "").get("id")
       if (!id) return json(res, 400, { ok: false, error: "Query parameter id required" })
       if (id === actor.id) return json(res, 400, { ok: false, error: "You cannot delete your own account here" })
-      await query(`delete from users where id = $1`, [id])
+      const [target] = await queryAuthoritative<UserRow>(`${SELECT} where id = $1`, [id])
+      if (target && isRootAdmin(target)) {
+        return json(res, 403, { ok: false, error: "The root administrator cannot be deleted" })
+      }
+      await queryAuthoritative(`delete from users where id = $1`, [id])
       return json(res, 200, { ok: true })
     }
 
     return json(res, 405, { ok: false, error: "Method not allowed" })
-  } catch (err: any) {
-    return json(res, 500, { ok: false, error: err?.message || "Internal server error" })
+  } catch (err) {
+    console.error("Account operation failed", err)
+    return json(res, 500, { ok: false, error: "Account service is temporarily unavailable." })
   }
 }

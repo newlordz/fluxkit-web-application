@@ -1,18 +1,38 @@
 import type { ServerResponse } from "node:http"
-import { cors, json, query, readBody, type ApiRequest } from "../server/_lib/db.ts"
+import { cors, json, queryAuthoritative, readBody, transact, type ApiRequest } from "../server/_lib/db.ts"
 import { getGatewayConfig } from "../server/_lib/providers.ts"
-import { currentUser } from "../server/_lib/auth.ts"
+import { requireActiveUser } from "../server/_lib/auth.ts"
 
 async function paystackSecret(): Promise<string> {
   const { secretKey } = await getGatewayConfig("paystack", ["PAYSTACK_SECRET_KEY"])
   return secretKey
 }
 
+const CURRENCY_RATES = { USD: 1, GHS: 11.78, NGN: 1500 } as const
+type PaystackCurrency = keyof typeof CURRENCY_RATES
+
+type PaystackUser = {
+  id: string
+  email: string
+  name: string
+  role: "admin" | "sub-admin" | "user"
+  subscription_tier: "standard" | "pro"
+  pro_status: "none" | "pending" | "active"
+  unlocked_tools: string[]
+}
+
+type VerificationOutcome =
+  | { status: "already-processed" }
+  | { status: "unavailable" }
+  | { status: "success"; user?: PaystackUser }
+
 // A checkout started for one price and confirmed for another is the whole difference
 // between a subscription and a gift, so the number is read from the stored plan rather
 // than from the request that asks to be charged.
 async function storedPlanPrice(toolKey: string): Promise<number | null> {
-  const rows = await query<{ price: number | string }>(
+  if (toolKey === "pro-monthly") return 19
+  if (toolKey === "pro-yearly") return 190
+  const rows = await queryAuthoritative<{ price: number | string }>(
     `select price from tools where key = $1 limit 1`,
     [toolKey],
   )
@@ -26,7 +46,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
   if (req.method === "OPTIONS") return json(res, 200, {})
 
   // Both actions move money or money's records, so both belong to a signed-in visitor.
-  const actor = await currentUser(req)
+  const actor = await requireActiveUser(req)
   if (!actor) {
     return json(res, 401, {
       ok: false,
@@ -59,32 +79,118 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     if (!reference) return json(res, 400, { status: false, message: "Transaction reference is required." })
 
     try {
+      const [payment] = await queryAuthoritative<{
+        user_id: string | null
+        email: string | null
+        amount: number | string
+        currency: string
+        tool: string | null
+        status: string
+      }>(
+        `select user_id, email, amount, currency, tool, status from payments
+          where reference = $1 and (user_id = $2 or lower(email) = lower($3))
+          limit 1`,
+        [reference, actor.id, actor.email],
+      )
+      if (!payment || payment.user_id !== actor.id) {
+        return json(res, 403, { status: false, message: "This payment does not belong to your account." })
+      }
+      if (payment.status === "success") {
+        return json(res, 409, { status: false, message: "This payment has already been processed." })
+      }
+
       const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
         headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
       })
       const data = await response.json()
+      const transaction = data?.data
+      const paidAmount = Number(transaction?.amount)
+      const expectedAmount = Math.round(Number(payment.amount) * 100)
+      const matchesCharge =
+        transaction?.status === "success" &&
+        paidAmount === expectedAmount &&
+        String(transaction?.currency || "").toUpperCase() === payment.currency.toUpperCase() &&
+        String(transaction?.customer?.email || "").toLowerCase() === String(payment.email || actor.email).toLowerCase()
 
-      const status = data?.data?.status || "failed"
+      if (!matchesCharge) {
+        await queryAuthoritative(
+          `update payments set status = $2, metadata = metadata || $3::jsonb, updated_at = now()
+            where reference = $1 and user_id = $4 and status <> 'success'`,
+          [reference, "failed", JSON.stringify({ verified: true }), actor.id],
+        )
+        return json(res, 402, { ok: false, status: false, message: "Payment is not verified for this purchase." })
+      }
 
-      // Only the person the charge was made for may settle its record: an outsider who
-      // guesses a reference cannot turn their own row green, let alone someone else's.
-      await query(
-        `update payments set status = $2, amount = coalesce($3, amount), metadata = metadata || $4::jsonb,
-                updated_at = now()
-          where reference = $1 and (user_id = $5 or lower(email) = lower($6))`,
-        [
-          reference,
-          status,
-          data?.data?.amount ? Number(data.data.amount) / 100 : null,
-          JSON.stringify({ verified: data?.data || {} }),
-          actor.id,
-          actor.email,
-        ],
-      )
+      const outcome = await transact(async (sql): Promise<VerificationOutcome> => {
+        const [locked] = await sql<{ status: string }>(
+          `select status from payments where reference = $1 and user_id = $2 for update`,
+          [reference, actor.id],
+        )
+        if (!locked || locked.status === "success") return { status: "already-processed" }
 
-      return json(res, response.status, data)
-    } catch (err: any) {
-      return json(res, 502, { status: false, message: err?.message })
+        const tool = payment.tool || ""
+        if (tool === "pro-monthly" || tool === "pro-yearly") {
+          await sql(
+            `update users set subscription_tier = 'pro', pro_status = 'active', updated_at = now() where id = $1`,
+            [actor.id],
+          )
+        } else if (tool) {
+          const [plan] = await sql<{ price: number | string }>(
+            `select price from tools where key = $1 and price > 0 limit 1`,
+            [tool],
+          )
+          if (!plan) return { status: "unavailable" }
+          await sql(
+            `update users
+               set unlocked_tools = case when $2 = any(unlocked_tools) then unlocked_tools
+                                        else array_append(unlocked_tools, $2) end,
+                   updated_at = now()
+             where id = $1`,
+            [actor.id, tool],
+          )
+        } else {
+          return { status: "unavailable" }
+        }
+
+        await sql(
+          `update payments set status = 'success', amount = $2, metadata = metadata || $3::jsonb, updated_at = now()
+            where reference = $1 and user_id = $4 and status <> 'success'`,
+          [reference, Number(payment.amount), JSON.stringify({ verified: true }), actor.id],
+        )
+        const [user] = await sql<PaystackUser>(
+          `select id, email, name, role, subscription_tier, pro_status, unlocked_tools from users where id = $1`,
+          [actor.id],
+        )
+        return { status: "success", user }
+      })
+
+      if (outcome.status === "already-processed") {
+        return json(res, 409, { status: false, message: "This payment has already been processed." })
+      }
+      if (outcome.status === "unavailable") {
+        return json(res, 409, { ok: false, message: "The purchased plan is no longer available." })
+      }
+
+      return json(res, 200, {
+        ok: true,
+        status: "success",
+        reference,
+        tool: payment.tool || "",
+        user: outcome.user
+          ? {
+              id: outcome.user.id,
+              email: outcome.user.email,
+              name: outcome.user.name,
+              role: outcome.user.role,
+              subscriptionTier: outcome.user.subscription_tier,
+              proStatus: outcome.user.pro_status,
+              unlockedTools: outcome.user.unlocked_tools,
+            }
+          : undefined,
+      })
+    } catch (err) {
+      console.error("Paystack verification failed", err)
+      return json(res, 502, { status: false, message: "Payment verification is temporarily unavailable. Please try again." })
     }
   }
 
@@ -92,6 +198,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     const body = await readBody(req)
     const amount = Number(body?.amount)
     const toolKey = typeof body?.tool === "string" ? body.tool : ""
+    const currency = String(body?.currency || "GHS").toUpperCase() as PaystackCurrency
 
     if (!Number.isFinite(amount) || amount <= 0) {
       return json(res, 400, { ok: false, message: "A valid amount is required." })
@@ -109,10 +216,11 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       return json(res, 400, { ok: false, message: "That tool is included in your plan and needs no payment." })
     }
 
-    // Amounts are sent in the gateway's own currency, and every currency the gateway
-    // charges in is worth more than a dollar in subunits, so the dollar price is the
-    // floor an underpayment cannot get past.
-    if (amount < Math.round(price * 100)) {
+    if (!(currency in CURRENCY_RATES)) {
+      return json(res, 400, { ok: false, message: "Unsupported payment currency." })
+    }
+    const minimumAmount = Math.round(price * CURRENCY_RATES[currency] * 100)
+    if (amount < minimumAmount) {
       return json(res, 400, { ok: false, message: "The amount sent is below the listed price of this plan." })
     }
 
@@ -143,7 +251,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
           // mailbox the visitor typed in.
           email: actor.email,
           amount,
-          currency: body?.currency || "GHS",
+          currency,
           ...(callbackUrl ? { callback_url: callbackUrl } : {}),
           metadata: { userId: actor.id, tool: toolKey },
         }),
@@ -151,7 +259,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       const data = await response.json()
 
       if (data?.status && data?.data?.reference) {
-        await query(
+        await queryAuthoritative(
           `insert into payments (reference, user_id, email, amount, currency, gateway, tool, metadata)
            values ($1, $2, $3, $4, $5, 'paystack', $6, $7::jsonb)
            on conflict (reference) do nothing`,
@@ -160,16 +268,19 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
             actor.id,
             actor.email,
             amount / 100,
-            body?.currency || "GHS",
+            currency,
             toolKey,
             JSON.stringify({ plannedPriceUsd: price }),
           ],
-        ).catch(() => null)
+        )
+      } else {
+        return json(res, 502, { ok: false, message: "Paystack did not return a transaction reference." })
       }
 
       return json(res, response.status, data)
-    } catch (err: any) {
-      return json(res, 502, { ok: false, message: err?.message })
+    } catch (err) {
+      console.error("Paystack initialization failed", err)
+      return json(res, 502, { ok: false, message: "Payment could not be started. Please try again." })
     }
   }
 

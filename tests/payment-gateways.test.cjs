@@ -7,11 +7,19 @@ const ts = require("typescript")
 
 function createHarness(fetchImpl) {
   const store = {}
+  const sessionStore = {}
   const mockStorage = {
     getItem: (k) => store[k] || null,
     setItem: (k, v) => { store[k] = String(v) },
     removeItem: (k) => { delete store[k] },
     clear: () => { Object.keys(store).forEach((k) => delete store[k]) },
+  }
+
+  const mockSessionStorage = {
+    getItem: (k) => sessionStore[k] || null,
+    setItem: (k, v) => { sessionStore[k] = String(v) },
+    removeItem: (k) => { delete sessionStore[k] },
+    clear: () => { Object.keys(sessionStore).forEach((k) => delete sessionStore[k]) },
   }
 
   const cache = new Map()
@@ -35,7 +43,8 @@ function createHarness(fetchImpl) {
         exports,
         require: (id) => (id.startsWith(".") ? load(path.relative(path.resolve("src"), path.resolve(path.dirname(full), id))) : require(id)),
         localStorage: mockStorage,
-        window: { localStorage: mockStorage },
+        sessionStorage: mockSessionStorage,
+        window: { localStorage: mockStorage, sessionStorage: mockSessionStorage },
         document: {},
         fetch: fetchImpl,
         setTimeout,
@@ -169,8 +178,8 @@ test("Gateways: testGatewayConnection sends admin Authorization header to /api/p
   }
 
   const harness = createHarness(mockFetch)
-  harness.store["masterfilepro-session-token"] = "admin-token-123"
   const svc = harness.load("paymentIntegrationService")
+  harness.load("sessionService").setSessionToken("admin-token-123")
 
   svc.saveGateway({
     ...svc.getGateway("paystack"),

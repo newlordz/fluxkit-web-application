@@ -1939,102 +1939,71 @@ export async function redactPDF(
     throw new Error("Draw at least one redaction box on the PDF before exporting.")
   }
 
+  if (typeof document === "undefined") {
+    throw new Error("Secure redaction requires browser canvas rendering. No file was exported.")
+  }
+
   const srcPdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
   const srcPages = srcPdf.getPages()
   const total = srcPages.length
-  const canCanvas =
-    typeof window !== "undefined" && typeof document !== "undefined"
 
-  if (canCanvas) {
-    try {
-      const { renderPdfPageToDataUrl } = await import("./pdfEngine")
-      const outPdf = await PDFDocument.create()
-      const scale = options.dpiScale || 1.8
+  try {
+    const { renderPdfPageToDataUrl } = await import("./pdfEngine")
+    const outPdf = await PDFDocument.create()
+    const scale = options.dpiScale || 1.8
 
-      for (let i = 0; i < total; i++) {
-        const pageNum = i + 1
-        const { width, height } = srcPages[i].getSize()
-        const pageRegions = regions.filter((r) => r.pageNumber === pageNum)
+    for (let i = 0; i < total; i++) {
+      const pageNum = i + 1
+      const { width, height } = srcPages[i].getSize()
+      const pageRegions = regions.filter((r) => r.pageNumber === pageNum)
 
-        const dataUrl = await renderPdfPageToDataUrl(bytes, pageNum, scale)
-        if (!dataUrl) {
-          const [copied] = await outPdf.copyPages(srcPdf, [i])
-          outPdf.addPage(copied)
-          continue
-        }
+      const dataUrl = await renderPdfPageToDataUrl(bytes, pageNum, scale)
+      if (!dataUrl) throw new Error("PDF page rendering failed.")
 
-        const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image()
-          img.onload = () => resolve(img)
-          img.onerror = reject
-          img.src = dataUrl
-        })
+      const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = dataUrl
+      })
 
-        const canvas = document.createElement("canvas")
-        canvas.width = imgEl.naturalWidth || Math.round(width * scale)
-        canvas.height = imgEl.naturalHeight || Math.round(height * scale)
-        const ctx = canvas.getContext("2d")
-        if (ctx) {
-          ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height)
-          ctx.fillStyle = "#000000"
-          for (const r of pageRegions) {
-            ctx.fillRect(
-              r.xPct * canvas.width,
-              r.yPct * canvas.height,
-              r.wPct * canvas.width,
-              r.hPct * canvas.height,
-            )
-          }
-        }
-
-        const redactedDataUrl = canvas.toDataURL("image/jpeg", 0.92)
-        const base64 = redactedDataUrl.split(",")[1]
-        const raw = atob(base64)
-        const jpgBytes = new Uint8Array(raw.length)
-        for (let k = 0; k < raw.length; k++) jpgBytes[k] = raw.charCodeAt(k)
-
-        const embedded = await outPdf.embedJpg(jpgBytes)
-        const outPage = outPdf.addPage([width, height])
-        outPage.drawImage(embedded, { x: 0, y: 0, width, height })
+      const canvas = document.createElement("canvas")
+      canvas.width = imgEl.naturalWidth || Math.round(width * scale)
+      canvas.height = imgEl.naturalHeight || Math.round(height * scale)
+      const ctx = canvas.getContext("2d")
+      if (!ctx) throw new Error("Canvas rendering is unavailable.")
+      ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = "#000000"
+      for (const r of pageRegions) {
+        ctx.fillRect(
+          r.xPct * canvas.width,
+          r.yPct * canvas.height,
+          r.wPct * canvas.width,
+          r.hPct * canvas.height,
+        )
       }
 
-      const outBytes = await outPdf.save()
-      const base = name.replace(/\.pdf$/i, "") || "document"
-      return {
-        name: `${base}-redacted.pdf`,
-        blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
-        pageCount: total,
-        previewSnippet: `Permanently redacted ${regions.length} region${regions.length === 1 ? "" : "s"} and flattened ${total} page${total === 1 ? "" : "s"}.`,
-      }
-    } catch {
-      // Fall through to vector-rect redaction if PDF.js canvas fails
+      const redactedDataUrl = canvas.toDataURL("image/jpeg", 0.92)
+      const base64 = redactedDataUrl.split(",")[1]
+      const raw = atob(base64)
+      const jpgBytes = new Uint8Array(raw.length)
+      for (let k = 0; k < raw.length; k++) jpgBytes[k] = raw.charCodeAt(k)
+
+      const embedded = await outPdf.embedJpg(jpgBytes)
+      const outPage = outPdf.addPage([width, height])
+      outPage.drawImage(embedded, { x: 0, y: 0, width, height })
     }
-  }
 
-  for (const r of regions) {
-    if (r.pageNumber < 1 || r.pageNumber > total) continue
-    const page = srcPages[r.pageNumber - 1]
-    const { width, height } = page.getSize()
-    const rx = r.xPct * width
-    const rw = r.wPct * width
-    const rh = r.hPct * height
-    const ry = height - (r.yPct * height + rh)
-    page.drawRectangle({
-      x: rx,
-      y: ry,
-      width: rw,
-      height: rh,
-      color: rgb(0, 0, 0),
-    })
-  }
-
-  const outBytes = await srcPdf.save()
-  const base = name.replace(/\.pdf$/i, "") || "document"
-  return {
-    name: `${base}-redacted.pdf`,
-    blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
-    pageCount: total,
-    previewSnippet: `Redacted ${regions.length} region${regions.length === 1 ? "" : "s"} across ${total} page${total === 1 ? "" : "s"}.`,
+    const outBytes = await outPdf.save()
+    const base = name.replace(/\.pdf$/i, "") || "document"
+    return {
+      name: `${base}-redacted.pdf`,
+      blob: new Blob([new Uint8Array(outBytes)], { type: "application/pdf" }),
+      pageCount: total,
+      previewSnippet: `Permanently redacted ${regions.length} region${regions.length === 1 ? "" : "s"} and flattened ${total} page${total === 1 ? "" : "s"}.`,
+    }
+  } catch {
+    throw new Error("Secure redaction could not render this PDF. No file was exported; try another browser or PDF.")
   }
 }
 
@@ -9512,7 +9481,12 @@ export function buildVCardPayload(input: VCardInput): string {
   const parts = fn.split(/\s+/)
   const first = parts[0] || ""
   const last = parts.length > 1 ? parts.slice(1).join(" ") : ""
-  const esc = (v: string) => v.replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,")
+  const esc = (v: string) =>
+    v
+      .replace(/\\/g, "\\\\")
+      .replace(/\r?\n/g, "\\n")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
 
   const lines = [
     "BEGIN:VCARD",
@@ -9531,7 +9505,7 @@ export function buildVCardPayload(input: VCardInput): string {
   if (input.address?.trim()) lines.push(`ADR;TYPE=WORK:;;${esc(input.address.trim())};;;;`)
   if (input.note?.trim()) lines.push(`NOTE:${esc(input.note.trim())}`)
   lines.push("END:VCARD")
-  return lines.join("\n")
+  return lines.join("\r\n")
 }
 
 export async function generateVCardQR(
@@ -9582,16 +9556,27 @@ export function buildIcsEventPayload(input: EventQRInput): string {
   const esc = (v: string) =>
     v.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,")
 
+  const startDate = new Date(input.start.trim())
+  const endDate = new Date(input.end?.trim() || input.start.trim())
+  if (input.end?.trim() && endDate.getTime() <= startDate.getTime()) {
+    throw new Error("Event end time must be after the start time.")
+  }
   const dtStart = formatIcsDate(input.start.trim())
   const dtEnd = input.end?.trim()
     ? formatIcsDate(input.end.trim())
     : formatIcsDate(input.start.trim(), 60)
 
+  const uid =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}@masterfilepro`
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Masterfilepro//Event QR//EN",
     "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${dtStamp}`,
     `SUMMARY:${esc(summary)}`,
     `DTSTART:${dtStart}`,
     `DTEND:${dtEnd}`,
@@ -9599,7 +9584,7 @@ export function buildIcsEventPayload(input: EventQRInput): string {
   if (input.location?.trim()) lines.push(`LOCATION:${esc(input.location.trim())}`)
   if (input.description?.trim()) lines.push(`DESCRIPTION:${esc(input.description.trim())}`)
   lines.push("END:VEVENT", "END:VCALENDAR")
-  return lines.join("\n")
+  return lines.join("\r\n")
 }
 
 export async function generateEventQR(
@@ -9678,8 +9663,11 @@ export async function generateBatchQRs(
         .toLowerCase()
         .replace(/[^a-z0-9-_]+/g, "-")
         .replace(/^-|-$/g, "") || `qr-${i + 1}`
-    if (usedNames.has(safe)) {
-      safe = `${safe}-${i + 1}`
+    const base = safe
+    let suffix = 2
+    while (usedNames.has(safe)) {
+      safe = `${base}-${suffix}`
+      suffix += 1
     }
     usedNames.add(safe)
     const fileName = `${safe}.png`

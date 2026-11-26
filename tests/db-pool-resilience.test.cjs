@@ -173,16 +173,15 @@ test("Suite: server database pool resilience", async (t) => {
     assert.equal(state.pools[0].queryCalls, 1, "the failing statement ran exactly once")
   })
 
-  await t.test("P.5 a transaction retries once and always releases its client", async () => {
+  await t.test("P.5 a transaction is never replayed after an uncertain connection failure", async () => {
     const state = freshState({ staleFailures: 1 })
     const db = loadDbModule(state)
+    let attempts = 0
 
-    const out = await db.transact(async (sql) => sql("select 1"))
-
-    assert.equal(state.pools.length, 2, "the transaction retried on a fresh pool")
-    assert.equal(out.length, 1)
-    assert.equal(state.lastClient.released, true, "the client went back to the pool")
-    assert.deepEqual(state.lastClient.statements, ["begin", "select 1", "commit"])
+    await assert.rejects(db.transact(async () => { attempts++; return [] }), /Connection terminated/)
+    assert.equal(attempts, 0)
+    assert.equal(state.pools.length, 1)
+    assert.equal(state.pools[0].connectCalls, 1)
   })
 
   await t.test("P.6 a failed transaction rolls back and rethrows", async () => {
@@ -215,7 +214,7 @@ test("Suite: server database pool resilience", async (t) => {
 
   await t.test("P.8 falls back to FALLBACK_DB_URL when primary stays unreachable", async () => {
     const saved = process.env.FALLBACK_DB_URL
-    process.env.FALLBACK_DB_URL = "postgres://fixture@fallback.example:5432/fluxkit"
+    process.env.FALLBACK_DB_URL = "postgres://fixture@fallback.example:5432/masterfilepro"
     try {
       const state = freshState({ staleFailures: 2 })
       const db = loadDbModule(state)

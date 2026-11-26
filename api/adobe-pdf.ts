@@ -1,6 +1,6 @@
 import { cors } from "../server/_lib/db.ts"
 import { getAdobeCredentials, recordApiCall } from "../server/_lib/providers.ts"
-import { readPaidBody, requirePaidAccess } from "../server/_lib/gateway.ts"
+import { readPaidBody, requirePaidAccess, requireToolAccess } from "../server/_lib/gateway.ts"
 
 export default async function handler(req: any, res: any) {
   cors(req, res)
@@ -80,7 +80,7 @@ export default async function handler(req: any, res: any) {
     return
   }
 
-  const actor = await requirePaidAccess(req, res, "adobe")
+  const actor = await requirePaidAccess(req, res, "adobe", action === "compress" ? "compress" : undefined)
   if (!actor) return
 
   try {
@@ -149,6 +149,24 @@ export default async function handler(req: any, res: any) {
 
     const isExport = action === "export"
     const targetFormat = (body.targetFormat || "docx").toLowerCase()
+    const exportTools: Record<string, string> = {
+      docx: "pdf-to-word",
+      pptx: "pdf-to-ppt",
+      xlsx: "pdf-to-excel",
+    }
+    const toolId = isExport
+      ? exportTools[targetFormat]
+      : action === "create"
+        ? /\.pptx?$/i.test(String(body.fileName || ""))
+          ? "ppt-to-pdf"
+          : "word-to-pdf"
+        : "compress"
+    if (!toolId) {
+      res.status?.(400)?.json?.({ error: "Unsupported export format" }) ||
+        res.end?.(JSON.stringify({ error: "Unsupported export format" }))
+      return
+    }
+    if (!(await requireToolAccess(actor, res, toolId))) return
 
     const jobUrl = isExport
       ? "https://pdf-services.adobe.io/operation/exportpdf"

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { currentUser, type AuthUser } from "./auth.ts"
-import { json, readBody } from "./db.ts"
+import { requireActiveUser, type AuthUser } from "./auth.ts"
+import { json, queryAuthoritative, readBody } from "./db.ts"
 import { isProviderOutOfQuota } from "./providers.ts"
 
 // A 25 MB document becomes ~34 MB of JSON once base64-encoded, which is the
@@ -13,15 +13,48 @@ const MAX_PAID_BODY_BYTES = 40 * 1024 * 1024
  * spend their quota cannot be left to the browser: the client-side pool state is
  * editable localStorage and never saw another visitor's requests.
  */
+export async function requireToolAccess(
+  user: AuthUser,
+  res: ServerResponse,
+  toolId: string,
+): Promise<boolean> {
+  if (user.role === "admin") return true
+
+  try {
+    const [tool] = await queryAuthoritative<{ tier: string }>(`select tier from tools where key = $1`, [toolId])
+    const requiresPro = (tool?.tier || "standard") === "pro"
+    const entitled =
+      !requiresPro ||
+      (user.subscription_tier === "pro" && user.pro_status === "active") ||
+      user.unlocked_tools?.includes(toolId)
+    if (entitled) return true
+  } catch {
+    json(res, 503, {
+      ok: false,
+      error: "Tool access is temporarily unavailable. Please try again shortly.",
+      code: "tool_access_unavailable",
+    })
+    return false
+  }
+
+  json(res, 403, {
+    ok: false,
+    error: "This tool requires Pro or an individual unlock.",
+    code: "tool_access_required",
+  })
+  return false
+}
+
 export async function requirePaidAccess(
   req: IncomingMessage,
   res: ServerResponse,
   provider: string,
+  toolId?: string,
 ): Promise<AuthUser | null> {
   let user: AuthUser | null = null
 
   try {
-    user = await currentUser(req)
+    user = await requireActiveUser(req)
   } catch {
     // Without the ledger this request cannot be attributed or counted, so it is
     // refused rather than charged to whoever else tries while the database is down.
@@ -41,6 +74,8 @@ export async function requirePaidAccess(
     })
     return null
   }
+
+  if (toolId && !(await requireToolAccess(user, res, toolId))) return null
 
   if (await isProviderOutOfQuota(provider)) {
     json(res, 429, {

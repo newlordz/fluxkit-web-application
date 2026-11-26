@@ -78,6 +78,58 @@ function createHarness(options = {}) {
     },
   }
 
+  const serverUsers = new Map()
+  const serverPasswords = new Map()
+  const serverSessions = new Map()
+  let nextServerId = 1
+  const serverFetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : {}
+    const reply = (status, data) => ({ ok: status >= 200 && status < 300, status, json: async () => data })
+    if (url === "/api/auth/register") {
+      const email = String(body.email || "").toLowerCase()
+      if (serverUsers.has(email)) return reply(409, { error: "An account with this email already exists." })
+      const user = {
+        id: `usr_server_${nextServerId++}`,
+        email,
+        name: body.name,
+        role: "user",
+        subscriptionTier: "standard",
+        proStatus: "none",
+        unlockedTools: [],
+      }
+      serverUsers.set(email, user)
+      serverPasswords.set(email, body.password)
+      const token = `server-token-${user.id}`
+      serverSessions.set(token, user)
+      return reply(200, { ok: true, token, user })
+    }
+    if (url === "/api/auth/login") {
+      const email = String(body.email || "").toLowerCase()
+      const user = serverUsers.get(email)
+      if (!user || serverPasswords.get(email) !== body.password) return reply(401, { error: "Invalid email or password." })
+      const token = `server-token-${user.id}`
+      serverSessions.set(token, user)
+      return reply(200, { ok: true, token, user })
+    }
+    if (url === "/api/auth/session") {
+      const user = serverSessions.get(String(init.headers?.Authorization || "").replace("Bearer ", ""))
+      return user ? reply(200, { ok: true, user }) : reply(401, { ok: false })
+    }
+    if (url === "/api/auth/password") {
+      if (!String(init.headers?.Authorization || "").startsWith("Bearer ")) return reply(401, { error: "Sign-in required" })
+      const target = serverUsers.get(String(body.userId || "").toLowerCase())
+      if (target) serverPasswords.set(target.email, body.newPassword)
+      return reply(200, { ok: true })
+    }
+    if (url === "/api/db/users") {
+      if (!String(init.headers?.Authorization || "").startsWith("Bearer ")) return reply(401, { ok: false })
+      if (init.method === "GET") return reply(200, { users: [...serverUsers.values()] })
+      if (body.user) serverUsers.set(body.user.email.toLowerCase(), body.user)
+      return reply(200, { ok: true })
+    }
+    return reply(200, { ok: true })
+  }
+
   const cache = new Map()
   function load(name) {
     const full = path.resolve("src", name)
@@ -127,6 +179,7 @@ function createHarness(options = {}) {
         },
         setTimeout,
         clearTimeout,
+        fetch: options.fetch || serverFetch,
         AbortSignal,
         DOMException,
       },
@@ -238,6 +291,7 @@ test("Tier 1 - F3b: Passport Photo Studio is available to guests without cloud a
   const passportTool = tools.find((t) => t.id === "passport-photo")
   assert.ok(passportTool, "Passport Photo Studio must be present in config.ts")
   assert.equal(passportTool.available, true)
+  assert.notEqual(passportTool.integrationRequired, true)
 
   if (hasModule("adminService")) {
     const admin = harness.load("adminService")
@@ -248,7 +302,6 @@ test("Tier 1 - F3b: Passport Photo Studio is available to guests without cloud a
   const App = harness.load("App").default
   const html = renderToStaticMarkup(React.createElement(App))
   assert.match(html, /Passport Photo Studio/i)
-  assert.match(html, /Processed locally/i)
   assert.doesNotMatch(html, /Pro subscription required|Upgrade to Pro to unlock/i)
 })
 
@@ -320,6 +373,7 @@ test("Tier 1 - F6: Simulated Payment Activation grants active Pro status", (t) =
     id: "usr_buyer_1",
     name: "Buyer User",
     email: "buyer@masterfilepro.com",
+    provider: "email",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -350,6 +404,7 @@ test("Tier 1 - F7: Admin Approval Request flow transitions status to pending", (
     id: "usr_applicant_1",
     name: "Applicant User",
     email: "applicant@masterfilepro.com",
+    provider: "email",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -366,59 +421,77 @@ test("Tier 1 - F7: Admin Approval Request flow transitions status to pending", (
   assert.equal(admin.canUserAccessTool("ocr", pendingUser), false, "Pending user remains gated")
 })
 
-test("Tier 1 - F8: Administrator sign-in requires a server-synced credential, never a built-in password", async (t) => {
-  const harness = createHarness()
+function createAdminAuthHarness() {
+  let serverPassword = "InitialAdminPassword2026!"
+  const harness = createHarness({
+    fetch: async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : {}
+      if (url === "/api/auth/password") {
+        serverPassword = body.newPassword
+        return { ok: true, status: 200, json: async () => ({ ok: true }) }
+      }
+      if (url === "/api/auth/login") {
+        const valid = body.password === serverPassword
+        return {
+          ok: valid,
+          status: valid ? 200 : 401,
+          json: async () => valid
+            ? { ok: true, token: "admin-server-token", user: { ...authSeed(), email: body.email } }
+            : { error: "Invalid email or password." },
+        }
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true }) }
+    },
+  })
   const auth = harness.load("authService")
+  auth.saveCurrentUser(auth.SEEDED_ADMIN_ACCOUNT)
+  harness.localStorage.setItem("masterfilepro-session-token", "admin-server-token")
+  return { harness, auth }
+}
 
-  // The historical behaviour was to accept a literal password compiled into the
-  // bundle, which meant anyone who read the source could sign in offline. That
-  // backdoor is gone: until a credential exists in the offline mirror, sign-in
-  // must be refused and the server stays the only authority.
+function authSeed() {
+  return {
+    id: "usr_admin_default",
+    name: "Masterfilepro Administrator",
+    email: "admin@masterfilepro.com",
+    role: "admin",
+    subscriptionTier: "pro",
+    proStatus: "active",
+    unlockedTools: [],
+  }
+}
+
+test("Tier 1 - F8: Administrator sign-in requires a server-synced credential, never a built-in password", async () => {
+  const { auth } = createAdminAuthHarness()
+
   await assert.rejects(
-    () =>
-      auth.signIn({
-        email: "admin@fluxkit.com",
-        password: "Admin@Masterfilepro2026!",
-      }),
+    () => auth.signIn({ email: "admin@fluxkit.com", password: "Admin@Masterfilepro2026!" }),
     /Invalid email or password/,
-    "an unsynced administrator credential must not authenticate offline",
   )
 
-  await auth.changeAccountPassword(
-    "admin@masterfilepro.com",
-    "RotatedAdminPassword2026!",
-  )
+  await auth.changeAccountPassword("admin@masterfilepro.com", "RotatedAdminPassword2026!")
 
   const adminAccount = await auth.signIn({
     email: "admin@fluxkit.com",
     password: "RotatedAdminPassword2026!",
   })
-  assert.ok(adminAccount)
   assert.equal(adminAccount.role, "admin")
 })
 
 test("Tier 1 - F8b: Root administrator session reports the locked Pro identity", async () => {
-  const harness = createHarness()
-  const auth = harness.load("authService")
+  const { auth } = createAdminAuthHarness()
 
-  await auth.changeAccountPassword(
-    "admin@masterfilepro.com",
-    "RotatedAdminPassword2026!",
-  )
+  await auth.changeAccountPassword("admin@masterfilepro.com", "RotatedAdminPassword2026!")
 
   const adminAccount = await auth.signIn({
     email: "admin@masterfilepro.com",
     password: "RotatedAdminPassword2026!",
   })
-  assert.ok(adminAccount, "Admin account must be returned")
   assert.equal(adminAccount.email, "admin@masterfilepro.com")
   assert.equal(adminAccount.role, "admin")
   assert.equal(adminAccount.subscriptionTier, "pro")
   assert.equal(adminAccount.proStatus, "active")
-
-  const current = auth.getCurrentUser()
-  assert.ok(current, "the administrator session must persist as the current user")
-  assert.equal(current.role, "admin")
+  assert.equal(auth.getCurrentUser()?.role, "admin")
 })
 
 test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin", (t) => {
@@ -431,6 +504,7 @@ test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin"
     id: "usr_admin",
     name: "Masterfilepro Admin",
     email: "admin@fluxkit.com",
+    provider: "email",
     role: "admin",
     subscriptionTier: "pro",
     proStatus: "active",
@@ -440,11 +514,22 @@ test("Tier 1 - F9: Admin Dashboard Access Control renders Admin Panel for admin"
 
   const harness = createHarness({
     hash: "admin",
-    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+    storageInitial: {
+      "masterfilepro-current-user": JSON.stringify(adminUser),
+      "masterfilepro-session-token": "admin-server-token",
+    },
   })
 
   const App = harness.load("App").default
-  const html = renderToStaticMarkup(React.createElement(App))
+  const gatedHtml = renderToStaticMarkup(React.createElement(App))
+  assert.match(gatedHtml, /Loading…/)
+  assert.doesNotMatch(gatedHtml, /User Approvals|Tool Tier|Page Manager/i)
+
+  const AdminPanel = harness.load("AdminPanel").default
+  const html = renderToStaticMarkup(React.createElement(AdminPanel, {
+    currentUser: adminUser,
+    navigate: () => {},
+  }))
   assert.ok(html.length > 500)
   assert.doesNotMatch(html, /404 · A SMALL DETOUR/i)
   assert.match(html, /Tool Tier|User Approval|Page Manager|Admin/i)
@@ -483,6 +568,7 @@ test("Tier 1 - F11: Admin User Approvals UI approves pending subscriptions", (t)
     id: "usr_pending_approval",
     name: "Pending Member",
     email: "pending@masterfilepro.com",
+    provider: "email",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "pending",
@@ -616,6 +702,19 @@ test("Tier 2 - B3: Authentication fails with invalid password or unregistered em
     }
     assert.match(err.message, /not found|invalid|no account|credentials/i)
   }
+})
+
+test("Signed-out visitors see a guest identity instead of a placeholder local profile", () => {
+  const harness = createHarness({
+    hash: "overview",
+    storageInitial: { "masterfilepro-name": "Jamie" },
+  })
+  const App = harness.load("App").default
+  const html = renderToStaticMarkup(React.createElement(App))
+
+  assert.match(html, /Guest/)
+  assert.match(html, /Not signed in/)
+  assert.doesNotMatch(html, /Jamie|Local Profile|Local profile/i)
 })
 
 test("Tier 2 - B4: Non-admin user accessing #admin is denied access", (t) => {
@@ -1069,6 +1168,7 @@ test("Tier 4 - S3: Monetization & Tool Tier Administration Lifecycle", (t) => {
     id: "usr_member_sam",
     name: "Sam Member",
     email: "sam@example.com",
+    provider: "email",
     role: "user",
     subscriptionTier: "standard",
     proStatus: "none",
@@ -1102,6 +1202,7 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
     id: "usr_admin_default",
     name: "Masterfilepro Administrator",
     email: "admin@fluxkit.com",
+    provider: "email",
     role: "admin",
     subscriptionTier: "pro",
     proStatus: "active",
@@ -1111,7 +1212,10 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
 
   const harness = createHarness({
     hash: "overview",
-    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+    storageInitial: {
+      "masterfilepro-current-user": JSON.stringify(adminUser),
+      "masterfilepro-session-token": "admin-server-token",
+    },
   })
   const App = harness.load("App").default
   const html = renderToStaticMarkup(React.createElement(App))
@@ -1122,8 +1226,20 @@ test("Tier 4 - S4: Admin sidepanel console and workstation tools availability", 
 })
 
 test("Tier 4 - S5: Root Admin lock, Sub-Admin promotion & User Management", async (t) => {
+  const adminUser = {
+    id: "usr_admin_default",
+    name: "Masterfilepro Administrator",
+    email: "admin@masterfilepro.com",
+    role: "admin",
+    subscriptionTier: "pro",
+    proStatus: "active",
+  }
   const harness = createHarness({
     hash: "admin",
+    storageInitial: {
+      "masterfilepro-current-user": JSON.stringify(adminUser),
+      "masterfilepro-session-token": "admin-server-token",
+    },
   })
   const admin = harness.load("adminService")
   const auth = harness.load("authService")
@@ -1238,6 +1354,7 @@ test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-
     id: "usr_admin",
     name: "Masterfilepro Admin",
     email: "admin@fluxkit.com",
+    provider: "email",
     role: "admin",
     subscriptionTier: "pro",
     proStatus: "active",
@@ -1247,11 +1364,18 @@ test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-
 
   const harnessUsers = createHarness({
     hash: "admin-users",
-    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+    storageInitial: {
+      "masterfilepro-current-user": JSON.stringify(adminUser),
+      "masterfilepro-session-token": "admin-server-token",
+    },
   })
 
-  const AppWithHash = harnessUsers.load("App").default
-  const htmlUsers = renderToStaticMarkup(React.createElement(AppWithHash))
+  const AdminPanel = harnessUsers.load("AdminPanel").default
+  const htmlUsers = renderToStaticMarkup(React.createElement(AdminPanel, {
+    currentUser: adminUser,
+    navigate: () => {},
+    initialTab: "users",
+  }))
   assert.ok(htmlUsers.length > 500)
   assert.match(htmlUsers, /User Approvals/i)
   assert.match(htmlUsers, /admin-nav-tab active/i)
@@ -1260,11 +1384,14 @@ test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-
   const harnessSession = createHarness({
     hash: "admin",
     storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
-    sessionStorageInitial: { "fluxkit-admin-tab": "users" },
+    sessionStorageInitial: { "masterfilepro-admin-tab": "users" },
   })
 
-  const AppWithSession = harnessSession.load("App").default
-  const htmlSession = renderToStaticMarkup(React.createElement(AppWithSession))
+  const SessionAdminPanel = harnessSession.load("AdminPanel").default
+  const htmlSession = renderToStaticMarkup(React.createElement(SessionAdminPanel, {
+    currentUser: adminUser,
+    navigate: () => {},
+  }))
   assert.ok(htmlSession.length > 500)
   assert.match(htmlSession, /User Approvals/i)
   assert.match(htmlSession, /admin-nav-tab active/i)

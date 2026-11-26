@@ -91,7 +91,7 @@ export default async function handler(req: any, res: any) {
     return
   }
 
-  const actor = await requirePaidAccess(req, res, "google")
+  const actor = await requirePaidAccess(req, res, "google", "image-to-excel")
   if (!actor) return
 
   try {

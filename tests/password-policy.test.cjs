@@ -6,7 +6,7 @@ const vm = require("node:vm")
 const ts = require("typescript")
 
 function createHarness() {
-  const store = new Map()
+  const store = new Map([["masterfilepro-session-token", "admin-server-token"]])
   const localStorage = {
     getItem: (key) => (store.has(key) ? store.get(key) : null),
     setItem: (key, value) => {

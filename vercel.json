@@ -5,10 +5,14 @@
   "framework": "vite",
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "{data,server}/**"
+      "includeFiles": "{data,server,shared}/**"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/auth/google",
+      "destination": "/api/auth?action=google"
+    },
     {
       "source": "/api/auth/login",
       "destination": "/api/auth?action=login"

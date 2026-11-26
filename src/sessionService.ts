@@ -15,29 +15,50 @@ export interface ServerSession {
     subscriptionTier: "standard" | "pro"
     proStatus: "none" | "pending" | "active"
     unlockedTools: string[]
+    provider: "email" | "google"
   }
 }
+
+const LEGACY_TOKEN_KEY = TOKEN_KEY
 
 function getTokenStore(): Storage | null {
   try {
-    if (typeof window !== "undefined" && window.localStorage)
-      return window.localStorage
+    return typeof window !== "undefined" ? window.sessionStorage : null
   } catch {
     return null
   }
-  return null
+}
+
+function clearLegacyToken(): void {
+  try {
+    window.localStorage?.removeItem(LEGACY_TOKEN_KEY)
+  } catch {}
 }
 
 export function getSessionToken(): string | null {
-  return getTokenStore()?.getItem(TOKEN_KEY) ?? null
+  const storage = getTokenStore()
+  if (!storage) return null
+  try {
+    const current = storage.getItem(TOKEN_KEY)
+    if (current) return current
+    const legacy = window.localStorage?.getItem(LEGACY_TOKEN_KEY)
+    if (legacy) {
+      storage.setItem(TOKEN_KEY, legacy)
+      clearLegacyToken()
+      return legacy
+    }
+  } catch {}
+  return null
 }
 
 export function setSessionToken(token: string): void {
   getTokenStore()?.setItem(TOKEN_KEY, token)
+  clearLegacyToken()
 }
 
 export function clearSessionToken(): void {
   getTokenStore()?.removeItem(TOKEN_KEY)
+  clearLegacyToken()
 }
 
 /** Authorization header for privileged requests; empty when signed out. */
@@ -94,8 +115,7 @@ export async function serverSignIn(
   }
 }
 
-/** Creates the account server-side. `error` means the server refused; an empty
- *  result means the endpoint was unreachable and the caller may fall back locally. */
+/** Creates the account server-side; browser-local credentials never authenticate. */
 export async function serverSignUp(
   name: string,
   email: string,
@@ -112,12 +132,9 @@ export async function serverSignUp(
       setSessionToken(data.token)
       return { session: data as ServerSession }
     }
-    if (res.status === 400 || res.status === 409) {
-      return { error: data?.error || "Could not create that account." }
-    }
-    return {}
+    return { error: data?.error || "Could not create that account. Please try again." }
   } catch {
-    return {}
+    return { error: "Account creation is unavailable. Please check your connection and try again." }
   }
 }
 
@@ -139,7 +156,7 @@ export async function serverSignOut(): Promise<void> {
 export async function serverChangePassword(
   currentPassword: string,
   newPassword: string,
-): Promise<{ ok: boolean ; error?: string ; message?: string } | null> {
+): Promise<{ ok: boolean ; error?: string ; message?: string ; token?: string ; expiresAt?: string } | null> {
   if (!getSessionToken()) return null
   return postJson(
     "/api/auth/password",
@@ -152,7 +169,7 @@ export async function serverChangePassword(
 export async function serverResetPassword(
   userIdOrEmail: string,
   newPassword: string,
-): Promise<{ ok: boolean ; error?: string } | null> {
+): Promise<{ ok: boolean ; error?: string ; token?: string ; expiresAt?: string } | null> {
   if (!getSessionToken()) return null
   return postJson(
     "/api/auth/password",
@@ -161,15 +178,9 @@ export async function serverResetPassword(
   )
 }
 
-/** Requests a server-issued reset code. `devCode` is only present outside production. */
 export async function serverRequestPasswordReset(
   email: string,
-): Promise<{
-  ok: boolean
-  message?: string
-  error?: string
-  devCode?: string
-} | null> {
+): Promise<{ ok: boolean; message?: string; error?: string } | null> {
   return postJson("/api/auth/reset-request", { email })
 }
 

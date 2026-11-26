@@ -171,7 +171,6 @@ export default function AuthPage({
   const [resetCode, setResetCode] = useState("")
   const [newResetPassword, setNewResetPassword] = useState("")
   const [confirmResetPassword, setConfirmResetPassword] = useState("")
-  const [resetCodeHint, setResetCodeHint] = useState<string | null>(null)
   const [resetCompleted, setResetCompleted] = useState(false)
 
   const notify = useNotify()
@@ -278,14 +277,8 @@ export default function AuthPage({
       try {
         const result = await requestPasswordReset(values.email.trim())
         setStatus("idle")
-        if (result?.code) {
-          setResetCodeHint(result.code)
-          setResetCode(result.code)
-        }
         setResetStep(2)
-        const msg = result?.code
-          ? `Reset code generated: ${result.code}`
-          : result?.message || "Password reset code sent."
+        const msg = result?.message || "Password recovery instructions sent."
         notify(msg, "info")
       } catch (error) {
         setStatus("failed")
@@ -630,36 +623,6 @@ export default function AuthPage({
                         Change email
                       </button>
                     </div>
-
-                    {resetCodeHint && (
-                      <div
-                        className="auth-field-hint"
-                        style={{
-                          background: "rgba(var(--accent-rgb), 0.12)",
-                          border: "1px solid rgba(var(--accent-rgb), 0.35)",
-                          padding: "10px 14px",
-                          borderRadius: "8px",
-                          marginBottom: "14px",
-                        }}
-                      >
-                        <span>🔑 Reset Code:</span>{" "}
-                        <strong
-                          style={{ fontSize: "14px", letterSpacing: "1px" }}
-                        >
-                          {resetCodeHint}
-                        </strong>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "var(--muted)",
-                            marginTop: "2px",
-                          }}
-                        >
-                          Enter this 6-digit verification code below to set your
-                          new password.
-                        </div>
-                      </div>
-                    )}
 
                     <AuthFormField
                       name="reset-code"

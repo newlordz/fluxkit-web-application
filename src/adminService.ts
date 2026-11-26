@@ -6,9 +6,6 @@ import {
   saveRegisteredAccounts,
   isRootAdmin,
   changeAccountPassword,
-  generateSalt,
-  hashPassword,
-  getStoredCredentials,
   pushUserToCloud,
   SEEDED_ADMIN_ACCOUNT,
 } from "./authService"
@@ -834,12 +831,7 @@ export function deleteUser(userId: string): void {
     )
   }
   const accounts = getRegisteredAccounts()
-  const filtered = accounts.filter(
-    (a) =>
-      a.id !== userId &&
-      a.email.toLowerCase() !== "admin@masterfilepro.com" &&
-      a.email.toLowerCase() !== "admin@fluxkit.com",
-  )
+  const filtered = accounts.filter((account) => account.id !== userId)
   saveRegisteredAccounts(filtered)
   deleteUserFromServer(userId).catch(() => {})
 }
@@ -977,18 +969,6 @@ export async function updateUserDetails(
       throw new Error("An account with this email address already exists.")
     }
 
-    // Migrate stored password credentials if present
-    const creds = getStoredCredentials()
-    if (creds[existing.email.toLowerCase()]) {
-      creds[newEmail] = creds[existing.email.toLowerCase()]
-      delete creds[existing.email.toLowerCase()]
-      const storage = getStorage()
-      if (storage) {
-        try {
-          storage.setItem("masterfilepro-credentials", JSON.stringify(creds))
-        } catch {}
-      }
-    }
     email = newEmail
 
     if (isRoot) {
