@@ -34,6 +34,11 @@ import ToolBadgeIcon from "./ToolBadgeIcon"
 import MasterfileLogo from "./MasterfileLogo"
 import { isToolPro, getFormattedToolPrice } from "./adminService"
 import { getActiveCurrency } from "./currencyService"
+import {
+  getHighlightTerms,
+  highlightSegments,
+  rankToolSearch,
+} from "./toolSearch"
 
 interface ActivityItem {
   name: string
@@ -57,12 +62,32 @@ const overviewTabs: TabCategory[] = [
   "Favorites",
 ]
 
+const SEARCH_PREVIEW_LIMIT = 6
+
+function HighlightedText({ text, terms }: { text: string; terms: string[] }) {
+  return (
+    <>
+      {highlightSegments(text, terms).map((segment, index) =>
+        segment.match ? (
+          <mark key={index} className="search-match">
+            {segment.text}
+          </mark>
+        ) : (
+          <React.Fragment key={index}>{segment.text}</React.Fragment>
+        ),
+      )}
+    </>
+  )
+}
+
 export default function Overview({
   navigate,
   activity,
   initialStagedFile,
 }: OverviewProps) {
   const [search, setSearch] = useState("")
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<TabCategory>("All")
   const [viewMode, setViewMode] = useState<"grid" | "compact">("grid")
   const [isDragOver, setIsDragOver] = useState(false)
@@ -179,12 +204,14 @@ export default function Overview({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
         searchInputRef.current?.focus()
+        setSearchFocused(true)
       } else if (
         e.key === "/" &&
         document.activeElement !== searchInputRef.current
       ) {
         e.preventDefault()
         searchInputRef.current?.focus()
+        setSearchFocused(true)
       }
     }
     window.addEventListener("keydown", handleKeyDown)
@@ -560,21 +587,9 @@ export default function Overview({
     handleFileReceived(droppedFiles)
   }
 
-  // Filter logic memoized for smooth typing and rendering
-  const filteredTools = useMemo(() => {
+  // Tab-scoped tool list; search ranking runs on top of the active tab
+  const tabFilteredTools = useMemo(() => {
     return tools.filter((t) => {
-      // Search query matching
-      const matchesQuery =
-        search.trim() === "" ||
-        t.name.toLowerCase().includes(search.toLowerCase()) ||
-        t.description.toLowerCase().includes(search.toLowerCase()) ||
-        t.category.toLowerCase().includes(search.toLowerCase()) ||
-        (t.formatBadge &&
-          t.formatBadge.toLowerCase().includes(search.toLowerCase()))
-
-      if (!matchesQuery) return false
-
-      // Tab category matching
       if (activeTab === "Favorites") return favorites.includes(t.id)
       if (activeTab === "PDF Essentials") {
         return [
@@ -628,7 +643,73 @@ export default function Overview({
 
       return true // "All" tab
     })
-  }, [search, activeTab, favorites])
+  }, [activeTab, favorites])
+
+  const rankedSearchResults = useMemo(() => {
+    const query = search.trim()
+    return query ? rankToolSearch(tabFilteredTools, query) : []
+  }, [tabFilteredTools, search])
+
+  const searchPreviewResults = useMemo(
+    () => rankedSearchResults.slice(0, SEARCH_PREVIEW_LIMIT),
+    [rankedSearchResults],
+  )
+
+  // The grid behind the palette shows the same ranked matches
+  const filteredTools = useMemo(() => {
+    if (!search.trim()) return tabFilteredTools
+    const matches = new Set(rankedSearchResults.map((match) => match.tool.id))
+    return tabFilteredTools.filter((t) => matches.has(t.id))
+  }, [search, rankedSearchResults, tabFilteredTools])
+
+  const highlightTerms = useMemo(() => getHighlightTerms(search), [search])
+  const searchOpen = searchFocused && search.trim().length > 0
+  const safeSearchIndex = searchPreviewResults.length
+    ? Math.min(activeSearchIndex, searchPreviewResults.length - 1)
+    : 0
+
+  useEffect(() => {
+    setActiveSearchIndex(0)
+  }, [search])
+
+  const moveSearchSelection = (direction: 1 | -1) => {
+    if (searchPreviewResults.length === 0) return
+    setSearchFocused(true)
+    setActiveSearchIndex((previous) => {
+      const current = Math.min(previous, searchPreviewResults.length - 1)
+      return (
+        (current + direction + searchPreviewResults.length) %
+        searchPreviewResults.length
+      )
+    })
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      moveSearchSelection(1)
+      return
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault()
+      moveSearchSelection(-1)
+      return
+    }
+    if (e.key === "Escape") {
+      if (!searchOpen) return
+      e.preventDefault()
+      setSearchFocused(false)
+      setSearch("")
+      return
+    }
+    if (e.key === "Enter" && searchOpen) {
+      const match = searchPreviewResults[safeSearchIndex]
+      if (!match) return
+      e.preventDefault()
+      setSearchFocused(false)
+      navigate(match.tool.id)
+    }
+  }
 
   // Group tab counts memoized to prevent redundant iterations
   const tabCounts: Record<TabCategory, number> = useMemo(
@@ -776,7 +857,14 @@ export default function Overview({
           </div>
 
           {/* Interactive Hero Search */}
-          <div className="hero-search-wrapper">
+          <div
+            className="hero-search-wrapper"
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setSearchFocused(false)
+              }
+            }}
+          >
             <div className="hero-search-bar">
               <Search className="hero-search-icon" size={19} />
               <input
@@ -784,10 +872,24 @@ export default function Overview({
                 id="tool-search"
                 name="tool-search"
                 type="text"
-                placeholder="Search tools... (e.g. 'merge pdf', 'pdf to word', 'compress', 'qr code')"
+                placeholder="Search tools... (e.g. 'merge pdf', 'shrink a file', 'signature', 'qr code')"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                role="combobox"
                 aria-label="Search tools"
+                aria-autocomplete="list"
+                aria-expanded={searchOpen}
+                aria-controls={searchOpen ? "tool-search-results" : undefined}
+                aria-activedescendant={
+                  searchOpen && searchPreviewResults.length > 0
+                    ? `tool-search-result-${searchPreviewResults[safeSearchIndex].tool.id}`
+                    : undefined
+                }
+                onFocus={() => setSearchFocused(true)}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setSearchFocused(true)
+                }}
+                onKeyDown={handleSearchKeyDown}
               />
               {search && (
                 <button
@@ -801,26 +903,147 @@ export default function Overview({
               <kbd className="hero-search-kbd">⌘ K</kbd>
             </div>
 
-            {/* Quick Search Chips */}
-            <div className="search-quick-tags">
-              <span className="search-quick-label">POPULAR:</span>
-              {[
-                { name: "Merge PDF", query: "merge" },
-                { name: "Compress PDF", query: "compress" },
-                { name: "PDF to Word", query: "word" },
-                { name: "QR Generator", query: "qr" },
-                { name: "Rotate PDF", query: "rotate" },
-                { name: "Audio to Text", query: "audio" },
-              ].map((item) => (
-                <button
-                  key={item.name}
-                  className="quick-filter-chip"
-                  onClick={() => setSearch(item.query)}
-                >
-                  {item.name}
-                </button>
-              ))}
-            </div>
+            {searchOpen ? (
+              <div
+                className="search-results-panel"
+                id="tool-search-results"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <div className="search-results-header">
+                  <span>
+                    {searchPreviewResults.length > 0
+                      ? `${searchPreviewResults.length} best ${
+                          searchPreviewResults.length === 1 ? "match" : "matches"
+                        }${
+                          rankedSearchResults.length > SEARCH_PREVIEW_LIMIT
+                            ? ` of ${rankedSearchResults.length}`
+                            : ""
+                        }`
+                      : "No matches"}
+                  </span>
+                  <span className="search-results-scope">
+                    {activeTab === "All" ? "All tools" : activeTab}
+                  </span>
+                </div>
+
+                {searchPreviewResults.length > 0 ? (
+                  <div
+                    className="search-results-list"
+                    role="listbox"
+                    aria-label="Matching tools"
+                  >
+                    {searchPreviewResults.map((match, index) => {
+                      const t = match.tool
+                      const isActive = index === safeSearchIndex
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          id={`tool-search-result-${t.id}`}
+                          role="option"
+                          aria-selected={isActive}
+                          className={`search-result-item ${
+                            isActive ? "is-active" : ""
+                          }`}
+                          onMouseEnter={() => setActiveSearchIndex(index)}
+                          onClick={() => {
+                            setSearchFocused(false)
+                            navigate(t.id)
+                          }}
+                        >
+                          <ToolBadgeIcon
+                            type={t.badgeIconType}
+                            fallbackIcon={t.icon}
+                            color={t.badgeColor || "blue"}
+                            size={38}
+                          />
+                          <span className="search-result-body">
+                            <span className="search-result-title">
+                              <HighlightedText text={t.name} terms={highlightTerms} />
+                              {isToolPro(t.id) ? (
+                                <span className="search-result-pro">PRO</span>
+                              ) : (
+                                <span className="search-result-free">FREE</span>
+                              )}
+                              {t.formatBadge && (
+                                <span className="search-result-format">
+                                  {t.formatBadge}
+                                </span>
+                              )}
+                            </span>
+                            <span className="search-result-description">
+                              <HighlightedText
+                                text={t.description}
+                                terms={highlightTerms}
+                              />
+                            </span>
+                            <span className="search-result-category">
+                              {t.category}
+                            </span>
+                          </span>
+                          <ArrowRight size={16} className="search-result-arrow" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="search-results-empty">
+                    <Search size={18} />
+                    <div>
+                      <strong>
+                        No tools match “{search.trim()}”
+                        {activeTab !== "All" ? ` in ${activeTab}` : ""}
+                      </strong>
+                      {activeTab !== "All" ? (
+                        <button type="button" onClick={() => setActiveTab("All")}>
+                          Search all tools
+                        </button>
+                      ) : (
+                        <span>Try “merge”, “shrink”, “signature”, or “QR”.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="search-results-footer">
+                  <span>
+                    <kbd>↑</kbd>
+                    <kbd>↓</kbd> Navigate
+                  </span>
+                  <span>
+                    <kbd>Enter</kbd> Open
+                  </span>
+                  <span>
+                    <kbd>Esc</kbd> Clear
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* Quick Search Chips */
+              <div className="search-quick-tags">
+                <span className="search-quick-label">POPULAR:</span>
+                {[
+                  { name: "Merge PDF", query: "merge" },
+                  { name: "Compress PDF", query: "compress" },
+                  { name: "PDF to Word", query: "word" },
+                  { name: "QR Generator", query: "qr" },
+                  { name: "Rotate PDF", query: "rotate" },
+                  { name: "Audio to Text", query: "audio" },
+                ].map((item) => (
+                  <button
+                    key={item.name}
+                    className="quick-filter-chip"
+                    onClick={() => {
+                      setSearch(item.query)
+                      setSearchFocused(true)
+                      searchInputRef.current?.focus()
+                    }}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>

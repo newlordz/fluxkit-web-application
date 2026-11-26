@@ -23,7 +23,7 @@
   margin-bottom: 13px;
   padding: 7px 2px;
   color: var(--transfer-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -31,25 +31,25 @@
   color: var(--accent-text);
 }
 
-.transfer-hero p { font-size: 15px; }
-.transfer-hero-badges span { font-size: 11px; }
-.transfer-limits strong { font-size: 16px; }
-.transfer-limits span { font-size: 11px; }
+.transfer-hero p { font-size: 16px; }
+.transfer-hero-badges span { font-size: 12px; }
+.transfer-limits strong { font-size: 17px; }
+.transfer-limits span { font-size: 12px; }
 .transfer-choice p,
-.transfer-start-card > p { font-size: 13px; }
-.transfer-choice-action { font-size: 13px; }
-.transfer-session-identity strong { font-size: 13px; }
-.transfer-session-identity span:not(.transfer-session-icon) { font-size: 11px; }
+.transfer-start-card > p { font-size: 14px; }
+.transfer-choice-action { font-size: 14px; }
+.transfer-session-identity strong { font-size: 14px; }
+.transfer-session-identity span:not(.transfer-session-icon) { font-size: 12px; }
 .transfer-small-note,
 .transfer-empty-state p,
 .transfer-incoming p,
 .transfer-receiving > p,
 .transfer-waiting p,
-.transfer-privacy p { font-size: 11px; }
-.transfer-file-name strong { font-size: 12px; }
-.transfer-file-name span { font-size: 10px; }
-.transfer-dropzone strong { font-size: 14px; }
-.transfer-dropzone > span:last-child { font-size: 11px; }
+.transfer-privacy p { font-size: 12px; }
+.transfer-file-name strong { font-size: 13px; }
+.transfer-file-name span { font-size: 11px; }
+.transfer-dropzone strong { font-size: 15px; }
+.transfer-dropzone > span:last-child { font-size: 12px; }
 
 .transfer-page button,
 .transfer-page input {
@@ -96,7 +96,7 @@
   align-items: center;
   gap: 7px;
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 1.45px;
   line-height: 1.4;
@@ -115,7 +115,7 @@
 .transfer-hero p {
   max-width: 610px;
   color: var(--transfer-muted);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.75;
 }
 
@@ -135,7 +135,7 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -177,7 +177,7 @@
 
 .transfer-endpoint span {
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -244,13 +244,13 @@
 .transfer-limits strong {
   color: var(--transfer-ink);
   font-family: "Manrope", sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 750;
 }
 
 .transfer-limits span {
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .transfer-choice-grid {
@@ -308,7 +308,7 @@
 .transfer-choice h2 {
   margin: 6px 0 9px;
   font-family: "Manrope", sans-serif;
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 750;
   letter-spacing: -0.6px;
 }
@@ -316,7 +316,7 @@
 .transfer-choice p {
   max-width: 420px;
   color: var(--transfer-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.75;
 }
 
@@ -327,7 +327,7 @@
   margin-top: auto;
   padding-top: 24px;
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -375,14 +375,14 @@
 }
 
 .transfer-session-identity strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .transfer-session-identity span:not(.transfer-session-icon) {
   overflow: hidden;
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -394,7 +394,7 @@
   gap: 6px;
   padding: 7px 4px;
   color: var(--transfer-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -413,7 +413,7 @@
   border-radius: 10px;
   background: rgba(248, 113, 113, 0.08);
   color: var(--danger-ink);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -452,7 +452,7 @@
 
 .transfer-start-card h2 {
   font-family: "Manrope", sans-serif;
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 750;
   letter-spacing: -0.65px;
 }
@@ -461,7 +461,7 @@
   max-width: 500px;
   margin: 10px 0 24px;
   color: var(--transfer-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.75;
 }
 
@@ -474,7 +474,7 @@
   min-height: 43px;
   padding: 11px 17px;
   border-radius: 9px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.3;
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
@@ -533,7 +533,7 @@
 .transfer-panel-heading h2 {
   margin-top: 5px;
   font-family: "Manrope", sans-serif;
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 750;
   letter-spacing: -0.45px;
 }
@@ -549,7 +549,7 @@
   border-radius: 7px;
   background: var(--subtle);
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -597,7 +597,7 @@
   align-items: center;
   gap: 9px;
   color: #52627a;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .transfer-qr-wait {
@@ -613,13 +613,13 @@
   border-radius: 7px;
   background: rgba(6, 32, 77, 0.9);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .transfer-code-label {
   margin-bottom: 8px;
   color: var(--transfer-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.2px;
   text-align: center;
@@ -649,7 +649,7 @@
 .transfer-small-note {
   margin-top: 13px;
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.7;
 }
 
@@ -684,14 +684,14 @@
 }
 
 .transfer-dropzone strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .transfer-dropzone > span:last-child {
   margin-top: 6px;
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .transfer-hidden-input {
@@ -719,14 +719,14 @@
 
 .transfer-empty-state strong {
   color: var(--transfer-ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
 }
 
 .transfer-empty-state p {
   max-width: 310px;
   margin-top: 6px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.65;
 }
 
@@ -783,7 +783,7 @@
 
 .transfer-file-name strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -791,7 +791,7 @@
 
 .transfer-file-name span {
   color: var(--transfer-muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .transfer-complete-icon {
@@ -810,7 +810,7 @@
   gap: 12px;
   margin-bottom: 6px;
   color: var(--transfer-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .transfer-progress-copy span {
@@ -822,7 +822,7 @@
 .transfer-progress-copy strong {
   flex: 0 0 auto;
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .transfer-progress {
@@ -844,13 +844,13 @@
   display: block;
   margin-top: 5px;
   color: var(--transfer-muted);
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .transfer-item-error {
   margin: 10px 0 0 48px;
   color: var(--danger-ink);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -861,7 +861,7 @@
   gap: 7px;
   margin-top: 14px;
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.6;
 }
 
@@ -880,7 +880,7 @@
   width: 100%;
   margin: 25px 0 20px;
   color: var(--transfer-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.1px;
 }
@@ -901,7 +901,7 @@
   display: block;
   margin: 0 0 8px;
   color: var(--transfer-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -921,7 +921,7 @@
   background: var(--bg);
   color: var(--transfer-ink);
   font-family: "Manrope", sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 750;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -976,7 +976,7 @@
   max-width: 100%;
   margin: 8px 0;
   font-family: "Manrope", sans-serif;
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 750;
   letter-spacing: -0.55px;
   overflow-wrap: anywhere;
@@ -987,7 +987,7 @@
 .transfer-waiting p {
   max-width: 450px;
   color: var(--transfer-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.75;
 }
 
@@ -1054,7 +1054,7 @@
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -1070,7 +1070,7 @@
   border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1100,14 +1100,14 @@
 
 .transfer-privacy h2 {
   font-family: "Manrope", sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 750;
 }
 
 .transfer-privacy p {
   margin-top: 5px;
   color: var(--transfer-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.75;
 }
 
@@ -1120,7 +1120,7 @@
 .transfer-privacy summary {
   width: fit-content;
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
@@ -1162,7 +1162,7 @@
 .transfer-scanner h2 {
   margin-top: 5px;
   font-family: "Manrope", sans-serif;
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 750;
   letter-spacing: -0.5px;
 }
@@ -1195,7 +1195,7 @@
   gap: 12px;
   padding: 30px;
   background: rgba(5, 11, 20, 0.9);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   text-align: center;
 }
@@ -1223,7 +1223,7 @@
 .transfer-scanner-help {
   margin: 15px 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -1309,11 +1309,11 @@
   }
 
   .transfer-hero h1 {
-    font-size: 32px;
+    font-size: 33px;
   }
 
   .transfer-hero p {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.7;
   }
 
@@ -1324,7 +1324,7 @@
 
   .transfer-hero-badges span {
     padding: 6px 8px;
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .transfer-limits {
@@ -1345,7 +1345,7 @@
   }
 
   .transfer-limits strong {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .transfer-choice-grid {
@@ -1359,7 +1359,7 @@
   }
 
   .transfer-choice h2 {
-    font-size: 22px;
+    font-size: 23px;
   }
 
   .transfer-session-bar {
@@ -1373,7 +1373,7 @@
 
   .transfer-text-button {
     padding-top: 9px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .transfer-start-card {
@@ -1382,7 +1382,7 @@
   }
 
   .transfer-start-card h2 {
-    font-size: 21px;
+    font-size: 22px;
   }
 
   .transfer-panel {
@@ -1391,7 +1391,7 @@
   }
 
   .transfer-panel-heading h2 {
-    font-size: 18px;
+    font-size: 19px;
   }
 
   .transfer-pair-panel {
@@ -1405,7 +1405,7 @@
   }
 
   .transfer-code strong {
-    font-size: 21px;
+    font-size: 22px;
   }
 
   .transfer-dropzone {
@@ -1437,7 +1437,7 @@
   .transfer-incoming h2,
   .transfer-receiving h2,
   .transfer-waiting h2 {
-    font-size: 20px;
+    font-size: 21px;
   }
 
   .transfer-file-item {
@@ -1468,7 +1468,7 @@
   }
 
   .transfer-privacy h2 {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
   }
 
@@ -1483,7 +1483,7 @@
   }
 
   .transfer-scanner h2 {
-    font-size: 19px;
+    font-size: 20px;
   }
 }
 
