@@ -1,0 +1,18 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="3" width="94" height="94" rx="23" fill="#FFFFFF"/>
+  <rect x="4.25" y="4.25" width="91.5" height="91.5" rx="21.75" stroke="#06204D" stroke-opacity="0.08" stroke-width="1.5"/>
+  <g transform="translate(5 7) scale(0.9)">
+    <rect x="6" y="12" width="54" height="68" rx="10" fill="#00C9B7" opacity="0.95"/>
+    <rect x="16" y="12" width="54" height="68" rx="10" fill="#00D2C4" opacity="0.95"/>
+    <path d="M26 22C26 16.4772 30.4772 12 36 12H68L84 28V80C84 85.5228 79.5228 90 74 90H36C30.4772 90 26 85.5228 26 80V22Z" fill="#06204D"/>
+    <path d="M68 12V25C68 26.6569 69.3431 28 71 28H84L68 12Z" fill="#FFFFFF"/>
+    <g transform="translate(55 53) scale(1.18) translate(-51 -57)">
+      <path d="M36 70V44L47 55.5V64.5L41.5 59V70H36Z" fill="#FFFFFF"/>
+      <path d="M36 44H41.5V70H36V44Z" fill="#FFFFFF"/>
+      <path d="M41.5 51L51 61.5L47 65.5L38.5 56.5L41.5 51Z" fill="#FFFFFF"/>
+      <path d="M51 61.5L60.5 51L63.5 56.5L55 65.5L51 61.5Z" fill="#00C9B7"/>
+      <path d="M60.5 44H66V70H60.5V44Z" fill="#00C9B7"/>
+      <path d="M60.5 59L55 64.5V55.5L66 44V70H60.5V59Z" fill="#00C9B7"/>
+    </g>
+  </g>
+</svg>
