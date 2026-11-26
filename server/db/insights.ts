@@ -13,6 +13,13 @@ function noStore(res: ServerResponse) {
   res.setHeader("Cache-Control", "no-store")
 }
 
+function isMissingInsightsSchema(error: unknown): boolean {
+  return (
+    (error as any)?.code === "42P01" &&
+    /relation "(funnel_events|product_feedback)" does not exist/i.test(String((error as any)?.message || ""))
+  )
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)
   noStore(res)
@@ -25,7 +32,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const actor = await requireAdmin(req)
     if (!actor) return json(res, 403, { ok: false, error: "Administrator sign-in required" })
 
-    const [toolRows, feedbackRows, feedbackToolRows, recentRows, triageRows] = await Promise.all([
+    const insightsRows = await Promise.all([
       transact(async (sql): Promise<Record<string, any>[]> =>
         sql(
           `select tool_id,
@@ -80,8 +87,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       transact(async (sql): Promise<Record<string, any>[]> =>
         sql(`select value from settings where key = 'feedback_triage' limit 1`),
       ).catch(() => []),
-    ])
+    ]).catch((error) => {
+      if (isMissingInsightsSchema(error)) {
+        json(res, 503, { ok: false, error: "Product insights are not configured on the primary database" })
+      } else {
+        json(res, 500, { ok: false, error: "Insights unavailable" })
+      }
+      return null
+    })
+    if (insightsRows === null) return
 
+    const [toolRows, feedbackRows, feedbackToolRows, recentRows, triageRows] = insightsRows
     const tools = toolRows.map((row) => {
       const opened = Number(row.opened)
       const results = Number(row.results)
@@ -232,6 +248,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (error?.message === "OUT_OF_ORDER") return json(res, 409, { ok: false, error: "Event stage is out of order" })
       if (error?.message === "VISIT_LIMIT") return json(res, 429, { ok: false, error: "Daily event limit reached" })
       if (error?.code === "23505") return json(res, 200, { ok: true })
+      if (isMissingInsightsSchema(error)) return json(res, 200, { ok: true, skipped: true })
       return json(res, 500, { ok: false, error: "Insights unavailable" })
     }
     return json(res, 200, { ok: true })
@@ -264,6 +281,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     })
   } catch (error: any) {
     if (error?.message === "VISIT_LIMIT") return json(res, 429, { ok: false, error: "Daily feedback limit reached" })
+    if (isMissingInsightsSchema(error)) return json(res, 200, { ok: true, skipped: true })
     return json(res, 500, { ok: false, error: "Feedback unavailable" })
   }
   return json(res, 200, { ok: true })

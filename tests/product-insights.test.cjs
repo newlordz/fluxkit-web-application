@@ -286,6 +286,33 @@ test("feedback API accepts fixed sentiments only and caps daily submissions", as
   assert.equal(db.feedback.length, 5)
 })
 
+test("insights skips guest telemetry when the optional schema is absent", async () => {
+  const missingSchema = Object.assign(new Error('relation "funnel_events" does not exist'), {
+    code: "42P01",
+  })
+  const db = {
+    transact: async () => {
+      throw missingSchema
+    },
+  }
+  const handler = createInsightsHandler(db)
+
+  assert.deepEqual(await post(handler, funnel("tool_opened", 1)), {
+    status: 200,
+    payload: { ok: true, skipped: true },
+  })
+  assert.deepEqual(await post(handler, feedbackPayload()), {
+    status: 200,
+    payload: { ok: true, skipped: true },
+  })
+
+  const adminHandler = createInsightsHandler(db, { id: "admin", role: "admin" })
+  const res = createResponse()
+  await adminHandler({ method: "GET" }, res)
+  assert.equal(res.statusCode, 503)
+  assert.match(res.payload.error, /not configured on the primary database/i)
+})
+
 test("insights aggregates require an administrator and expose no raw event rows", async () => {
   const db = createInsightsDb()
   const anonymous = createInsightsHandler(db)
