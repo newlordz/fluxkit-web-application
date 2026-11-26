@@ -116,6 +116,12 @@ test("catalog routes are unique and audio is a distinct backend-dependent catego
   assert.equal(passport.category, "File tools")
   assert.equal(passport.available, true)
   assert.notEqual(passport.integrationRequired, true)
+  for (const id of ["image-crop", "image-resize"]) {
+    const imageTool = tools.find((t) => t.id === id)
+    assert.equal(imageTool.category, "File tools")
+    assert.equal(imageTool.available, true)
+    assert.notEqual(imageTool.integrationRequired, true)
+  }
   assert.equal(
     tools.filter(
       (t) =>
@@ -138,6 +144,8 @@ for (const route of [
   "qr",
   "merge-pdf",
   "image-to-excel",
+  "image-crop",
+  "image-resize",
   "passport-photo",
   "text-pdf",
   "audio-text",

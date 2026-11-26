@@ -189,6 +189,17 @@ test("Tier 1: Passport Photo Studio accepts one supported image and opens its lo
   assert.doesNotMatch(html, /Run Passport Photo Studio/i)
 })
 
+test("Tier 1: Image Cropper and Image Resizer accept only supported local images", () => {
+  for (const id of ["image-crop", "image-resize"]) {
+    const { load } = createLoader(id)
+    const App = load("App").default
+    const html = renderToStaticMarkup(React.createElement(App))
+    assert.match(html, /accept="[^"]*\.avif[^"]*image\/avif/i)
+    assert.doesNotMatch(html, /accept="[^"]*application\/pdf/i)
+    assert.doesNotMatch(html, /Run Image (Cropper|Resizer)/i)
+  }
+})
+
 // Iterate through every registered tool and verify route rendering
 const { load: catalogLoader } = createLoader()
 const allTools = catalogLoader("config").tools

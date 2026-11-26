@@ -304,3 +304,81 @@ test("Passport Photo Studio: size labels use sensible precision for each unit", 
   assert.equal(formatPassportSize(2, 2, "in"), "2.00 × 2.00 in")
   assert.equal(formatPassportSize(600, 600, "px"), "600 × 600 px")
 })
+
+test("Passport Photo Studio: an explicit editor crop is authoritative and never cover-cropped twice", async () => {
+  const drawCalls = []
+  const { renderPassportPhoto } = loadPassportPhoto({
+    document: {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          drawImage: (...args) => drawCalls.push(args),
+          fillRect: () => {},
+        }),
+        toBlob: (callback, type) => callback(new Blob(["image"], { type })),
+      }),
+    },
+  })
+  const image = { naturalWidth: 1200, naturalHeight: 800 }
+  await renderPassportPhoto(image, {
+    width: 600,
+    height: 600,
+    unit: "px",
+    dpi: 300,
+    zoom: 1,
+    focusX: 0.5,
+    focusY: 0.5,
+    crop: { x: 400, y: 200, width: 400, height: 400 },
+    removeBackground: false,
+    backgroundColor: "#ffffff",
+    backgroundTolerance: 28,
+    format: "image/png",
+    quality: 0.92,
+  })
+  assert.deepEqual(plain(drawCalls[0]), [
+    image,
+    400,
+    200,
+    400,
+    400,
+    0,
+    0,
+    600,
+    600,
+  ])
+})
+
+test("Passport Photo Studio: out-of-bounds editor crops are rejected", async () => {
+  const { renderPassportPhoto } = loadPassportPhoto({
+    document: {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: () => {}, fillRect: () => {} }),
+        toBlob: (callback, type) => callback(new Blob(["image"], { type })),
+      }),
+    },
+  })
+  await assert.rejects(
+    renderPassportPhoto(
+      { naturalWidth: 1200, naturalHeight: 800 },
+      {
+        width: 600,
+        height: 600,
+        unit: "px",
+        dpi: 300,
+        zoom: 1,
+        focusX: 0.5,
+        focusY: 0.5,
+        crop: { x: 900, y: 0, width: 400, height: 400 },
+        removeBackground: false,
+        backgroundColor: "#ffffff",
+        backgroundTolerance: 28,
+        format: "image/png",
+        quality: 0.92,
+      },
+    ),
+    /outside this photo/,
+  )
+})

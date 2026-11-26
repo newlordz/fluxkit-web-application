@@ -6,9 +6,13 @@ import ImageTablePreview from "./ImageTablePreview"
 
 import PassportPhotoStudio from "./PassportPhotoStudio"
 
+import ImageEditorStudio from "./ImageEditorStudio"
+
 import HumanizerStudio from "./HumanizerStudio"
 
 import { isPassportImageFile } from "./passportPhoto"
+
+import { isEditableImageFile } from "./imageEditing"
 
 import {
   assessImageTable,
@@ -870,7 +874,9 @@ export default function ToolPage({
   // State
 
   const [files, setFiles] = useState<File[]>(() =>
-    tool.id === "passport-photo" ? (initialFiles || []).slice(0, 1) : initialFiles || [],
+    ["passport-photo", "image-crop", "image-resize"].includes(tool.id)
+      ? (initialFiles || []).slice(0, 1)
+      : initialFiles || [],
   )
 
   const [error, setError] = useState("")
@@ -1687,6 +1693,19 @@ export default function ToolPage({
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
+      const isSingleImageTool = ["passport-photo", "image-crop", "image-resize"].includes(tool.id)
+      const stagedFiles = isSingleImageTool ? initialFiles.slice(0, 1) : initialFiles
+      const stagedImage = stagedFiles[0]
+      if (
+        isSingleImageTool &&
+        stagedImage &&
+        (!(tool.id === "passport-photo" ? isPassportImageFile(stagedImage) : isEditableImageFile(stagedImage)) ||
+          stagedImage.size > 25 * 1024 * 1024)
+      ) {
+        setFiles([])
+        setError("Choose one JPG, PNG, WebP, or AVIF image smaller than 25 MB.")
+        return
+      }
       trackToolEvent("file_added", tool.id)
       const isFileTool = [
         "merge-pdf",
@@ -1720,6 +1739,10 @@ export default function ToolPage({
 
         "image-to-excel",
 
+        "image-crop",
+
+        "image-resize",
+
         "passport-photo",
 
         "word-to-pdf",
@@ -1749,9 +1772,7 @@ export default function ToolPage({
 
       if (isFileTool) {
         setFiles(
-          tool.id === "image-to-excel" || tool.id === "passport-photo"
-            ? initialFiles.slice(0, 1)
-            : initialFiles,
+          stagedFiles,
         )
         setImageTableRun(null)
       } else if (tool.category === "AI text tools") {
@@ -2078,7 +2099,7 @@ export default function ToolPage({
       return ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
     }
 
-    if (id === "passport-photo") {
+    if (id === "passport-photo" || id === "image-crop" || id === "image-resize") {
       return ".jpg,.jpeg,.png,.webp,.avif,image/jpeg,image/png,image/webp,image/avif"
     }
 
@@ -2146,8 +2167,8 @@ export default function ToolPage({
       return
     }
 
-    if (tool.id === "passport-photo" && incoming.length !== 1) {
-      setError("Choose exactly one passport photo.")
+    if (["passport-photo", "image-crop", "image-resize"].includes(tool.id) && incoming.length !== 1) {
+      setError("Choose exactly one image.")
       return
     }
 
@@ -2210,6 +2231,8 @@ export default function ToolPage({
         errors.push(`${file.name}: choose a JPG, PNG, or WebP image.`)
       } else if (tool.id === "passport-photo" && !isPassportImageFile(file)) {
         errors.push(`${file.name}: choose a JPG, PNG, WebP, or AVIF image.`)
+      } else if (["image-crop", "image-resize"].includes(tool.id) && !isEditableImageFile(file)) {
+        errors.push(`${file.name}: choose a JPG, PNG, WebP, or AVIF image.`)
       } else if (file.size > 25 * 1024 * 1024) {
         errors.push(`${file.name}: maximum size is 25 MB.`)
       } else {
@@ -2226,7 +2249,7 @@ export default function ToolPage({
     }
 
     setFiles((current) =>
-      tool.id === "image-to-excel" || tool.id === "passport-photo"
+      ["image-to-excel", "image-crop", "image-resize", "passport-photo"].includes(tool.id)
         ? accepted
         : [...current, ...accepted],
     )
@@ -2450,7 +2473,7 @@ export default function ToolPage({
   async function submit(e: FormEvent) {
     e.preventDefault()
 
-    if (tool.id === "passport-photo" || isProcessing || jobControllerRef.current) return
+    if (["passport-photo", "image-crop", "image-resize"].includes(tool.id) || isProcessing || jobControllerRef.current) return
 
     const generation = ++jobGenerationRef.current
     const isCurrentJob = () => jobGenerationRef.current === generation
@@ -4144,13 +4167,13 @@ export default function ToolPage({
       <p className="page-subtitle">{tool.description}</p>
 
       {/* --- WORKSPACE SPECIAL VIEWS --- */}
-      {tool.id === "passport-photo" && files[0] ? (
+      {["passport-photo", "image-crop", "image-resize"].includes(tool.id) && files[0] ? (
         <div className="mt-6">
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="break-words font-semibold text-slate-900">{files[0].name}</p>
               <p className="mt-1 text-xs text-slate-500">
-                Your photo stays on this device. Nothing is uploaded.
+                Your image stays on this device. Nothing is uploaded.
               </p>
             </div>
             <button
@@ -4163,10 +4186,18 @@ export default function ToolPage({
                 setStatus("idle")
               }}
             >
-              <X size={16} /> Change photo
+              <X size={16} /> {tool.id === "passport-photo" ? "Change photo" : "Change image"}
             </button>
           </div>
-          <PassportPhotoStudio file={files[0]} onComplete={onComplete} />
+          {tool.id === "passport-photo" ? (
+            <PassportPhotoStudio file={files[0]} onComplete={onComplete} />
+          ) : (
+            <ImageEditorStudio
+              file={files[0]}
+              mode={tool.id === "image-crop" ? "crop" : "resize"}
+              onComplete={onComplete}
+            />
+          )}
         </div>
       ) : tool.id === "humanizer" ? (
         <HumanizerStudio toolId={tool.id} onComplete={onComplete} />
@@ -10854,7 +10885,7 @@ export default function ToolPage({
               </div>
             )}
 
-            {tool.id !== "passport-photo" &&
+            {!["passport-photo", "image-crop", "image-resize"].includes(tool.id) &&
               !(tool.id === "qr" && kind === "Image / Photo Showcase") && (
                 <>
                 <button

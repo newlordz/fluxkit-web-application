@@ -6,20 +6,31 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   LockKeyhole,
+  Maximize2,
+  Printer,
   RotateCcw,
+  Ruler,
   SlidersHorizontal,
 } from "lucide-react"
+import ImageCropEditor from "./ImageCropEditor"
+import { blobToDataUrl, fitCropToAspect } from "./imageEditing"
 import {
   PASSPORT_PHOTO_PRESETS,
   formatPassportSize,
+  getPassportCrop,
   getPassportPreset,
   loadPassportImage,
   renderPassportPhoto,
   resolveOutputDimensions,
+  type PassportCrop,
   type PassportRenderOptions,
-  type PassportRenderResult,
   type PassportSizeUnit,
 } from "./passportPhoto"
+import {
+  createPassportA4Pdf,
+  getPassportPrintLayout,
+  getPassportPrintPhotos,
+} from "./passportPrint"
 
 interface PassportPhotoStudioProps {
   file: File
@@ -42,8 +53,18 @@ function fileStem(name: string): string {
   )
 }
 
+function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
 export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoStudioProps) {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [crop, setCrop] = useState<PassportCrop | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
   const [presetId, setPresetId] = useState("us")
@@ -52,9 +73,6 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
   const [width, setWidth] = useState(50.8)
   const [height, setHeight] = useState(50.8)
   const [dpi, setDpi] = useState(300)
-  const [zoom, setZoom] = useState(1)
-  const [focusX, setFocusX] = useState(0.5)
-  const [focusY, setFocusY] = useState(0.5)
   const [removeBackground, setRemoveBackground] = useState(false)
   const [backgroundColor, setBackgroundColor] = useState("#ffffff")
   const [backgroundTolerance, setBackgroundTolerance] = useState(28)
@@ -62,20 +80,38 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
   const [quality, setQuality] = useState(0.92)
   const [previewUrl, setPreviewUrl] = useState("")
   const [previewError, setPreviewError] = useState("")
+  const [actualSize, setActualSize] = useState(false)
+  const [showPrintSheet, setShowPrintSheet] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [exportError, setExportError] = useState("")
+  const [printError, setPrintError] = useState("")
   const [exported, setExported] = useState<{ name: string; size: number } | null>(null)
-  const dragRef = useRef<{ x: number; y: number; focusX: number; focusY: number } | null>(null)
-  const previewRef = useRef<HTMLDivElement | null>(null)
+  const cropAspectRef = useRef<number | null>(null)
+  const imageUrlRef = useRef("")
 
   const selectedPreset = getPassportPreset(presetId)
-  const output = useMemo(() => {
+  const { output, outputError } = useMemo(() => {
     try {
-      return resolveOutputDimensions(width, height, unit, dpi)
+      return { output: resolveOutputDimensions(width, height, unit, dpi), outputError: "" }
+    } catch (error) {
+      return {
+        output: null,
+        outputError: error instanceof Error ? error.message : "Enter a valid width and height.",
+      }
+    }
+  }, [width, height, unit, dpi])
+
+  const physicalWidthMm = unit === "mm" ? width : unit === "in" ? width * 25.4 : output ? (output.width / dpi) * 25.4 : 0
+  const physicalHeightMm = unit === "mm" ? height : unit === "in" ? height * 25.4 : output ? (output.height / dpi) * 25.4 : 0
+  const printLayout = useMemo(() => {
+    if (!output || physicalWidthMm <= 0 || physicalHeightMm <= 0) return null
+    try {
+      return getPassportPrintLayout(physicalWidthMm, physicalHeightMm)
     } catch {
       return null
     }
-  }, [width, height, unit, dpi])
+  }, [output, physicalWidthMm, physicalHeightMm])
 
   const renderOptions = useMemo<PassportRenderOptions>(
     () => ({
@@ -83,63 +119,75 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
       height,
       unit,
       dpi,
-      zoom,
-      focusX,
-      focusY,
+      zoom: 1,
+      focusX: 0.5,
+      focusY: 0.5,
+      crop: crop || undefined,
       removeBackground,
       backgroundColor,
       backgroundTolerance,
       format,
       quality,
     }),
-    [
-      width,
-      height,
-      unit,
-      dpi,
-      zoom,
-      focusX,
-      focusY,
-      removeBackground,
-      backgroundColor,
-      backgroundTolerance,
-      format,
-      quality,
-    ],
+    [width, height, unit, dpi, crop, removeBackground, backgroundColor, backgroundTolerance, format, quality],
   )
 
   useEffect(() => {
     let active = true
     setLoading(true)
     setLoadError("")
+    setImage(null)
+    setCrop(null)
     setPreviewUrl("")
     setExported(null)
-    setZoom(1)
-    setFocusX(0.5)
-    setFocusY(0.5)
+    cropAspectRef.current = null
     loadPassportImage(file)
       .then((loadedImage) => {
-        if (active) setImage(loadedImage)
+        if (!active) {
+          URL.revokeObjectURL(loadedImage.src)
+          return
+        }
+        imageUrlRef.current = loadedImage.src
+        setImage(loadedImage)
       })
       .catch((error) => {
-        if (active) {
-          setLoadError(error instanceof Error ? error.message : "The photo could not be opened.")
-        }
+        if (active) setLoadError(error instanceof Error ? error.message : "The photo could not be opened.")
       })
       .finally(() => {
         if (active) setLoading(false)
       })
     return () => {
       active = false
+      if (imageUrlRef.current) {
+        URL.revokeObjectURL(imageUrlRef.current)
+        imageUrlRef.current = ""
+      }
     }
   }, [file])
 
   useEffect(() => {
     if (!image || !output) return
+    const nextAspect = output.width / output.height
+    if (cropAspectRef.current === null) {
+      cropAspectRef.current = nextAspect
+      setCrop(getPassportCrop(image.naturalWidth, image.naturalHeight, output.width, output.height, 1, 0.5, 0.5))
+      return
+    }
+    if (Math.abs(cropAspectRef.current - nextAspect) > 0.00001) {
+      cropAspectRef.current = nextAspect
+      setCrop((current) =>
+        current
+          ? fitCropToAspect(current, image.naturalWidth, image.naturalHeight, nextAspect)
+          : getPassportCrop(image.naturalWidth, image.naturalHeight, output.width, output.height, 1, 0.5, 0.5),
+      )
+    }
+  }, [image, output])
+
+  useEffect(() => {
+    if (!image || !output || !crop) return
     let active = true
-    let objectUrl = ""
     const timer = window.setTimeout(() => {
-      const previewScale = Math.min(1, 520 / Math.max(output.width, output.height))
+      const previewScale = actualSize ? 1 : Math.min(1, 640 / Math.max(output.width, output.height))
       const previewOptions: PassportRenderOptions = {
         ...renderOptions,
         unit: "px",
@@ -149,25 +197,19 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
       }
       setPreviewError("")
       renderPassportPhoto(image, previewOptions)
-        .then((result) => {
-          if (!active) return
-          objectUrl = URL.createObjectURL(result.blob)
-          setPreviewUrl(objectUrl)
+        .then((result) => blobToDataUrl(result.blob))
+        .then((dataUrl) => {
+          if (active) setPreviewUrl(dataUrl)
         })
         .catch((error) => {
-          if (active) {
-            setPreviewError(
-              error instanceof Error ? error.message : "The live preview could not be rendered.",
-            )
-          }
+          if (active) setPreviewError(error instanceof Error ? error.message : "The live preview could not be rendered.")
         })
     }, 100)
     return () => {
       active = false
       window.clearTimeout(timer)
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [image, output, renderOptions])
+  }, [image, output, crop, renderOptions, actualSize])
 
   function applyPreset(id: string) {
     setPresetId(id)
@@ -221,33 +263,18 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
   }
 
   function resetCrop() {
-    setZoom(1)
-    setFocusX(0.5)
-    setFocusY(0.5)
+    if (!image || !output) return
+    setCrop(getPassportCrop(image.naturalWidth, image.naturalHeight, output.width, output.height, 1, 0.5, 0.5))
+    setExported(null)
   }
 
-  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!previewRef.current) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = { x: event.clientX, y: event.clientY, focusX, focusY }
-  }
-
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    const drag = dragRef.current
-    const bounds = previewRef.current?.getBoundingClientRect()
-    if (!drag || !bounds) return
-    const nextX = Math.min(1, Math.max(0, drag.focusX - ((event.clientX - drag.x) / bounds.width) * 1.4))
-    const nextY = Math.min(1, Math.max(0, drag.focusY - ((event.clientY - drag.y) / bounds.height) * 1.4))
-    setFocusX(nextX)
-    setFocusY(nextY)
-  }
-
-  function handlePointerUp() {
-    dragRef.current = null
+  function updateCrop(next: PassportCrop) {
+    setCrop(next)
+    setExported(null)
   }
 
   async function handleExport() {
-    if (!image || !output) return
+    if (!image || !output || !crop) return
     setExporting(true)
     setExportError("")
     setExported(null)
@@ -259,18 +286,36 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
           ? `-${fileStem(customLabel)}`
           : ""
       const name = `${fileStem(file.name)}-passport${presetSuffix}-${result.width}x${result.height}.${result.extension}`
-      const url = URL.createObjectURL(result.blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = name
-      anchor.click()
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+      downloadBlob(result.blob, name)
       setExported({ name, size: result.blob.size })
       onComplete(name)
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "The passport photo could not be exported.")
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handlePrintSheet() {
+    if (!image || !output || !crop || !printLayout) return
+    setPrinting(true)
+    setPrintError("")
+    try {
+      const rendered = await renderPassportPhoto(image, {
+        ...renderOptions,
+        format: "image/png",
+        fillBackground: true,
+      })
+      const dataUrl = await blobToDataUrl(rendered.blob)
+      const pdf = await createPassportA4Pdf(dataUrl, physicalWidthMm, physicalHeightMm)
+      const name = `${fileStem(file.name)}-passport-a4-${physicalWidthMm.toFixed(1)}x${physicalHeightMm.toFixed(1)}mm.pdf`
+      downloadBlob(pdf, name)
+      setExported({ name, size: pdf.size })
+      onComplete(name)
+    } catch (error) {
+      setPrintError(error instanceof Error ? error.message : "The A4 print sheet could not be prepared.")
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -283,29 +328,34 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
     )
   }
 
-  if (loadError || !image) {
+  if (loadError || !image || !crop) {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm leading-6 text-red-800">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <strong>We could not open this photo.</strong>
-            <p className="mt-1">{loadError || "Choose another image to continue."}</p>
-            <p className="mt-2 text-red-700">Remove the file and choose a JPG, PNG, WebP, or AVIF image.</p>
+            <strong>We could not prepare this photo.</strong>
+            <p className="mt-1">{loadError || "Choose another photo if needed."}</p>
+            <p className="mt-2 text-red-700">Use a JPG, PNG, WebP, or AVIF image.</p>
           </div>
         </div>
       </div>
     )
   }
 
+  const displayOutput = output ?? {
+    width: Math.max(1, Math.round(crop.width)),
+    height: Math.max(1, Math.round(crop.height)),
+  }
+  const physicalSizeKnown = physicalWidthMm > 0 && physicalHeightMm > 0
+  const printPhotos = printLayout ? getPassportPrintPhotos(printLayout) : []
+
   return (
     <section className="mt-6 overflow-clip rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Passport Photo Studio</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Crop, size, clean up a plain background, and export a print-ready photo.
-          </p>
+          <p className="mt-1 text-sm text-slate-600">Crop directly on your photo, see the exact final size, and export a photo or A4 print sheet.</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
           <LockKeyhole className="h-4 w-4" />
@@ -314,93 +364,99 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
       </div>
 
       <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h4 className="font-semibold text-slate-950">Live photo preview</h4>
-              <p className="mt-1 text-xs text-slate-500">Drag the photo to position your face, then adjust zoom.</p>
+              <h4 className="font-semibold text-slate-950">Crop your photo</h4>
+              <p className="mt-1 text-xs text-slate-500">The white frame is the exact area included in the final photo.</p>
             </div>
-            <button type="button" className="text-button inline-flex items-center gap-2" onClick={resetCrop}>
+            <button type="button" className="text-button inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50" onClick={resetCrop} disabled={!output}>
               <RotateCcw className="h-4 w-4" />
               Reset crop
             </button>
           </div>
 
-          <div
-            ref={previewRef}
-            className="relative flex min-h-80 touch-none items-center justify-center overflow-hidden rounded-2xl border border-slate-300 bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%),linear-gradient(-45deg,#e2e8f0_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e2e8f0_75%),linear-gradient(-45deg,transparent_75%,#e2e8f0_75%)] bg-[length:24px_24px] bg-[position:0_0,0_12px,12px_-12px,-12px_0] p-6"
-            style={{ cursor: dragRef.current ? "grabbing" : "grab" }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-          >
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt="Live passport photo crop preview"
-                className="max-h-[520px] max-w-full select-none rounded-sm shadow-xl"
-                draggable={false}
-              />
-            ) : (
-              <div className="flex items-center gap-2 rounded-lg bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Rendering preview…
+          <ImageCropEditor
+            image={image}
+            crop={crop}
+            aspect={displayOutput.width / displayOutput.height}
+            onChange={updateCrop}
+            label="Passport photo crop editor"
+          />
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs font-semibold text-blue-700">FINAL PIXEL SIZE</p>
+              <p className="mt-1 text-sm font-bold text-blue-950">{output ? `${output.width} × ${output.height} px` : "Enter a valid size"}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-500">PHYSICAL SIZE</p>
+              <p className="mt-1 text-sm font-bold text-slate-950">{physicalSizeKnown ? `${physicalWidthMm.toFixed(1)} × ${physicalHeightMm.toFixed(1)} mm` : "—"}</p>
+              <p className="mt-1 text-xs text-slate-500">{physicalSizeKnown ? `${(physicalWidthMm / 25.4).toFixed(2)} × ${(physicalHeightMm / 25.4).toFixed(2)} in` : "Enter a width and height above zero."}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-500">SELECTED SOURCE AREA</p>
+              <p className="mt-1 text-sm font-bold text-slate-950">{Math.round(crop.width)} × {Math.round(crop.height)} px</p>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="font-semibold text-slate-950">Final result preview</h4>
+                <p className="mt-1 text-xs text-slate-500">Same crop, same output ratio, same background as your download.</p>
+              </div>
+              <div className="flex rounded-lg border border-slate-200 p-1">
+                <button type="button" onClick={() => setActualSize(false)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${!actualSize ? "bg-blue-600 text-white" : "text-slate-600"}`}>Fit to screen</button>
+                <button type="button" onClick={() => setActualSize(true)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${actualSize ? "bg-blue-600 text-white" : "text-slate-600"}`}>1:1 pixels</button>
+              </div>
+            </div>
+            <div className="mt-4 flex min-h-52 items-center justify-center overflow-auto rounded-xl bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%),linear-gradient(-45deg,#e2e8f0_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e2e8f0_75%),linear-gradient(-45deg,transparent_75%,#e2e8f0_75%)] bg-[length:24px_24px] p-5">
+              {output && previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Final passport photo preview"
+                  className="select-none rounded-sm shadow-lg"
+                  style={actualSize ? { width: displayOutput.width, height: displayOutput.height, maxWidth: "none" } : { maxHeight: 420, maxWidth: "100%" }}
+                  draggable={false}
+                />
+              ) : output ? (
+                <div className="flex items-center gap-2 rounded-lg bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Rendering preview…
+                </div>
+              ) : (
+                <div className="rounded-lg bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
+                  Enter a valid width and height to render the preview.
+                </div>
+              )}
+            </div>
+            <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500">
+              <Maximize2 className="mt-0.5 h-4 w-4 shrink-0" />
+              {actualSize
+                ? "1:1 pixels means one image pixel equals one screen pixel. It is not a calibrated physical ruler; use the A4 PDF for exact print dimensions."
+                : "This preview is scaled to fit your screen. The downloaded file keeps the exact pixel and physical dimensions shown above."}
+            </p>
+            {previewError && (
+              <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                <div><strong>Preview needs attention.</strong><p className="mt-1">{previewError}</p></div>
               </div>
             )}
-            <div className="pointer-events-none absolute inset-x-6 bottom-6 rounded-lg bg-slate-950/80 px-3 py-2 text-center text-xs font-medium text-white backdrop-blur-sm">
-              Keep the full head and shoulders inside the frame. Do not crop off the chin or top of the head.
-            </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-            <strong>Check the receiving authority’s current rules.</strong> Photo dimensions, head size, expression,
-            background, recency, and submission format vary by country and document type. This tool prepares the image;
-            it does not guarantee acceptance.
+            <strong>Check the receiving authority’s current rules.</strong> Photo dimensions, head size, expression, background, recency, and submission format vary by country and document type. This tool prepares the image; it does not guarantee acceptance.
           </div>
-
-          {previewError && (
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div>
-                <strong>Preview needs attention.</strong>
-                <p className="mt-1">{previewError}</p>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="space-y-5">
-          <div className="sticky top-20 z-30 flex items-center gap-3 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur lg:hidden">
-            <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-              {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt=""
-                  aria-hidden="true"
-                  className="max-h-full max-w-full object-contain"
-                  draggable={false}
-                />
-              ) : (
-                <LoaderCircle className="h-5 w-5 animate-spin text-slate-500" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-950">Live photo preview</p>
-              <p className="mt-1 text-xs text-slate-500">
-                {output ? `${output.width} × ${output.height} px · updates as you edit` : "Updates as you edit"}
-              </p>
-            </div>
-          </div>
-
           <div className="rounded-xl border border-slate-200 p-4">
             <div className="mb-4 flex items-center gap-2">
               <ImageIcon className="h-5 w-5 text-blue-700" />
               <h4 className="font-semibold text-slate-950">Country &amp; dimensions</h4>
             </div>
-            <label className="block text-xs font-semibold text-slate-700" htmlFor="passport-country">
-              Country / photo preset
-            </label>
+            <label className="block text-xs font-semibold text-slate-700" htmlFor="passport-country">Country / photo preset</label>
             <select
               id="passport-country"
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
@@ -408,73 +464,51 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
               onChange={(event) => applyPreset(event.target.value)}
             >
               {PASSPORT_PHOTO_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label} · {preset.widthMm} × {preset.heightMm} mm
-                </option>
+                <option key={preset.id} value={preset.id}>{preset.label} · {preset.widthMm} × {preset.heightMm} mm</option>
               ))}
               <option value="custom">Custom country / size</option>
             </select>
             {presetId === "custom" && (
               <label className="mt-4 block text-xs font-semibold text-slate-700" htmlFor="passport-custom-label">
                 Country / document label
-                <input
-                  id="passport-custom-label"
-                  type="text"
-                  value={customLabel}
-                  onChange={(event) => setCustomLabel(event.target.value)}
-                  placeholder="e.g. Kenya passport"
-                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+                <input id="passport-custom-label" type="text" value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="e.g. Kenya passport" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
               </label>
             )}
             <p className="mt-2 min-h-10 text-xs leading-5 text-slate-500">
-              {selectedPreset?.note || "Enter the exact physical or pixel dimensions required by your authority."}
+              {selectedPreset
+                ? `${selectedPreset.widthMm} × ${selectedPreset.heightMm} mm${output ? ` · ${output.width} × ${output.height} px at ${dpi} DPI` : ""}. Verify current authority rules.`
+                : "Enter the exact physical or pixel dimensions required by your authority."}
             </p>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
               <label className="text-xs font-semibold text-slate-700">
                 Width
-                <input
-                  type="number"
-                  min={unit === "px" ? 1 : 0.1}
-                  step={unit === "px" ? 1 : "any"}
-                  value={width}
-                  onChange={(event) => updateDimension(Number(event.target.value), "width")}
-                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+                <input type="number" min={unit === "px" ? 1 : 0.1} step={unit === "px" ? 1 : "any"} value={width} onChange={(event) => updateDimension(Number(event.target.value), "width")} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 Height
-                <input
-                  type="number"
-                  min={unit === "px" ? 1 : 0.1}
-                  step={unit === "px" ? 1 : "any"}
-                  value={height}
-                  onChange={(event) => updateDimension(Number(event.target.value), "height")}
-                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+                <input type="number" min={unit === "px" ? 1 : 0.1} step={unit === "px" ? 1 : "any"} value={height} onChange={(event) => updateDimension(Number(event.target.value), "height")} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 Unit
-                <select
-                  value={unit}
-                  onChange={(event) => updateUnit(event.target.value as PassportSizeUnit)}
-                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
+                <select value={unit} onChange={(event) => updateUnit(event.target.value as PassportSizeUnit)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
                   <option value="mm">mm</option>
                   <option value="in">in</option>
                   <option value="px">px</option>
                 </select>
               </label>
             </div>
+            {!output && (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950" role="alert">
+                {outputError}
+              </p>
+            )}
 
-            <label className="mt-4 block text-xs font-semibold text-slate-700" htmlFor="passport-dpi">
-              Print resolution
-            </label>
+            <label className="mt-4 block text-xs font-semibold text-slate-700" htmlFor="passport-dpi">Print resolution</label>
             <select
               id="passport-dpi"
               value={dpi}
-              onChange={(event) => setDpi(Number(event.target.value))}
+              onChange={(event) => { setDpi(Number(event.target.value)); setExported(null) }}
               disabled={unit === "px"}
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500"
             >
@@ -484,18 +518,9 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
             </select>
 
             <div className="mt-4 rounded-lg bg-slate-50 px-3 py-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-600">Output pixels</span>
-                <strong className="text-slate-950">
-                  {output ? `${output.width} × ${output.height} px` : "Invalid size"}
-                </strong>
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <span className="text-slate-600">Physical size</span>
-                <span className="font-medium text-slate-900">
-                  {unit === "px" ? "Pixel-defined" : formatPassportSize(width, height, unit)}
-                </span>
-              </div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-600">Output pixels</span><strong className="text-slate-950">{output ? `${output.width} × ${output.height} px` : "Invalid size"}</strong></div>
+              <div className="mt-1 flex items-center justify-between gap-3"><span className="text-slate-600">Entered size</span><span className="font-medium text-slate-900">{formatPassportSize(width, height, unit)}</span></div>
+              <div className="mt-1 flex items-center justify-between gap-3"><span className="text-slate-600">Physical size</span><span className="font-medium text-slate-900">{physicalSizeKnown ? `${physicalWidthMm.toFixed(1)} × ${physicalHeightMm.toFixed(1)} mm` : "—"}</span></div>
             </div>
           </div>
 
@@ -504,190 +529,104 @@ export default function PassportPhotoStudio({ file, onComplete }: PassportPhotoS
               <SlidersHorizontal className="h-5 w-5 text-blue-700" />
               <h4 className="font-semibold text-slate-950">Crop &amp; background</h4>
             </div>
-            <label className="block text-xs font-semibold text-slate-700" htmlFor="passport-zoom">
-              Photo zoom · {zoom.toFixed(2)}×
-            </label>
-            <input
-              id="passport-zoom"
-              type="range"
-              min={1}
-              max={4}
-              step={0.01}
-              value={zoom}
-              onChange={(event) => setZoom(Number(event.target.value))}
-              className="mt-3 w-full accent-blue-600"
-            />
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <label className="text-xs font-semibold text-slate-700" htmlFor="passport-focus-x">
-                Horizontal position
-                <input
-                  id="passport-focus-x"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={focusX}
-                  onChange={(event) => setFocusX(Number(event.target.value))}
-                  className="mt-3 w-full accent-blue-600"
-                />
-              </label>
-              <label className="text-xs font-semibold text-slate-700" htmlFor="passport-focus-y">
-                Vertical position
-                <input
-                  id="passport-focus-y"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={focusY}
-                  onChange={(event) => setFocusY(Number(event.target.value))}
-                  className="mt-3 w-full accent-blue-600"
-                />
-              </label>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-950">
+              Drag inside the white frame on your photo to position your head and shoulders. Pull any handle to zoom or reframe. The frame stays locked to the final photo ratio.
             </div>
-
             <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3">
-              <input
-                type="checkbox"
-                checked={removeBackground}
-                onChange={(event) => setRemoveBackground(event.target.checked)}
-                className="mt-1 h-4 w-4 accent-blue-600"
-              />
+              <input type="checkbox" checked={removeBackground} onChange={(event) => { setRemoveBackground(event.target.checked); setExported(null) }} className="mt-1 h-4 w-4 accent-blue-600" />
               <span>
                 <span className="block text-sm font-semibold text-slate-900">Clean up a plain background</span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500">
-                  Best for an evenly lit wall or studio backdrop. Complex backgrounds are left unchanged with a warning.
-                </span>
+                <span className="mt-1 block text-xs leading-5 text-slate-500">Best for an evenly lit wall or studio backdrop. Complex backgrounds are rejected instead of erased.</span>
               </span>
             </label>
-
             {removeBackground && (
               <div className="mt-4 space-y-4">
                 <div>
                   <span className="block text-xs font-semibold text-slate-700">Replacement background</span>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {BACKGROUND_COLORS.map((color) => (
-                      <button
-                        key={color.value}
-                        type="button"
-                        onClick={() => setBackgroundColor(color.value)}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
-                          backgroundColor === color.value
-                            ? "border-blue-500 bg-blue-50 text-blue-900"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                        aria-label={`Use ${color.label.toLowerCase()} background`}
-                      >
-                        <span
-                          className="h-4 w-4 rounded-full border border-slate-300"
-                          style={{ backgroundColor: color.value }}
-                        />
+                      <button key={color.value} type="button" onClick={() => setBackgroundColor(color.value)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${backgroundColor === color.value ? "border-blue-500 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`} aria-label={`Use ${color.label.toLowerCase()} background`}>
+                        <span className="h-4 w-4 rounded-full border border-slate-300" style={{ backgroundColor: color.value }} />
                         {color.label}
                       </button>
                     ))}
-                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
-                      Custom
-                      <input
-                        type="color"
-                        value={backgroundColor}
-                        onChange={(event) => setBackgroundColor(event.target.value)}
-                        className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
-                        aria-label="Custom background color"
-                      />
-                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Custom<input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0" aria-label="Custom background color" /></label>
                   </div>
                 </div>
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="passport-tolerance">
-                  Cleanup tolerance · {backgroundTolerance}%
-                </label>
-                <input
-                  id="passport-tolerance"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={backgroundTolerance}
-                  onChange={(event) => setBackgroundTolerance(Number(event.target.value))}
-                  className="w-full accent-blue-600"
-                />
+                <label className="block text-xs font-semibold text-slate-700" htmlFor="passport-tolerance">Cleanup tolerance · {backgroundTolerance}%</label>
+                <input id="passport-tolerance" type="range" min={0} max={100} value={backgroundTolerance} onChange={(event) => setBackgroundTolerance(Number(event.target.value))} className="w-full accent-blue-600" />
               </div>
             )}
           </div>
 
           <div className="rounded-xl border border-slate-200 p-4">
-            <h4 className="mb-4 font-semibold text-slate-950">Export</h4>
+            <h4 className="mb-4 font-semibold text-slate-950">Export photo</h4>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  format === "image/jpeg"
-                    ? "border-blue-500 bg-blue-50 text-blue-900"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-                onClick={() => setFormat("image/jpeg")}
-              >
-                JPG
-              </button>
-              <button
-                type="button"
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  format === "image/png"
-                    ? "border-blue-500 bg-blue-50 text-blue-900"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-                onClick={() => setFormat("image/png")}
-              >
-                PNG
-              </button>
+              <button type="button" className={`rounded-lg border px-3 py-2 text-sm font-semibold ${format === "image/jpeg" ? "border-blue-500 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setFormat("image/jpeg")}>JPG</button>
+              <button type="button" className={`rounded-lg border px-3 py-2 text-sm font-semibold ${format === "image/png" ? "border-blue-500 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setFormat("image/png")}>PNG</button>
             </div>
             {format === "image/jpeg" && (
-              <label className="mt-4 block text-xs font-semibold text-slate-700" htmlFor="passport-quality">
-                JPG quality · {Math.round(quality * 100)}%
-              </label>
+              <>
+                <label className="mt-4 block text-xs font-semibold text-slate-700" htmlFor="passport-quality">JPG quality · {Math.round(quality * 100)}%</label>
+                <input id="passport-quality" type="range" min={0.5} max={1} step={0.01} value={quality} onChange={(event) => setQuality(Number(event.target.value))} className="mt-3 w-full accent-blue-600" />
+              </>
             )}
-            {format === "image/jpeg" && (
-              <input
-                id="passport-quality"
-                type="range"
-                min={0.5}
-                max={1}
-                step={0.01}
-                value={quality}
-                onChange={(event) => setQuality(Number(event.target.value))}
-                className="mt-3 w-full accent-blue-600"
-              />
-            )}
-
-            {exportError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800" role="alert">
-                {exportError}
-              </div>
-            )}
-            {exported && (
-              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900" role="status">
-                <div className="flex items-start gap-2">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <strong>Photo exported.</strong>
-                    <p className="mt-1 break-all">{exported.name}</p>
-                    <p>{(exported.size / 1024).toFixed(1)} KB</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={handleExport}
-              disabled={exporting || !output}
-            >
+            {exportError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800" role="alert">{exportError}</div>}
+            <button type="button" className="primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60" onClick={handleExport} disabled={exporting || !output}>
               {exporting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
               {exporting ? "Preparing photo…" : `Download ${format === "image/png" ? "PNG" : "JPG"}`}
             </button>
-            <p className="mt-3 text-center text-xs leading-5 text-slate-500">
-              No upload, account, watermark, or cloud processing.
-            </p>
+            <p className="mt-3 text-center text-xs leading-5 text-slate-500">No upload, account, watermark, or cloud processing.</p>
           </div>
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <div className="mb-3 flex items-center gap-2"><Ruler className="h-5 w-5 text-blue-700" /><h4 className="font-semibold text-slate-950">Exact-size A4 print sheet</h4></div>
+            <p className="text-xs leading-5 text-slate-600">
+              {!output
+                ? "Enter a valid size to calculate how many photos fit on A4."
+                : printLayout
+                  ? `${printLayout.copies} photos per A4 sheet, each ${physicalWidthMm.toFixed(1)} × ${physicalHeightMm.toFixed(1)} mm, with cut guides.`
+                  : "This custom size does not fit an A4 sheet with a 10 mm margin. Reduce the physical dimensions to enable a print sheet."}
+            </p>
+            {printLayout && (
+              <button type="button" onClick={() => setShowPrintSheet((current) => !current)} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+                <Printer className="h-4 w-4" />
+                {showPrintSheet ? "Hide sheet preview" : "Preview A4 sheet"}
+              </button>
+            )}
+            {showPrintSheet && printLayout && (
+              <div className="mt-4 rounded-lg bg-slate-100 p-3">
+                <div className="relative mx-auto aspect-[210/297] w-full max-w-[280px] overflow-hidden bg-white shadow-md" aria-label={`A4 sheet with ${printLayout.copies} passport photos`}>
+                  {printPhotos.map((photo, index) => (
+                    <div
+                      key={index}
+                      className="absolute border border-dashed border-slate-400 bg-cover bg-center"
+                      style={{
+                        left: `${(photo.xMm / 210) * 100}%`,
+                        top: `${((297 - photo.yMm - photo.heightMm) / 297) * 100}%`,
+                        width: `${(photo.widthMm / 210) * 100}%`,
+                        height: `${(photo.heightMm / 297) * 100}%`,
+                        backgroundImage: previewUrl ? `url(${previewUrl})` : undefined,
+                      }}
+                    />
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-5 text-slate-500">Sheet preview is scaled down. The PDF contains exact physical dimensions.</p>
+              </div>
+            )}
+            {printError && <p className="mt-3 text-xs leading-5 text-red-700" role="alert">{printError}</p>}
+            <button type="button" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60" onClick={handlePrintSheet} disabled={printing || !printLayout}>
+              {printing ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5" />}
+              {printing ? "Preparing A4 PDF…" : "Download A4 print sheet"}
+            </button>
+            <p className="mt-3 text-xs leading-5 text-slate-500">Open the PDF and print at <strong>Actual size / 100%</strong> on A4. Do not use “Fit to page.”</p>
+          </div>
+
+          {exported && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900" role="status">
+              <div className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>File exported.</strong><p className="mt-1 break-all">{exported.name}</p><p>{(exported.size / 1024).toFixed(1)} KB</p></div></div>
+            </div>
+          )}
         </div>
       </div>
     </section>

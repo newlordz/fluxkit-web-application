@@ -206,7 +206,7 @@ export default function Overview({
     if (ext === "pdf") {
       return { typeName: "PDF Document", iconClass: "is-pdf", shortExt: "PDF" }
     }
-    if (["jpg", "jpeg", "png", "webp", "bmp", "svg"].includes(ext)) {
+    if (["jpg", "jpeg", "png", "webp", "avif", "bmp", "svg"].includes(ext)) {
       return {
         typeName: "Image file",
         iconClass: "is-image",
@@ -361,8 +361,29 @@ export default function Overview({
         },
       ]
     }
-    if (["jpg", "jpeg", "png", "webp", "bmp"].includes(ext)) {
+    if (["jpg", "jpeg", "png", "webp", "avif", "bmp"].includes(ext)) {
       return [
+        {
+          id: "image-crop",
+          name: "Crop Image",
+          desc: "Frame exactly what you want to keep with precise crop handles",
+          category: "edit" as const,
+          badge: "Crop",
+        },
+        {
+          id: "image-resize",
+          name: "Resize Image",
+          desc: "Set exact pixel dimensions for web, social, or print",
+          category: "optimize" as const,
+          badge: "Resize",
+        },
+        {
+          id: "passport-photo",
+          name: "Passport Photo",
+          desc: "Create a correctly sized passport or ID photo locally",
+          category: "edit" as const,
+          badge: "ID photo",
+        },
         {
           id: "jpg-to-pdf",
           name: "JPG to PDF",
