@@ -144,6 +144,62 @@ test("Google sign-in accepts only a server-verified access token", async () => {
   assert.equal(auth.getCurrentUser(), null)
 })
 
+test("Google users can save a backup password and keep the rotated session", async () => {
+  const requests = []
+  let rejectCurrentPassword = false
+  const load = sourceLoader(async (url, init) => {
+    requests.push({ url, init, body: init.body ? JSON.parse(init.body) : null })
+    if (url === "/api/auth/google") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          token: "google-session",
+          user: {
+            id: "usr_google",
+            email: "google.member@example.com",
+            name: "Google Member",
+            provider: "google",
+            role: "user",
+            subscriptionTier: "standard",
+            proStatus: "none",
+            unlockedTools: [],
+          },
+        }),
+      }
+    }
+    if (url === "/api/auth/password") {
+      return {
+        ok: !rejectCurrentPassword,
+        status: rejectCurrentPassword ? 401 : 200,
+        json: async () => rejectCurrentPassword
+          ? { ok: false, error: "Current password is incorrect." }
+          : { ok: true, token: "rotated-session", expiresAt: "2027-01-01T00:00:00Z" },
+      }
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  const auth = load("authService")
+
+  await auth.signInWithGoogle("verified-google-token")
+  assert.equal(load.sessionStorage.get("masterfilepro-session-token"), "google-session")
+
+  await auth.setBackupPassword("BackupPassword2026!", "")
+  const passwordRequest = requests.find((request) => request.url === "/api/auth/password")
+  assert.deepEqual(passwordRequest.body, { currentPassword: "", newPassword: "BackupPassword2026!" })
+  assert.equal(passwordRequest.init.headers.Authorization, "Bearer google-session")
+  assert.equal(load.sessionStorage.get("masterfilepro-session-token"), "rotated-session")
+  assert.equal(auth.getCurrentUser().provider, "google")
+
+  rejectCurrentPassword = true
+  await assert.rejects(
+    () => auth.setBackupPassword("DifferentPassword2026!", "WrongPassword2026!"),
+    /Current password is incorrect/,
+  )
+  assert.equal(load.sessionStorage.get("masterfilepro-session-token"), "rotated-session")
+})
+
 test("Legacy cached credentials are removed and never bypass an unavailable server", async () => {
   const load = sourceLoader(async () => { throw new Error("offline") })
   load.storage.set("masterfilepro-credentials", JSON.stringify({ email: "admin@masterfilepro.com", hash: "legacy-hash" }))

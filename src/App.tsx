@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, useRef, useMemo } from "react"
 
 import {
   Activity,
+  AlertCircle,
   AudioLines,
   ArrowDownToLine,
   ArrowRight,
@@ -69,6 +70,7 @@ import {
   signOut,
   onAuthStateChanged,
   reconcileSessionWithServer,
+  setBackupPassword,
   type UserAccount,
 } from "./authService"
 
@@ -398,6 +400,17 @@ export default function App() {
   const [profile, setProfile] = useState(() => stored("masterfilepro-name", ""))
 
   const [saved, setSaved] = useState(false)
+
+  const [showBackupPasswordForm, setShowBackupPasswordForm] = useState(false)
+  const [backupCurrentPassword, setBackupCurrentPassword] = useState("")
+  const [backupNewPassword, setBackupNewPassword] = useState("")
+  const [backupConfirmPassword, setBackupConfirmPassword] = useState("")
+  const [backupShowPassword, setBackupShowPassword] = useState(false)
+  const [backupPasswordSaving, setBackupPasswordSaving] = useState(false)
+  const [backupPasswordMessage, setBackupPasswordMessage] = useState<{
+    type: "success" | "error"
+    text: string
+  } | null>(null)
 
   // The avatar letter is visible text, so speech-input users need it in the
   // accessible name as well (WCAG 2.5.3).
@@ -1966,6 +1979,155 @@ export default function App() {
                     >
                       Sign out <LogOut size={13} />
                     </button>
+                    {currentUser.provider === "google" && (
+                      <div className="settings-backup-access">
+                        <div className="settings-backup-heading">
+                          <div>
+                            <h4><Key size={14} /> Backup email sign-in</h4>
+                            <p id="backup-password-description">
+                              Add a MasterfilePro password so you can sign in with your email if Google is unavailable. Google sign-in will keep working.
+                            </p>
+                          </div>
+                          {!showBackupPasswordForm && (
+                            <button
+                              type="button"
+                              className="secondary settings-backup-toggle"
+                              onClick={() => {
+                                setBackupPasswordMessage(null)
+                                setShowBackupPasswordForm(true)
+                              }}
+                            >
+                              Set or change password
+                            </button>
+                          )}
+                        </div>
+                        {backupPasswordMessage && !showBackupPasswordForm && (
+                          <div
+                            className={`settings-backup-message ${backupPasswordMessage.type}`}
+                            role={backupPasswordMessage.type === "error" ? "alert" : "status"}
+                          >
+                            {backupPasswordMessage.type === "success" && <CheckCircle2 size={14} />}
+                            {backupPasswordMessage.text}
+                          </div>
+                        )}
+                        {showBackupPasswordForm && (
+                          <form
+                            className="settings-backup-form"
+                            aria-describedby="backup-password-description"
+                            onSubmit={async (event) => {
+                              event.preventDefault()
+                              setBackupPasswordMessage(null)
+                              if (backupNewPassword.length < 12 || backupNewPassword.length > 1024) {
+                                setBackupPasswordMessage({ type: "error", text: "Password must be between 12 and 1024 characters." })
+                                return
+                              }
+                              if (backupNewPassword !== backupConfirmPassword) {
+                                setBackupPasswordMessage({ type: "error", text: "The confirmation password does not match." })
+                                return
+                              }
+                              setBackupPasswordSaving(true)
+                              try {
+                                await setBackupPassword(backupNewPassword, backupCurrentPassword)
+                                setBackupCurrentPassword("")
+                                setBackupNewPassword("")
+                                setBackupConfirmPassword("")
+                                setBackupShowPassword(false)
+                                setShowBackupPasswordForm(false)
+                                setBackupPasswordMessage({ type: "success", text: "Backup password saved. You can now sign in with Google or your email and password." })
+                                notify("Backup password saved.", "success")
+                              } catch (error: any) {
+                                setBackupPasswordMessage({ type: "error", text: error?.message || "Could not save the backup password." })
+                              } finally {
+                                setBackupPasswordSaving(false)
+                              }
+                            }}
+                          >
+                            <div className="settings-backup-field">
+                              <div className="settings-backup-label-row">
+                                <label htmlFor="backup-current-password">Current MasterfilePro password</label>
+                                <button
+                                  type="button"
+                                  onClick={() => setBackupShowPassword((visible) => !visible)}
+                                  aria-label={backupShowPassword ? "Hide passwords" : "Show passwords"}
+                                >
+                                  {backupShowPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                                  {backupShowPassword ? "Hide" : "Show"}
+                                </button>
+                              </div>
+                              <input
+                                id="backup-current-password"
+                                type={backupShowPassword ? "text" : "password"}
+                                value={backupCurrentPassword}
+                                onChange={(event) => setBackupCurrentPassword(event.target.value)}
+                                placeholder="Leave blank if this is your first backup password"
+                                autoComplete="current-password"
+                                maxLength={1024}
+                              />
+                            </div>
+                            <div className="settings-backup-field">
+                              <label htmlFor="backup-new-password">New password</label>
+                              <input
+                                id="backup-new-password"
+                                type={backupShowPassword ? "text" : "password"}
+                                value={backupNewPassword}
+                                onChange={(event) => setBackupNewPassword(event.target.value)}
+                                placeholder="At least 12 characters"
+                                autoComplete="new-password"
+                                minLength={12}
+                                maxLength={1024}
+                                required
+                              />
+                            </div>
+                            <div className="settings-backup-field">
+                              <label htmlFor="backup-confirm-password">Confirm new password</label>
+                              <input
+                                id="backup-confirm-password"
+                                type={backupShowPassword ? "text" : "password"}
+                                value={backupConfirmPassword}
+                                onChange={(event) => setBackupConfirmPassword(event.target.value)}
+                                autoComplete="new-password"
+                                minLength={12}
+                                maxLength={1024}
+                                required
+                              />
+                            </div>
+                            {backupPasswordMessage && (
+                              <div
+                                className={`settings-backup-message ${backupPasswordMessage.type}`}
+                                role={backupPasswordMessage.type === "error" ? "alert" : "status"}
+                              >
+                                {backupPasswordMessage.type === "error" && <AlertCircle size={14} />}
+                                {backupPasswordMessage.text}
+                              </div>
+                            )}
+                            <div className="settings-backup-actions">
+                              <button
+                                type="button"
+                                className="secondary"
+                                disabled={backupPasswordSaving}
+                                onClick={() => {
+                                  setBackupCurrentPassword("")
+                                  setBackupNewPassword("")
+                                  setBackupConfirmPassword("")
+                                  setBackupShowPassword(false)
+                                  setBackupPasswordMessage(null)
+                                  setShowBackupPasswordForm(false)
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="primary"
+                                disabled={backupPasswordSaving || backupNewPassword.length < 12 || backupNewPassword !== backupConfirmPassword}
+                              >
+                                {backupPasswordSaving ? "Saving…" : "Save backup password"}
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="settings-account-card">

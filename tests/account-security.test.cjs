@@ -483,6 +483,147 @@ test("another administrator cannot reset the root administrator's password", asy
   assert.match(res.body.error, /root administrator/i)
 })
 
+test("a Google-only account can set one atomic backup password and then sign in by email", async () => {
+  const password = "BackupPassword2026!"
+  const statements = []
+  const state = {
+    ...ACCOUNT,
+    provider: "google",
+    password_salt: null,
+    password_hash: null,
+  }
+  const auth = authHarness({
+    transact: async (fn) => fn(async (sql, params) => {
+      statements.push({ sql, params })
+      if (sql.includes("for update")) return [state]
+      if (sql.includes("update users set password_salt")) {
+        state.password_salt = params[1]
+        state.password_hash = params[2]
+      }
+      return []
+    }),
+  })
+
+  assert.equal(await auth.setInitialGooglePassword(state.id, password), true)
+  assert.match(statements[0].sql, /select provider, password_hash from users where id = \$1 for update/)
+  assert.match(state.password_hash, /^scrypt\$/)
+  assert.equal(await auth.verifyPassword(state, password), true)
+  assert.equal(state.provider, "google")
+  assert.ok(statements.some(({ sql }) => sql.includes("update sessions set revoked_at = now() where user_id")))
+  assert.ok(statements.some(({ params }) => params?.[1] === "auth.password.google_backup_set"))
+
+  const writeCount = statements.filter(({ sql }) => /^(update|insert)/i.test(sql.trim())).length
+  assert.equal(await auth.setInitialGooglePassword(state.id, "DifferentPassword2026!"), false)
+  assert.equal(
+    statements.filter(({ sql }) => /^(update|insert)/i.test(sql.trim())).length,
+    writeCount,
+    "a second first-time setup must not overwrite the credential",
+  )
+
+  const login = await auth.authenticatePassword(state.email, password)
+  assert.equal(login.status, "ok")
+  assert.equal(login.user.provider, "google")
+  assert.match(login.token, /^[a-f0-9]{64}$/)
+})
+
+test("the initial Google password helper rejects email-provider accounts", async () => {
+  const auth = authHarness({
+    transact: async (fn) => fn(async () => [{ provider: "email", password_hash: null }]),
+  })
+  assert.equal(await auth.setInitialGooglePassword(ACCOUNT.id, "BackupPassword2026!"), false)
+})
+
+test("a signed-in Google-only user can set a backup password without a current password", async () => {
+  const actor = { ...ACCOUNT, id: "usr_google", provider: "google" }
+  const calls = []
+  const handler = loadModule("server/auth/password.ts", {
+    "../_lib/db.ts": {
+      cors: () => {},
+      json: (res, status, payload) => { res.statusCode = status; res.body = payload },
+      readBody: async () => ({ currentPassword: "", newPassword: "BackupPassword2026!" }),
+      queryAuthoritative: async () => [{
+        id: actor.id,
+        email: actor.email,
+        provider: "google",
+        has_password: false,
+        must_reset_password: false,
+      }],
+    },
+    "../_lib/auth.ts": {
+      currentUser: async () => actor,
+      setInitialGooglePassword: async (id, password) => { calls.push({ id, password }); return true },
+      changePasswordWithCurrent: async () => { throw new Error("must not require a first current password") },
+      createSession: async () => ({ token: "replacement-session", expiresAt: new Date("2027-01-01T00:00:00Z") }),
+    },
+  })
+  const res = response()
+  await handler({ method: "POST" }, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.body.token, "replacement-session")
+  assert.deepEqual(calls, [{ id: actor.id, password: "BackupPassword2026!" }])
+})
+
+test("a Google account with an existing backup password must provide the current password", async () => {
+  const actor = { ...ACCOUNT, id: "usr_google", provider: "google" }
+  let currentPasswordChecks = 0
+  const handler = loadModule("server/auth/password.ts", {
+    "../_lib/db.ts": {
+      cors: () => {},
+      json: (res, status, payload) => { res.statusCode = status; res.body = payload },
+      readBody: async () => ({ currentPassword: "", newPassword: "DifferentPassword2026!" }),
+      queryAuthoritative: async () => [{
+        id: actor.id,
+        email: actor.email,
+        provider: "google",
+        has_password: true,
+        must_reset_password: false,
+      }],
+    },
+    "../_lib/auth.ts": {
+      currentUser: async () => actor,
+      setInitialGooglePassword: async () => { throw new Error("must not overwrite an existing password") },
+      changePasswordWithCurrent: async () => { currentPasswordChecks++; return false },
+      createSession: async () => { throw new Error("must not issue a session") },
+    },
+  })
+  const res = response()
+  await handler({ method: "POST" }, res)
+
+  assert.equal(res.statusCode, 401)
+  assert.equal(currentPasswordChecks, 1)
+  assert.match(res.body.error, /first backup password/i)
+})
+
+test("an email account cannot use the Google first-password bypass", async () => {
+  let currentPasswordChecks = 0
+  const handler = loadModule("server/auth/password.ts", {
+    "../_lib/db.ts": {
+      cors: () => {},
+      json: (res, status, payload) => { res.statusCode = status; res.body = payload },
+      readBody: async () => ({ currentPassword: "", newPassword: "DifferentPassword2026!" }),
+      queryAuthoritative: async () => [{
+        id: ACCOUNT.id,
+        email: ACCOUNT.email,
+        provider: "email",
+        has_password: false,
+        must_reset_password: false,
+      }],
+    },
+    "../_lib/auth.ts": {
+      currentUser: async () => ACCOUNT,
+      setInitialGooglePassword: async () => { throw new Error("must not set an email account password") },
+      changePasswordWithCurrent: async () => { currentPasswordChecks++; return false },
+      createSession: async () => { throw new Error("must not issue a session") },
+    },
+  })
+  const res = response()
+  await handler({ method: "POST" }, res)
+
+  assert.equal(res.statusCode, 401)
+  assert.equal(currentPasswordChecks, 1)
+})
+
 test("new sessions return an opaque token but persist only its hash", async () => {
   let stored
   const auth = authHarness({

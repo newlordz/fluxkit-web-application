@@ -2,6 +2,7 @@ import {
   authHeaders,
   getSessionToken,
   serverConfirmPasswordReset,
+  serverChangePassword,
   serverRequestPasswordReset,
   serverResetPassword,
   serverSignIn,
@@ -463,6 +464,23 @@ export function formatNameFromEmail(email: string): string {
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
 
     .join(" ")
+}
+
+export async function setBackupPassword(newPassword: string, currentPassword = ""): Promise<void> {
+  if (!newPassword || newPassword.length < 12 || newPassword.length > 1024) {
+    throw new Error("Password must be between 12 and 1024 characters.")
+  }
+
+  const result = await serverChangePassword(currentPassword, newPassword)
+  if (!result) throw new Error("Password update is unavailable. Please sign in again and retry.")
+  if (!result.ok) throw new Error(result.error || "Could not set the backup password.")
+  if (result.token) setSessionToken(result.token)
+  clearLegacyAuthStorage()
+
+  const current = getCurrentUser()
+  if (current) {
+    saveCurrentUser({ ...current, requirePasswordReset: false, lastLoginAt: new Date().toISOString() })
+  }
 }
 
 export async function changeAccountPassword(email: string, newPassword: string): Promise<void> {

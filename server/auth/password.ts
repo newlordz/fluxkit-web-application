@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { cors, json, queryAuthoritative, readBody } from "../_lib/db.ts"
-import { applyNewPassword, changePasswordWithCurrent, createSession, currentUser } from "../_lib/auth.ts"
+import { applyNewPassword, changePasswordWithCurrent, createSession, currentUser, setInitialGooglePassword } from "../_lib/auth.ts"
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   cors(req, res)
@@ -31,9 +31,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const [row] = await queryAuthoritative<{
       id: string
       email: string
+      provider: string | null
+      has_password: boolean
       must_reset_password: boolean
     }>(
-      `select id, email, must_reset_password from users where id = $1 or lower(email) = lower($1)`,
+      `select id, email, provider, (password_hash is not null) as has_password, must_reset_password
+         from users where id = $1 or lower(email) = lower($1)`,
       [targetId],
     )
     if (!row) return json(res, 404, { ok: false, error: "Account not found." })
@@ -47,10 +50,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return json(res, 403, { ok: false, error: "Only the root administrator can change this account's password." })
     }
 
-    const needsCurrent = self && !row.must_reset_password && !actor.must_reset_password
-    if (needsCurrent) {
+    const settingInitialGooglePassword =
+      self && row.provider === "google" && !row.has_password &&
+      !row.must_reset_password && !actor.must_reset_password
+    const needsCurrent = self && !row.must_reset_password && !actor.must_reset_password && !settingInitialGooglePassword
+    if (settingInitialGooglePassword) {
+      if (!(await setInitialGooglePassword(row.id, newPassword))) {
+        return json(res, 409, {
+          ok: false,
+          error: "A backup password is already set. Enter your current password to change it.",
+        })
+      }
+    } else if (needsCurrent) {
       if (!(await changePasswordWithCurrent(row.id, currentPassword, newPassword))) {
-        return json(res, 401, { ok: false, error: "Current password is incorrect." })
+        return json(res, 401, {
+          ok: false,
+          error: row.provider === "google"
+            ? "Current password is incorrect. Leave it blank only when setting your first backup password."
+            : "Current password is incorrect.",
+        })
       }
     } else {
       await applyNewPassword(row.id, newPassword, self ? "auth.password.change" : "auth.password.admin_reset", actor.id)

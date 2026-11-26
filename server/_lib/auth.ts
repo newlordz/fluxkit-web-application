@@ -320,6 +320,23 @@ export async function changePasswordWithCurrent(
   })
 }
 
+export async function setInitialGooglePassword(
+  userId: string,
+  newPassword: string,
+): Promise<boolean> {
+  const salt = generateSalt()
+  const hash = await hashPasswordScrypt(newPassword, salt)
+  return transact(async (sql) => {
+    const [row] = await sql<{ provider: string | null; password_hash: string | null }>(
+      `select provider, password_hash from users where id = $1 for update`,
+      [userId],
+    )
+    if (row?.provider !== "google" || row.password_hash) return false
+    await writePasswordChange(sql, userId, salt, hash, "auth.password.google_backup_set", userId)
+    return true
+  })
+}
+
 export async function createResetCode(userId: string, email: string): Promise<string> {
   const code = String(crypto.randomInt(100000, 1000000))
   const salt = generateSalt()

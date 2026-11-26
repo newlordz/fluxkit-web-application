@@ -158,11 +158,19 @@ export async function serverChangePassword(
   newPassword: string,
 ): Promise<{ ok: boolean ; error?: string ; message?: string ; token?: string ; expiresAt?: string } | null> {
   if (!getSessionToken()) return null
-  return postJson(
+  const result = await postJson<{
+    ok: boolean
+    error?: string
+    message?: string
+    token?: string
+    expiresAt?: string
+  }>(
     "/api/auth/password",
     { currentPassword, newPassword },
     authHeaders(),
   )
+  if (result?.ok && result.token) setSessionToken(result.token)
+  return result
 }
 
 /** Administrator-set password for another account; the server re-checks the role. */
