@@ -23,31 +23,27 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       { signal: AbortSignal.timeout(8000) },
     )
     const tokenInfo = await tokenResponse.json().catch(() => null)
+    const email = typeof tokenInfo?.email === "string" ? tokenInfo.email.trim().toLowerCase() : ""
+    const googleSub = typeof tokenInfo?.sub === "string" ? tokenInfo.sub.trim() : ""
     if (
       !tokenResponse.ok ||
       tokenInfo?.aud !== expectedClientId ||
       Number(tokenInfo?.exp || 0) * 1000 <= Date.now() ||
-      (tokenInfo?.email_verified !== true && tokenInfo?.email_verified !== "true")
+      (tokenInfo?.email_verified !== true && tokenInfo?.email_verified !== "true") ||
+      !email || email.length > 254 || !googleSub || googleSub.length > 255
     ) {
       return json(res, 401, { ok: false, error: "Google sign-in could not be verified for this application." })
     }
 
-    const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!response.ok) return json(res, 401, { ok: false, error: "Google sign-in could not be verified" })
-
-    const profile = await response.json()
-    const email = typeof profile?.email === "string" ? profile.email.trim().toLowerCase() : ""
-    const googleSub = typeof profile?.sub === "string" ? profile.sub : ""
-    if (
-      !email || email.length > 254 || !googleSub || googleSub.length > 255 ||
-      profile?.verified_email !== true || email !== String(tokenInfo.email || "").toLowerCase() ||
-      googleSub !== String(tokenInfo.sub || "")
-    ) {
-      return json(res, 401, { ok: false, error: "A verified Google email is required" })
-    }
+    let profile: any = null
+    try {
+      const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (response.ok) profile = await response.json()
+    } catch {}
+    if (profile?.sub !== googleSub) profile = null
 
     let user = await findUserByEmail(email)
     if (!user) {

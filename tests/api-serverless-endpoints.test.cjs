@@ -1693,6 +1693,77 @@ test("Google auth: the server verifies the token and ignores client-supplied ide
   assert.ok(calls.some((call) => call.authorization === "Bearer google-token"))
 })
 
+test("Google auth: missing profile verification metadata does not block a verified token", async () => {
+  const user = { ...ROOT_USER, id: "usr_google", email: "verified@example.com", provider: "google", google_sub: "google-subject-123", role: "user" }
+  let sessions = 0
+  const handler = loadHandler("server/auth/google.ts", {
+    "../_lib/db.ts": createStubs().db,
+    "../_lib/auth.ts": {
+      findUserByEmail: async () => user,
+      createSession: async () => { sessions++; return { token: "session-token", expiresAt: new Date("2027-01-01T00:00:00Z") } },
+    },
+  }, {
+    process: { env: { GOOGLE_CLIENT_ID: "configured-google-client" } },
+    fetch: async (url) => ({
+      ok: true,
+      json: async () => String(url).includes("/tokeninfo")
+        ? { aud: "configured-google-client", exp: Math.floor(Date.now() / 1000) + 3600, email: user.email, email_verified: true, sub: user.google_sub }
+        : { email: user.email, sub: user.google_sub, name: "Verified User" },
+    }),
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { accessToken: "token" } })
+  await handler(req, res)
+
+  assert.equal(res._getStatus(), 200)
+  assert.equal(sessions, 1)
+})
+
+test("Google auth: an unavailable profile endpoint does not block a verified token", async () => {
+  const user = { ...ROOT_USER, id: "usr_google", email: "verified@example.com", provider: "google", google_sub: "google-subject-123", role: "user" }
+  let sessions = 0
+  const handler = loadHandler("server/auth/google.ts", {
+    "../_lib/db.ts": createStubs().db,
+    "../_lib/auth.ts": {
+      findUserByEmail: async () => user,
+      createSession: async () => { sessions++; return { token: "session-token", expiresAt: new Date("2027-01-01T00:00:00Z") } },
+    },
+  }, {
+    process: { env: { GOOGLE_CLIENT_ID: "configured-google-client" } },
+    fetch: async (url) => {
+      if (String(url).includes("/tokeninfo")) {
+        return { ok: true, json: async () => ({ aud: "configured-google-client", exp: Math.floor(Date.now() / 1000) + 3600, email: user.email, email_verified: true, sub: user.google_sub }) }
+      }
+      throw new Error("profile unavailable")
+    },
+  })
+  const { req, res } = createMockReqRes({ method: "POST", body: { accessToken: "token" } })
+  await handler(req, res)
+
+  assert.equal(res._getStatus(), 200)
+  assert.equal(sessions, 1)
+})
+
+test("Google auth: a verified token without an email or subject cannot create a session", async () => {
+  for (const tokenInfo of [
+    { aud: "configured-google-client", exp: Math.floor(Date.now() / 1000) + 3600, email_verified: true, sub: "google-subject-123" },
+    { aud: "configured-google-client", exp: Math.floor(Date.now() / 1000) + 3600, email: "verified@example.com", email_verified: true },
+  ]) {
+    const s = createStubs()
+    const handler = loadHandler("server/auth/google.ts", {
+      "../_lib/db.ts": s.db,
+      "../_lib/auth.ts": s.auth,
+    }, {
+      process: { env: { GOOGLE_CLIENT_ID: "configured-google-client" } },
+      fetch: async () => ({ ok: true, json: async () => tokenInfo }),
+    })
+    const { req, res } = createMockReqRes({ method: "POST", body: { accessToken: "token" } })
+    await handler(req, res)
+
+    assert.equal(res._getStatus(), 401)
+    assert.equal(s.calls.length, 0)
+  }
+})
+
 test("Google auth: an unverified Google profile cannot create a session", async () => {
   const s = createStubs()
   const handler = loadHandler("server/auth/google.ts", {
