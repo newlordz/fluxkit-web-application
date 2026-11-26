@@ -562,6 +562,18 @@ export const tools: Tool[] = [
     "LIVE",
   ),
   tool(
+    "transfer",
+    "File Transfer",
+    "Send files directly between phones and computers with QR pairing, a 1 GB per-file limit, and encrypted TURN fallback.",
+    "File tools",
+    ArrowLeftRight,
+    true,
+    false,
+    "blue",
+    undefined,
+    "1 GB",
+  ),
+  tool(
     "qr",
     "QR Code Studio",
     "Connect the physical and digital. Generate custom QR codes and mobile image showcases with designer landing pages.",

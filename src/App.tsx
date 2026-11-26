@@ -115,6 +115,7 @@ const AdminPanel = lazy(() => import("./AdminPanel"))
 const ProActivationModal = lazy(() => import("./ProActivationModal"))
 const ImageShowcaseViewer = lazy(() => import("./ImageShowcaseViewer"))
 const VisitorPassStudio = lazy(() => import("./VisitorPassStudio"))
+const FileTransferTool = lazy(() => import("./FileTransferTool"))
 
 function RouteLoading() {
   return (
@@ -127,6 +128,20 @@ function RouteLoading() {
       Loading…
     </div>
   )
+}
+
+function getQueryValue(query: string, key: string): string {
+  for (const entry of query.split("&")) {
+    const [name, value = ""] = entry.split("=")
+    if (name === key) {
+      try {
+        return decodeURIComponent(value)
+      } catch {
+        return value
+      }
+    }
+  }
+  return ""
 }
 
 function stored(key: string, fallback: string) {
@@ -907,9 +922,11 @@ export default function App() {
     setFilter("All tools")
   }
 
-  const customPage = getCustomPageBySlug(page)
+  const pageRoute = page.split("?")[0]
+  const pageQuery = page.includes("?") ? page.slice(page.indexOf("?") + 1) : ""
+  const customPage = getCustomPageBySlug(pageRoute)
 
-  const selected = tools.find((t) => t.id === page)
+  const selected = tools.find((t) => t.id === pageRoute)
 
   const isPaywallActive =
     (page === "audio-text" && !canUserAccessTool("audio-text", currentUser)) ||
@@ -2892,6 +2909,26 @@ export default function App() {
                 {customPage.content}
               </div>
             </div>
+          ) : pageRoute === "transfer" ? (
+            <Suspense fallback={<RouteLoading />}>
+              {!canUserAccessTool("transfer", currentUser) ? (
+                <ProActivationModal
+                  tool={tools.find((t) => t.id === "transfer")!}
+                  currentUser={currentUser}
+                  onActivated={(upgraded) => setCurrentUser(upgraded)}
+                  onNavigate={navigate}
+                />
+              ) : (
+                <FileTransferTool
+                  key={page}
+                  initialRoom={getQueryValue(pageQuery, "room")}
+                  onBack={() => {
+                    const previousPage = Array.from(pageScrollPositions.current.keys()).at(-1)
+                    navigate(previousPage && previousPage !== pageRoute ? previousPage : "overview")
+                  }}
+                />
+              )}
+            </Suspense>
           ) : page === "audio-text" ? (
             <Suspense fallback={<RouteLoading />}>
               {!canUserAccessTool("audio-text", currentUser) ? (

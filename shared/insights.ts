@@ -42,6 +42,7 @@ export const TOOL_IDS = [
   "flatten-pdf",
   "markdown-pdf",
   "text-pdf",
+  "transfer",
   "qr",
   "qr-scanner",
   "qr-vcard",
