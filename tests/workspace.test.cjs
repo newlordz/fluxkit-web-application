@@ -72,6 +72,13 @@ test("Vercel stays within 12 functions and routes image table extraction", () =>
         rewrite.destination === "/api/image-table?action=extract",
     ),
   )
+  assert.ok(
+    vercel.rewrites.some(
+      (rewrite) =>
+        rewrite.source === "/api/db/insights" &&
+        rewrite.destination === "/api/db?action=insights",
+    ),
+  )
 })
 test("authentication cannot succeed without a server adapter", () => {
   const auth = sourceLoader()("authService")

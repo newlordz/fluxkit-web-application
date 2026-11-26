@@ -50,6 +50,10 @@
       "destination": "/api/db?action=gateways"
     },
     {
+      "source": "/api/db/insights",
+      "destination": "/api/db?action=insights"
+    },
+    {
       "source": "/api/db/status",
       "destination": "/api/db?action=status"
     },
