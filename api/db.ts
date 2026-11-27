@@ -5,6 +5,7 @@ import apis from "../server/db/apis.ts"
 import gateways from "../server/db/gateways.ts"
 import insights from "../server/db/insights.ts"
 import status from "../server/db/status.ts"
+import transactions from "../server/db/transactions.ts"
 import users from "../server/db/users.ts"
 
 type DbHandler = (req: ApiRequest, res: ServerResponse) => Promise<unknown>
@@ -12,7 +13,15 @@ type DbHandler = (req: ApiRequest, res: ServerResponse) => Promise<unknown>
 // The database routes share one entry point because Vercel Hobby caps a deployment
 // at 12 functions; vercel.json rewrites map /api/db/<route> to ?action=<route>, so
 // the public URLs stay unchanged.
-const HANDLERS: Record<string, DbHandler> = { admin, apis, gateways, insights, status, users }
+const HANDLERS: Record<string, DbHandler> = {
+  admin,
+  apis,
+  gateways,
+  insights,
+  status,
+  transactions,
+  users,
+}
 
 export default async function handler(req: ApiRequest, res: ServerResponse) {
   cors(req, res)

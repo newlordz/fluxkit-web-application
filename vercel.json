@@ -58,6 +58,10 @@
       "destination": "/api/db?action=status"
     },
     {
+      "source": "/api/db/transactions",
+      "destination": "/api/db?action=transactions"
+    },
+    {
       "source": "/api/db/users",
       "destination": "/api/db?action=users"
     },

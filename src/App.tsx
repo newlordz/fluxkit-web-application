@@ -943,7 +943,9 @@ export default function App() {
         : page === "admin" || page.startsWith("admin-")
           ? page === "admin-integrations"
             ? "Payment Gateways & APIs"
-            : page === "admin-apis"
+            : page === "admin-transactions"
+              ? "Transactions"
+              : page === "admin-apis"
               ? "PDF & Cloud APIs"
               : page === "admin-users"
                 ? "User Approvals"
@@ -2870,15 +2872,17 @@ export default function App() {
                     ? "apis"
                     : page === "admin-integrations"
                       ? "integrations"
-                      : page === "admin-users"
-                        ? "users"
-                        : page === "admin-pages"
-                          ? "pages"
-                          : page === "admin-settings"
-                            ? "settings"
-                            : page === "admin-tiers"
-                              ? "tiers"
-                              : undefined
+                      : page === "admin-transactions"
+                        ? "transactions"
+                        : page === "admin-users"
+                          ? "users"
+                          : page === "admin-pages"
+                            ? "pages"
+                            : page === "admin-settings"
+                              ? "settings"
+                              : page === "admin-tiers"
+                                ? "tiers"
+                                : undefined
                 }
               />
             </Suspense>

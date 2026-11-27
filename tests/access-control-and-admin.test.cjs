@@ -1347,6 +1347,7 @@ test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-
   if (adminPanelMod && adminPanelMod.resolveInitialAdminTab) {
     assert.equal(adminPanelMod.resolveInitialAdminTab("users"), "users", "Explicit prop should be honored")
     assert.equal(adminPanelMod.resolveInitialAdminTab("apis"), "apis")
+    assert.equal(adminPanelMod.resolveInitialAdminTab("transactions"), "transactions")
   }
 
   // 2. Harness with deep link #admin-users and admin credentials
@@ -1395,4 +1396,16 @@ test("Tier 4 - S7: Admin panel tab persists across page refreshes and hash deep-
   assert.ok(htmlSession.length > 500)
   assert.match(htmlSession, /User Approvals/i)
   assert.match(htmlSession, /admin-nav-tab active/i)
+
+  const transactionHarness = createHarness({
+    hash: "admin-transactions",
+    storageInitial: { "masterfilepro-current-user": JSON.stringify(adminUser) },
+  })
+  const TransactionAdminPanel = transactionHarness.load("AdminPanel").default
+  const htmlTransactions = renderToStaticMarkup(React.createElement(TransactionAdminPanel, {
+    currentUser: adminUser,
+    navigate: () => {},
+  }))
+  assert.match(htmlTransactions, /Transactions/i)
+  assert.match(htmlTransactions, /Loading transactions/i)
 })

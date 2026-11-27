@@ -42,6 +42,7 @@ import {
   Upload,
   UserCheck,
   Filter,
+  Receipt,
 } from "lucide-react"
 import {
   getCloudApis,
@@ -111,12 +112,14 @@ import {
 import { tools } from "./config"
 import { useNotify } from "./Notifications"
 import { getLocalFeedbackEntries } from "./privacyTelemetry"
+import AdminTransactions from "./AdminTransactions"
 
 export type AdminTab =
   | "tiers"
   | "users"
   | "pages"
   | "integrations"
+  | "transactions"
   | "apis"
   | "insights"
   | "settings"
@@ -126,6 +129,7 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
   "users",
   "pages",
   "integrations",
+  "transactions",
   "apis",
   "insights",
   "settings",
@@ -1497,8 +1501,8 @@ export default function AdminPanel({
             Administrator Dashboard
           </h1>
           <p className="page-subtitle">
-            Manage tool subscription tiers, user Pro activations, and dynamic
-            custom page routes.
+            Manage tool subscription tiers, user Pro activations, payment
+            transactions, gateways, and dynamic custom page routes.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -1636,6 +1640,18 @@ export default function AdminPanel({
               >
                 {gateways.filter((g) => g.enabled).length} Active
               </span>
+            </button>
+
+            <button
+              type="button"
+              className={`admin-nav-tab ${
+                activeTab === "transactions" ? "active" : ""
+              }`}
+              onClick={() => setActiveTab("transactions")}
+              title="Transactions"
+            >
+              <Receipt size={16} className="admin-nav-icon" />
+              <span className="admin-nav-label">Transactions</span>
             </button>
 
             <button
@@ -5353,6 +5369,8 @@ export default function AdminPanel({
           </div>
         </div>
       )}
+
+      {activeTab === "transactions" && <AdminTransactions />}
 
       {/* TAB 4: PAYMENT & API INTEGRATIONS */}
       {activeTab === "integrations" && (

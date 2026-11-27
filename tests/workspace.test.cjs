@@ -79,6 +79,16 @@ test("Vercel stays within 12 functions and routes image table extraction", () =>
         rewrite.destination === "/api/db?action=insights",
     ),
   )
+  assert.ok(
+    vercel.rewrites.some(
+      (rewrite) =>
+        rewrite.source === "/api/db/transactions" &&
+        rewrite.destination === "/api/db?action=transactions",
+    ),
+  )
+  const dispatcher = fs.readFileSync(path.resolve("api/db.ts"), "utf8")
+  assert.match(dispatcher, /import transactions from "\.\.\/server\/db\/transactions\.ts"/)
+  assert.match(dispatcher, /\btransactions,/)
 })
 test("authentication cannot succeed without a server adapter", () => {
   const auth = sourceLoader()("authService")
