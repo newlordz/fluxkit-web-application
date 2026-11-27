@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require("react-dom/server")
 
 // Compile source in memory for dependency-free service and render smoke checks.
 // This does not replace interactive browser or provider integration testing.
-function sourceLoader(hash = "overview") {
+function sourceLoader(hash = "overview", pathname = "/") {
   const cache = new Map()
   function load(name) {
     const full = path.resolve("src", name)
@@ -40,7 +40,7 @@ function sourceLoader(hash = "overview") {
               )
             : require(id)
         },
-        location: { hash: `#${hash}` },
+        location: { hash: hash ? `#${hash}` : "", pathname },
         localStorage: { getItem: () => null },
         setTimeout,
         clearTimeout,
@@ -168,6 +168,7 @@ for (const route of [
     const App = sourceLoader(route)("App").default
     const html = renderToStaticMarkup(React.createElement(App))
     assert.ok(html.length > 500)
+    if (route === "all") assert.match(html, /href="\/tools\/merge-pdf"/)
     if (route === "unknown-route") assert.match(html, /404/)
     if (["sign-in", "sign-up", "reset-password"].includes(route)) {
       assert.match(html, /Authentication not connected/)
@@ -180,3 +181,10 @@ for (const route of [
     if (route === "audio-text") assert.match(html, /Backend not connected/)
   })
 }
+
+test("clean tool paths initialize the selected tool route", () => {
+  const App = sourceLoader("", "/tools/merge-pdf")("App").default
+  const html = renderToStaticMarkup(React.createElement(App))
+  assert.match(html, /data-page="merge-pdf"/)
+  assert.match(html, /Loading…/)
+})

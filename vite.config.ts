@@ -5,6 +5,7 @@ import path from "node:path"
 import fs from "node:fs"
 
 import siteConfiguration from "./.figma/make/site.json" with { type: "json" }
+import { sitemapUrls } from "./src/seo"
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -78,6 +79,7 @@ export default defineConfig(({ mode }) => {
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: "/src/**/*.stories.{ts,tsx,js,jsx}" }),
+      masterfileproSitemapPlugin(),
       masterfileproDatabasePlugin(),
     ],
     resolve: {
@@ -104,6 +106,26 @@ export default defineConfig(({ mode }) => {
     },
   }
 })
+
+function masterfileproSitemapPlugin(): Plugin {
+  return {
+    name: "masterfilepro-sitemap",
+    apply: "build",
+    generateBundle() {
+      const urls = sitemapUrls
+        .map(
+          (url) =>
+            `  <url><loc>${url.replace(/&/g, "&amp;")}</loc></url>`,
+        )
+        .join("\n")
+      this.emitFile({
+        type: "asset",
+        fileName: "sitemap.xml",
+        source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
+      })
+    },
+  }
+}
 
 type FigmaSiteConfiguration = {
   title?: string

@@ -10,6 +10,34 @@
   },
   "rewrites": [
     {
+      "source": "/tools",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/tools/:tool",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/pdf-tools",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/qr-tools",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ai-text-tools",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/audio-tools",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/help",
+      "destination": "/index.html"
+    },
+    {
       "source": "/api/auth/google",
       "destination": "/api/auth?action=google"
     },
@@ -92,6 +120,17 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
     }
   ]
 }

@@ -1,5 +1,9 @@
 {
-  "description": "An all-in-one productivity toolkit offering file management, PDF tools, QR code generation, and AI text utilities in a sleek, user-friendly workspace.",
+  "title": "MasterfilePro — Online PDF, QR & Document Tools",
+  "description": "A browser-based toolkit for PDF, document, image, QR, audio, and AI text tasks. Process files online without installing software.",
+  "openGraph": {
+    "image": "https://masterfilepro.com/masterfilepro-logo.png"
+  },
   "robots": {
     "index": true
   },

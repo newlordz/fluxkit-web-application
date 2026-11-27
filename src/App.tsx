@@ -108,6 +108,12 @@ import QuickFeedback from "./QuickFeedback"
 
 import { GoogleIcon } from "./GoogleAuth"
 import { verifyLivePaystackPayment } from "./paymentIntegrationService"
+import {
+  pageFromLocation,
+  pageFromPath,
+  pathForPage,
+  updatePageMetadata,
+} from "./seo"
 
 const ToolPage = lazy(() => import("./ToolPage"))
 const AudioToText = lazy(() => import("./AudioToText"))
@@ -207,10 +213,23 @@ function ToolCard({
 }) {
   const payStatus = getToolPaymentStatus(tool.id, currentUser)
 
+  const href = pathForPage(tool.id) || `/#${tool.id}`
+
   return (
-    <button
+    <a
+      href={href}
       className={`tool-card ${getToolThemeClass(tool)}`}
-      onClick={() => navigate(tool.id)}
+      onClick={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) return
+        event.preventDefault()
+        navigate(tool.id)
+      }}
     >
       <div className="tool-card-top">
         <ToolBadgeIcon
@@ -341,7 +360,7 @@ function ToolCard({
           </span>
         </span>
       </span>
-    </button>
+    </a>
   )
 }
 
@@ -358,8 +377,10 @@ export default function App() {
 
   const [page, setPage] = useState(() => {
     const fromHash = location.hash.slice(1)
-
     if (fromHash) return fromHash
+
+    const fromPath = pageFromPath(location.pathname || "/")
+    if (fromPath) return fromPath
 
     const initialUser = getCurrentUser()
 
@@ -594,12 +615,16 @@ export default function App() {
     }
 
     const change = () => {
-      setPage(location.hash.slice(1) || "overview")
+      setPage(pageFromLocation(window.location))
     }
 
     window.addEventListener("hashchange", change)
+    window.addEventListener("popstate", change)
 
-    return () => window.removeEventListener("hashchange", change)
+    return () => {
+      window.removeEventListener("hashchange", change)
+      window.removeEventListener("popstate", change)
+    }
   }, [])
 
   useEffect(() => {
@@ -702,14 +727,16 @@ export default function App() {
     }))
       document.documentElement.style.setProperty(key, value)
 
-    document.title = `${brand.name} — High-Performance File & Document Toolkit`
-
     persist("masterfilepro-theme", theme)
 
     persist("masterfilepro-theme-v2", theme)
 
     persist("masterfilepro-accent", accent)
   }, [theme, accent])
+
+  useEffect(() => {
+    updatePageMetadata(page)
+  }, [page])
 
   useEffect(() => {
     persist("masterfilepro-sidebar", String(collapsed))
@@ -784,7 +811,7 @@ export default function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault()
 
-        location.hash = "all"
+        window.history.pushState({}, "", pathForPage("all") || "/#all")
 
         setPage("all")
 
@@ -909,7 +936,8 @@ export default function App() {
       setStagedFiles([])
     }
 
-    location.hash = id
+    const path = pathForPage(id)
+    window.history.pushState({}, "", path || `/#${id}`)
 
     setPage(id)
 
@@ -1073,7 +1101,10 @@ export default function App() {
     currentUser?.role === "admin" || currentUser?.role === "sub-admin"
 
   return (
-    <div className={`app-shell ${collapsed ? "is-collapsed" : ""}`}>
+    <div
+      className={`app-shell ${collapsed ? "is-collapsed" : ""}`}
+      data-page={page}
+    >
       <a
         className="skip-link"
         href="#main-content"
@@ -1708,9 +1739,7 @@ export default function App() {
 
                           notify("Signed out of administrator account.", "info")
 
-                          location.hash = "sign-in"
-
-                          setPage("sign-in")
+                          navigate("sign-in")
                         }}
                       >
                         Sign out <LogOut size={14} />
