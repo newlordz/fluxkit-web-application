@@ -9896,6 +9896,21 @@ export default function ToolPage({
                         </option>
                       </select>
                     </label>
+                    <p
+                      style={{
+                        gridColumn: "1 / -1",
+
+                        margin: 0,
+
+                        fontSize: 12,
+
+                        opacity: 0.75,
+                      }}
+                    >
+                      Uploaded Word files keep their original page size,
+                      margins and fonts. These options apply to pasted text and
+                      to the offline fallback.
+                    </p>
                   </div>
                 )}
 

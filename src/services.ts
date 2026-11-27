@@ -302,6 +302,32 @@ async function nextCloudApi(category: string): Promise<any> {
   return getNextAvailableApi(category)
 }
 
+/**
+ * Word files need the Office converter, not a PDF-only engine, so this asks the
+ * pool for one provider rather than whichever engine it would hand out first.
+ */
+async function nextCloudApiFor(provider: string, category: string): Promise<any> {
+  const mod = await import("./sessionService").catch(() => null)
+
+  if (!mod?.getSessionToken?.()) return null
+
+  const pool = await getApiPool()
+
+  try {
+    const candidates: any[] = pool?.getCloudApis?.(category) || []
+
+    const excluded = candidates
+      .filter((api) => api.provider !== provider)
+      .map((api) => api.id)
+
+    const api = pool?.getNextAvailableApi?.(category, excluded)
+
+    return api && api.provider === provider ? api : null
+  } catch {
+    return null
+  }
+}
+
 /** Whether the visitor is signed in, which decides how a refused page is explained. */
 async function hasVisitorSession(): Promise<boolean> {
   const mod = await import("./sessionService").catch(() => null)
@@ -477,6 +503,8 @@ export interface WordToPDFOptions {
   font?: "helvetica" | "times" | "courier"
 
   title?: string
+
+  signal?: AbortSignal
 }
 
 export interface PPTToPDFOptions {
@@ -6711,6 +6739,108 @@ function extractDocxBlocks(docXml: string): ParsedDocxBlock[] {
   return blocks
 }
 
+// The in-page renderer redraws a DOCX with standard fonts on Letter pages, so
+// an uploaded Word file is converted by iLovePDF's Office layout engine first.
+// It keeps the document's own page size, fonts and positioning and is only
+// skipped when the visitor is signed out, out of quota, or offline.
+async function cloudWordConversion(
+  bytes: Uint8Array,
+
+  name: string,
+
+  baseName: string,
+
+  options: WordToPDFOptions,
+): Promise<OutputResult | null> {
+  if (typeof window === "undefined") return null
+
+  const iloveApi = await nextCloudApiFor("ilovepdf", "pdf-compression")
+
+  if (!iloveApi) return null
+
+  try {
+    let binary = ""
+
+    const len = bytes.byteLength
+
+    const chunkSize = 0x8000
+
+    for (let i = 0; i < len; i += chunkSize) {
+      binary += String.fromCharCode.apply(
+        null,
+
+        Array.from(bytes.subarray(i, i + chunkSize)),
+      )
+    }
+
+    const fileBase64 = btoa(binary)
+
+    const response = await fetchWithDeadline("/api/ilovepdf/officepdf", {
+      method: "POST",
+
+      headers: { "Content-Type": "application/json" },
+
+      signal: options.signal,
+
+      body: JSON.stringify({
+        fileBase64,
+
+        fileName: /\.docx?$/i.test(name) ? name : `${baseName}.docx`,
+      }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+
+      if (data.success && data.base64) {
+        const pdfBinary = atob(data.base64)
+
+        const pdfBytes = new Uint8Array(pdfBinary.length)
+
+        for (let i = 0; i < pdfBinary.length; i++) {
+          pdfBytes[i] = pdfBinary.charCodeAt(i)
+        }
+
+        recordApiOutcome(iloveApi.id, { success: true })
+
+        return {
+          blob: new Blob([pdfBytes], { type: "application/pdf" }),
+
+          name: `${baseName}-converted.pdf`,
+
+          format: "pdf",
+
+          size: pdfBytes.byteLength,
+        }
+      }
+    } else {
+      recordApiOutcome(iloveApi.id, {
+        success: false,
+
+        statusCode: response.status,
+
+        errorMessage: `iLovePDF officepdf returned ${response.status}`,
+      })
+    }
+  } catch (cloudErr) {
+    ensureNotCancelled(options.signal)
+
+    console.warn(
+      "iLovePDF Word to PDF conversion failed, using the built-in layout engine:",
+
+      cloudErr,
+    )
+
+    recordApiOutcome(iloveApi.id, {
+      success: false,
+
+      errorMessage: String(cloudErr),
+    })
+  }
+
+  return null
+}
+
 export async function wordToPDF(
   fileOrText: File | string | Uint8Array | ArrayBuffer,
 
@@ -6722,9 +6852,7 @@ export async function wordToPDF(
     throw new Error("Select a Word document or enter text to convert to PDF.")
   }
 
-  let docxBlocks: ParsedDocxBlock[] = []
-
-  let fullText = ""
+  const baseName = name.replace(/\.[^/.]+$/, "")
 
   const isZip =
     bytes.length >= 4 &&
@@ -6732,6 +6860,23 @@ export async function wordToPDF(
     bytes[1] === 0x4b &&
     bytes[2] === 0x03 &&
     bytes[3] === 0x04
+
+  const isLegacyDoc =
+    bytes.length >= 4 &&
+    bytes[0] === 0xd0 &&
+    bytes[1] === 0xcf &&
+    bytes[2] === 0x11 &&
+    bytes[3] === 0xe0
+
+  if (isZip || isLegacyDoc) {
+    const converted = await cloudWordConversion(bytes, name, baseName, options)
+
+    if (converted) return converted
+  }
+
+  let docxBlocks: ParsedDocxBlock[] = []
+
+  let fullText = ""
 
   if (isZip) {
     try {
@@ -6770,8 +6915,6 @@ export async function wordToPDF(
   if (!fullText || !fullText.trim()) {
     throw new Error("Select a Word document or enter text to convert to PDF.")
   }
-
-  const baseName = name.replace(/\.[^/.]+$/, "")
 
   const doc = await PDFDocument.create()
 
