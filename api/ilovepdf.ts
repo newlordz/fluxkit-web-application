@@ -1,5 +1,10 @@
 import { cors } from "../server/_lib/db.ts"
-import { getILovePdfCredentials, recordApiCall } from "../server/_lib/providers.ts"
+import { requireActiveUser, type AuthUser } from "../server/_lib/auth.ts"
+import {
+  getILovePdfCredentials,
+  isProviderOutOfQuota,
+  recordApiCall,
+} from "../server/_lib/providers.ts"
 import { readPaidBody, requirePaidAccess, requireToolAccess } from "../server/_lib/gateway.ts"
 import JSZip from "jszip"
 
@@ -110,13 +115,42 @@ export default async function handler(req: any, res: any) {
     pdfword: "pdf-to-word",
     pdfppt: "pdf-to-ppt",
   }
-  const actor = await requirePaidAccess(
-    req,
-    res,
-    "ilovepdf",
-    action === "officepdf" ? undefined : fixedTools[action] || "compress",
-  )
-  if (!actor) return
+  // Office conversions keep the document's own fonts, page size and spacing,
+  // which the in-page renderer cannot, so they stay open to signed-out visitors.
+  // The provider quota still bounds the spend; the client falls back when full.
+  let actor: AuthUser | null = null
+  if (action === "officepdf") {
+    try {
+      actor = await requireActiveUser(req)
+      if (await isProviderOutOfQuota("ilovepdf")) {
+        res.status?.(429)?.json?.({
+          ok: false,
+          error:
+            "This month's cloud processing quota is used up. The built-in engine will handle your file instead.",
+          code: "quota_exhausted",
+        }) ||
+          res.end?.(JSON.stringify({ ok: false, code: "quota_exhausted" }))
+        return
+      }
+    } catch {
+      res.status?.(503)?.json?.({
+        ok: false,
+        error:
+          "Account check is unavailable, so cloud processing is paused. The built-in engine still works.",
+        code: "session_unavailable",
+      }) ||
+        res.end?.(JSON.stringify({ ok: false, code: "session_unavailable" }))
+      return
+    }
+  } else {
+    actor = await requirePaidAccess(
+      req,
+      res,
+      "ilovepdf",
+      fixedTools[action] || "compress",
+    )
+    if (!actor) return
+  }
 
   try {
     const body = await readPaidBody(req, res)
@@ -146,7 +180,7 @@ export default async function handler(req: any, res: any) {
         // Legacy Office files are identified by their supplied filename.
       }
     }
-    if (!(await requireToolAccess(actor, res, toolId))) return
+    if (actor && !(await requireToolAccess(actor, res, toolId))) return
 
     const { publicKey } = await getILovePdfCredentials()
 
@@ -238,7 +272,7 @@ export default async function handler(req: any, res: any) {
     const resultBuffer = await unwrapMember(await downloadRes.arrayBuffer(), tool)
 
     // Append-only usage ledger; monthly totals derive from this, never a stored counter.
-    await recordApiCall("ilovepdf", tool, actor.id, "success")
+    await recordApiCall("ilovepdf", tool, actor?.id ?? null, "success")
 
     const resultBase64 = resultBuffer.toString("base64")
     const responsePayload = {

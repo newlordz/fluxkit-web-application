@@ -8261,9 +8261,11 @@ export default function ToolPage({
                         Release to drop your files here
                       </strong>
                       <span className="dropzone-feedback-subtitle">
-                        {currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
-                          ? "Runs in your browser first · a cloud engine may take over the heavy work"
-                          : "Processing happens privately in your browser"}
+                        {tool.id === "word-to-pdf"
+                          ? "Converted by the Office engine · original fonts and page size preserved"
+                          : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                            ? "Runs in your browser first · a cloud engine may take over the heavy work"
+                            : "Processing happens privately in your browser"}
                       </span>
                     </div>
                   ) : (
@@ -8276,9 +8278,11 @@ export default function ToolPage({
                           ? "Up to 25 MB · Local OCR first · Cloud help only with consent"
                           : tool.id === "passport-photo"
                             ? "JPG, PNG, WebP, or AVIF · Up to 25 MB · Processed locally"
-                            : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
-                              ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
-                              : "Up to 25 MB each · Private in-browser processing"}
+                            : tool.id === "word-to-pdf"
+                              ? "Up to 25 MB each · Converted with your document's original fonts and page size"
+                              : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
+                                ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
+                                : "Up to 25 MB each · Private in-browser processing"}
                       </small>
                     </>
                   )}
@@ -9850,69 +9854,85 @@ export default function ToolPage({
                   </div>
                 )}
 
-                {tool.id === "word-to-pdf" && (
-                  <div
-                    style={{
-                      display: "grid",
-
-                      gridTemplateColumns: "1fr 1fr",
-
-                      gap: "12px",
-
-                      marginTop: "12px",
-                    }}
-                  >
-                    <label>
-                      Page Margins
-                      <select
-                        value={optionA || "standard"}
-                        onChange={(e) => setOptionA(e.target.value)}
-                      >
-                        <option value="standard">
-                          Standard Margins (1 inch / 72pt)
-                        </option>
-                        <option value="compact">
-                          Narrow Margins (0.5 inch / 36pt)
-                        </option>
-                        <option value="spacious">
-                          Wide Margins (1.5 inch / 108pt)
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      Font Family
-                      <select
-                        value={optionB || "helvetica"}
-                        onChange={(e) => setOptionB(e.target.value)}
-                      >
-                        <option value="helvetica">
-                          Helvetica (Modern Sans-Serif)
-                        </option>
-                        <option value="times">
-                          Times Roman (Classic Serif)
-                        </option>
-                        <option value="courier">
-                          Courier (Monospaced Technical)
-                        </option>
-                      </select>
-                    </label>
+                {tool.id === "word-to-pdf" &&
+                  (files.length > 0 ? (
                     <p
                       style={{
-                        gridColumn: "1 / -1",
+                        marginTop: 12,
 
-                        margin: 0,
+                        marginBottom: 0,
 
-                        fontSize: 12,
+                        fontSize: 12.5,
 
-                        opacity: 0.75,
+                        opacity: 0.8,
                       }}
                     >
-                      Uploaded Word files keep their original page size,
-                      margins and fonts. These options apply to pasted text and
-                      to the offline fallback.
+                      Your document's own page size, margins and fonts are
+                      kept, exactly as you wrote it in Word.
                     </p>
-                  </div>
-                )}
+                  ) : (
+                    <div
+                      style={{
+                        display: "grid",
+
+                        gridTemplateColumns: "1fr 1fr",
+
+                        gap: "12px",
+
+                        marginTop: "12px",
+                      }}
+                    >
+                      <label>
+                        Page Margins
+                        <select
+                          value={optionA || "standard"}
+                          onChange={(e) => setOptionA(e.target.value)}
+                        >
+                          <option value="standard">
+                            Standard Margins (1 inch / 72pt)
+                          </option>
+                          <option value="compact">
+                            Narrow Margins (0.5 inch / 36pt)
+                          </option>
+                          <option value="spacious">
+                            Wide Margins (1.5 inch / 108pt)
+                          </option>
+                        </select>
+                      </label>
+                      <label>
+                        Font Family
+                        <select
+                          value={optionB || "helvetica"}
+                          onChange={(e) => setOptionB(e.target.value)}
+                        >
+                          <option value="helvetica">
+                            Helvetica (Modern Sans-Serif)
+                          </option>
+                          <option value="times">
+                            Times Roman (Classic Serif)
+                          </option>
+                          <option value="courier">
+                            Courier (Monospaced Technical)
+                          </option>
+                        </select>
+                      </label>
+                      <p
+                        style={{
+                          gridColumn: "1 / -1",
+
+                          margin: 0,
+
+                          fontSize: 12,
+
+                          opacity: 0.75,
+                        }}
+                      >
+                        These options apply to text you paste below. Uploaded
+                        Word files always keep their original fonts and page
+                        size.
+                      </p>
+                    </div>
+                  ))}
 
                 {tool.id === "ppt-to-pdf" && (
                   <div

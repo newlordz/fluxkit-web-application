@@ -178,12 +178,17 @@ test("wordToPDF: falls back to the in-page engine when the Office engine refuses
   }
 })
 
-test("wordToPDF: signed-out visitors never upload the document", async () => {
-  let fetched = false
+test("wordToPDF: signed-out visitors still get their document's own fonts and page size", async () => {
+  const providerPdf = await a4PdfBytes()
+  const providerBase64 = Buffer.from(providerPdf).toString("base64")
+  const requests = []
 
-  const restore = withBrowserGlobals(async () => {
-    fetched = true
-    return new Response("{}", { status: 200 })
+  const restore = withBrowserGlobals(async (url, init) => {
+    requests.push({ url: String(url), init })
+    return new Response(
+      JSON.stringify({ ok: true, success: true, base64: providerBase64 }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )
   })
 
   try {
@@ -194,9 +199,17 @@ test("wordToPDF: signed-out visitors never upload the document", async () => {
 
     const res = await services.wordToPDF(buildA4Docx(services))
 
-    assert.equal(fetched, false)
-    const doc = await PDFDocument.load(await res.blob.arrayBuffer())
-    assert.ok(doc.getPageCount() >= 1)
+    // A signed-out upload may use the Office engine; nothing is re-laid out locally.
+    assert.equal(requests.length, 1)
+    assert.match(requests[0].url, /\/api\/ilovepdf\/officepdf$/)
+    assert.equal(requests[0].init.headers.Authorization, undefined)
+
+    const out = Buffer.from(await res.blob.arrayBuffer())
+    assert.deepEqual(out, Buffer.from(providerPdf))
+
+    const doc = await PDFDocument.load(out)
+    assert.equal(Math.round(doc.getPage(0).getSize().width), 595)
+    assert.equal(Math.round(doc.getPage(0).getSize().height), 842)
   } finally {
     restore()
   }

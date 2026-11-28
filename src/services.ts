@@ -305,11 +305,19 @@ async function nextCloudApi(category: string): Promise<any> {
 /**
  * Word files need the Office converter, not a PDF-only engine, so this asks the
  * pool for one provider rather than whichever engine it would hand out first.
+ * The Word tool also runs for signed-out visitors: re-drawing a document in the
+ * browser is what changes its fonts and page size, so it is worth the quota.
  */
-async function nextCloudApiFor(provider: string, category: string): Promise<any> {
+async function nextCloudApiFor(
+  provider: string,
+
+  category: string,
+
+  allowAnonymous = false,
+): Promise<any> {
   const mod = await import("./sessionService").catch(() => null)
 
-  if (!mod?.getSessionToken?.()) return null
+  if (!allowAnonymous && !mod?.getSessionToken?.()) return null
 
   const pool = await getApiPool()
 
@@ -6754,7 +6762,7 @@ async function cloudWordConversion(
 ): Promise<OutputResult | null> {
   if (typeof window === "undefined") return null
 
-  const iloveApi = await nextCloudApiFor("ilovepdf", "pdf-compression")
+  const iloveApi = await nextCloudApiFor("ilovepdf", "pdf-compression", true)
 
   if (!iloveApi) return null
 

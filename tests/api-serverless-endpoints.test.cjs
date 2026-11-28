@@ -878,6 +878,82 @@ test("API Cloud: /api/adobe-pdf/compress refuses a member once the monthly quota
   assert.deepEqual(net.seen, [])
 })
 
+function stubILovePdfFlow() {
+  const original = globalThis.fetch
+  const seen = []
+  const pdf = Buffer.from("%PDF-1.4\n% converted by the Office engine\n")
+
+  globalThis.fetch = async (url) => {
+    const href = String(url)
+    seen.push(href)
+    if (href === "https://api.ilovepdf.com/v1/auth") return { json: async () => ({ token: "jwt" }) }
+    if (href.includes("/v1/start/")) return { json: async () => ({ server: "worker.ilovepdf.com", task: "task-1" }) }
+    if (href.includes("/v1/upload")) return { json: async () => ({ server_filename: "upload.docx" }) }
+    if (href.includes("/v1/process")) return { json: async () => ({ status: "TaskSuccess" }) }
+    if (href.includes("/v1/download/")) {
+      return { arrayBuffer: async () => pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) }
+    }
+    throw new Error(`unexpected outbound call: ${href}`)
+  }
+
+  return { seen, pdf, restore: () => (globalThis.fetch = original) }
+}
+
+test("API Cloud: /api/ilovepdf/officepdf converts for a signed-out visitor and logs the anonymous use", async () => {
+  const { stubs } = cloudStubs({ user: null })
+  const ledger = []
+  stubs["../server/_lib/providers.ts"].recordApiCall = async (...args) => ledger.push(args)
+
+  // The loader snapshots globalThis.fetch when it compiles the handler, so the
+  // provider flow has to be installed first.
+  const net = stubILovePdfFlow()
+  const handler = loadHandler("api/ilovepdf.ts", stubs, { FormData, Blob })
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    query: { action: "officepdf" },
+    body: {
+      fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
+      fileName: "Letterhead.docx",
+    },
+  })
+
+  try {
+    await handler(req, res)
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res._getData()))
+  assert.equal(res._getData().success, true)
+  assert.equal(res._getData().base64, net.pdf.toString("base64"))
+  assert.ok(net.seen.some((url) => url.includes("/v1/start/officepdf")))
+  assert.deepEqual(ledger, [["ilovepdf", "officepdf", null, "success"]])
+})
+
+test("API Cloud: /api/ilovepdf/officepdf still stops at the quota for a signed-out visitor", async () => {
+  const { stubs } = cloudStubs({ user: null, outOfQuota: true })
+  const net = stubOutboundFetch()
+  const handler = loadHandler("api/ilovepdf.ts", stubs)
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    query: { action: "officepdf" },
+    body: {
+      fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
+      fileName: "Letterhead.docx",
+    },
+  })
+
+  try {
+    await handler(req, res)
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(res.statusCode, 429)
+  assert.equal(res._getData().code, "quota_exhausted")
+  assert.deepEqual(net.seen, [], "the provider is never contacted once the month is spent")
+})
+
 test("API Cloud: the session gate runs before the document is read from the wire", async () => {
   const hooks = {}
   let readCalled = false
