@@ -103,7 +103,15 @@ import {
   X,
 } from "lucide-react"
 
-import type { Tool } from "./config"
+import {
+  converterDirectionLabel,
+  converterGroupFor,
+  converterMemberIds,
+} from "./converterGroups"
+
+import { toolFamilyFor } from "./toolFamilies"
+
+import { tools as allTools, type Tool } from "./config"
 
 import { useNotify } from "./Notifications"
 
@@ -4165,6 +4173,67 @@ export default function ToolPage({
       </div>
       <h1>{tool.name}</h1>
       <p className="page-subtitle">{tool.description}</p>
+
+      {(() => {
+        if (!navigate) return null
+        const memberName = (id: string) =>
+          allTools.find((t) => t.id === id)?.name ?? id
+        const family = toolFamilyFor(tool.id)
+        if (family) {
+          return (
+            <div
+              className="tool-switch"
+              role="group"
+              aria-label={`${family.label} tools`}
+            >
+              {family.members.map((id) => {
+                const active = id === tool.id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={
+                      active ? "tool-switch-option active" : "tool-switch-option"
+                    }
+                    aria-pressed={active}
+                    disabled={active}
+                    onClick={() => navigate(id)}
+                  >
+                    {memberName(id)}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        }
+        const group = converterGroupFor(tool.id)
+        if (!group) return null
+        return (
+          <div
+            className="tool-switch"
+            role="group"
+            aria-label={`${group.label} direction`}
+          >
+            {converterMemberIds(tool.id).map((id) => {
+              const active = id === tool.id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={
+                    active ? "tool-switch-option active" : "tool-switch-option"
+                  }
+                  aria-pressed={active}
+                  disabled={active}
+                  onClick={() => navigate(id)}
+                >
+                  {converterDirectionLabel(memberName(id))}
+                </button>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* --- WORKSPACE SPECIAL VIEWS --- */}
       {["passport-photo", "image-crop", "image-resize"].includes(tool.id) && files[0] ? (
@@ -8279,7 +8348,7 @@ export default function ToolPage({
                           : tool.id === "passport-photo"
                             ? "JPG, PNG, WebP, or AVIF · Up to 25 MB · Processed locally"
                             : tool.id === "word-to-pdf"
-                              ? "Up to 25 MB each · Converted with your document's original fonts and page size"
+                              ? "Up to 25 MB each · Uploaded for original fonts and layout · local fallback available"
                               : currentUser && CLOUD_ROUTED_TOOLS.has(tool.id)
                                 ? "Up to 25 MB each · In-browser, or by a cloud engine when your session is signed in"
                                 : "Up to 25 MB each · Private in-browser processing"}

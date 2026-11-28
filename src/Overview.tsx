@@ -30,6 +30,7 @@ import {
   Zap,
 } from "lucide-react"
 import { tools, brand, type Tool, type Category } from "./config"
+import { catalogTools, type CatalogTool } from "./toolCatalog"
 import ToolBadgeIcon from "./ToolBadgeIcon"
 import MasterfileLogo from "./MasterfileLogo"
 import { isToolPro, getFormattedToolPrice } from "./adminService"
@@ -63,6 +64,49 @@ const overviewTabs: TabCategory[] = [
 ]
 
 const SEARCH_PREVIEW_LIMIT = 6
+
+// Curated tab membership; matched against every id a merged card represents.
+const PDF_ESSENTIAL_IDS = [
+  "merge-pdf",
+  "split-pdf",
+  "organize-pdf",
+  "compress",
+  "rotate-pdf",
+  "page-numbers-pdf",
+  "redact-pdf",
+  "metadata-pdf",
+  "crop-pdf",
+  "flatten-pdf",
+  "watermark",
+  "edit-pdf",
+  "sign-pdf",
+  "password",
+]
+const CONVERT_EXPORT_IDS = [
+  "merge-word",
+  "markdown-pdf",
+  "pdf-to-word",
+  "word-to-pdf",
+  "pdf-to-excel",
+  "excel-to-pdf",
+  "pdf-to-ppt",
+  "ppt-to-pdf",
+  "pdf-to-jpg",
+  "jpg-to-pdf",
+  "convert",
+  "edi-convert",
+  "csv-convert",
+  "batch-convert",
+  "convert-compress",
+]
+const AI_EXTRA_IDS = ["text-pdf", "audio-text"]
+const QR_EXTRA_IDS = [
+  "visitor-pass",
+  "ocr",
+  "zip",
+  "merge-compress",
+  "split-compress",
+]
 
 function HighlightedText({ text, terms }: { text: string; terms: string[] }) {
   return (
@@ -182,13 +226,15 @@ export default function Overview({
     }
   }, [isModalOpen, stagedFile])
 
-  // Persist favorites
-  const toggleFavorite = (toolId: string, e: React.MouseEvent) => {
+  // Persist favorites; merged cards favorite every id they represent so a
+  // previously starred direction still pins the shared card.
+  const toggleFavorite = (tool: CatalogTool, e: React.MouseEvent) => {
     e.stopPropagation()
     setFavorites((prev) => {
-      const updated = prev.includes(toolId)
-        ? prev.filter((id) => id !== toolId)
-        : [...prev, toolId]
+      const members = tool.memberIds
+      const isFav = members.some((id) => prev.includes(id))
+      const rest = prev.filter((id) => !members.includes(id))
+      const updated = isFav ? rest : [...rest, tool.id]
       try {
         localStorage.setItem("masterfilepro-favorites", JSON.stringify(updated))
       } catch {
@@ -587,57 +633,28 @@ export default function Overview({
     handleFileReceived(droppedFiles)
   }
 
-  // Tab-scoped tool list; search ranking runs on top of the active tab
+  // Tab-scoped catalog; merged cards match on any direction/member they cover
   const tabFilteredTools = useMemo(() => {
-    return tools.filter((t) => {
-      if (activeTab === "Favorites") return favorites.includes(t.id)
+    return catalogTools.filter((t) => {
+      if (activeTab === "Favorites") {
+        return t.memberIds.some((id) => favorites.includes(id))
+      }
       if (activeTab === "PDF Essentials") {
-        return [
-          "merge-pdf",
-          "split-pdf",
-          "organize-pdf",
-          "compress",
-          "rotate-pdf",
-          "page-numbers-pdf",
-          "redact-pdf",
-          "metadata-pdf",
-          "crop-pdf",
-          "flatten-pdf",
-          "watermark",
-          "edit-pdf",
-          "sign-pdf",
-          "password",
-        ].includes(t.id)
+        return t.memberIds.some((id) => PDF_ESSENTIAL_IDS.includes(id))
       }
       if (activeTab === "Convert & Export") {
-        return [
-          "merge-word",
-          "markdown-pdf",
-          "pdf-to-word",
-          "word-to-pdf",
-          "pdf-to-excel",
-          "excel-to-pdf",
-          "pdf-to-ppt",
-          "ppt-to-pdf",
-          "pdf-to-jpg",
-          "jpg-to-pdf",
-          "convert",
-          "edi-convert",
-          "csv-convert",
-          "batch-convert",
-          "convert-compress",
-        ].includes(t.id)
+        return t.memberIds.some((id) => CONVERT_EXPORT_IDS.includes(id))
       }
       if (activeTab === "AI & Writing") {
         return (
           t.category === "AI text tools" ||
-          ["text-pdf", "audio-text"].includes(t.id)
+          t.memberIds.some((id) => AI_EXTRA_IDS.includes(id))
         )
       }
       if (activeTab === "QR & Sharing") {
         return (
           t.category === "QR tools" ||
-          ["visitor-pass", "ocr", "zip", "merge-compress", "split-compress"].includes(t.id)
+          t.memberIds.some((id) => QR_EXTRA_IDS.includes(id))
         )
       }
 
@@ -712,60 +729,33 @@ export default function Overview({
   }
 
   // Group tab counts memoized to prevent redundant iterations
-  const tabCounts: Record<TabCategory, number> = useMemo(
-    () => ({
-      All: tools.length,
-      "PDF Essentials": tools.filter((t) =>
-        [
-          "merge-pdf",
-          "split-pdf",
-          "organize-pdf",
-          "compress",
-          "rotate-pdf",
-          "page-numbers-pdf",
-          "redact-pdf",
-          "metadata-pdf",
-          "crop-pdf",
-          "flatten-pdf",
-          "watermark",
-          "edit-pdf",
-          "sign-pdf",
-          "password",
-        ].includes(t.id),
-      ).length,
-      "Convert & Export": tools.filter((t) =>
-        [
-          "merge-word",
-          "markdown-pdf",
-          "pdf-to-word",
-          "word-to-pdf",
-          "pdf-to-excel",
-          "excel-to-pdf",
-          "pdf-to-ppt",
-          "ppt-to-pdf",
-          "pdf-to-jpg",
-          "jpg-to-pdf",
-          "convert",
-          "edi-convert",
-          "csv-convert",
-          "batch-convert",
-          "convert-compress",
-        ].includes(t.id),
-      ).length,
-      "AI & Writing": tools.filter(
+  const tabCounts: Record<TabCategory, number> = useMemo(() => {
+    const count = (
+      predicate: (tool: CatalogTool) => boolean,
+    ) => catalogTools.filter(predicate).length
+    return {
+      All: catalogTools.length,
+      "PDF Essentials": count((t) =>
+        t.memberIds.some((id) => PDF_ESSENTIAL_IDS.includes(id)),
+      ),
+      "Convert & Export": count((t) =>
+        t.memberIds.some((id) => CONVERT_EXPORT_IDS.includes(id)),
+      ),
+      "AI & Writing": count(
         (t) =>
           t.category === "AI text tools" ||
-          ["text-pdf", "audio-text"].includes(t.id),
-      ).length,
-      "QR & Sharing": tools.filter(
+          t.memberIds.some((id) => AI_EXTRA_IDS.includes(id)),
+      ),
+      "QR & Sharing": count(
         (t) =>
           t.category === "QR tools" ||
-          ["visitor-pass", "ocr", "zip", "merge-compress", "split-compress"].includes(t.id),
-      ).length,
-      Favorites: tools.filter((t) => favorites.includes(t.id)).length,
-    }),
-    [favorites],
-  )
+          t.memberIds.some((id) => QR_EXTRA_IDS.includes(id)),
+      ),
+      Favorites: count((t) =>
+        t.memberIds.some((id) => favorites.includes(id)),
+      ),
+    }
+  }, [favorites])
 
   // Interactive 3D Card mouse movement handler throttled with requestAnimationFrame
   const mouseRafRef = useRef<number | null>(null)
@@ -1415,7 +1405,7 @@ export default function Overview({
           }`}
         >
           {filteredTools.map((t) => {
-            const isFav = favorites.includes(t.id)
+            const isFav = t.memberIds.some((id) => favorites.includes(id))
             const colorClass = t.badgeColor
               ? `theme-${t.badgeColor}`
               : "theme-blue"
@@ -1463,7 +1453,7 @@ export default function Overview({
                       )}
                       <button
                         className={`card-fav-btn ${isFav ? "is-fav" : ""}`}
-                        onClick={(e) => toggleFavorite(t.id, e)}
+                        onClick={(e) => toggleFavorite(t, e)}
                         aria-label={
                           isFav ? "Remove from favorites" : "Add to favorites"
                         }
@@ -1479,7 +1469,17 @@ export default function Overview({
 
                   {/* Card Content */}
                   <div className="overview-card-content">
-                    <h3>{t.name}</h3>
+                    <h3>
+                      {t.name}
+                      {t.badge && (
+                        <span
+                          className="converter-card-chip"
+                          title="Choose the tool inside"
+                        >
+                          {t.badge}
+                        </span>
+                      )}
+                    </h3>
                     <p>{t.description}</p>
                   </div>
 

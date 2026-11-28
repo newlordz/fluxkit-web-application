@@ -51,6 +51,19 @@ import {
   type Tool,
 } from "./config"
 
+import {
+  converterGroupFor,
+  converterMemberIds,
+  isConverterTail,
+  type ConverterGroup,
+} from "./converterGroups"
+import {
+  familyMemberIds,
+  isFamilyTail,
+  toolFamilyFor,
+  type ToolFamily,
+} from "./toolFamilies"
+
 import MasterfileLogo from "./MasterfileLogo"
 
 import AuthPage, { type AuthPageMode } from "./AuthPage"
@@ -204,12 +217,20 @@ function ToolCard({
   navigate,
 
   currentUser,
+
+  converter,
+
+  family,
 }: {
   tool: Tool
 
   navigate: (id: string) => void
 
   currentUser: UserAccount | null
+
+  converter?: ConverterGroup
+
+  family?: ToolFamily
 }) {
   const payStatus = getToolPaymentStatus(tool.id, currentUser)
 
@@ -240,8 +261,20 @@ function ToolCard({
         />
         <ArrowUpRight className="card-arrow" size={19} />
       </div>
-      <h3>{tool.name}</h3>
-      <p>{tool.description}</p>
+      <h3>
+        {converter?.label ?? family?.label ?? tool.name}
+        {converter && (
+          <span className="converter-card-chip" title="Choose the direction inside">
+            2-WAY
+          </span>
+        )}
+        {family && (
+          <span className="converter-card-chip" title="Choose the tool inside">
+            {family.members.length} TOOLS
+          </span>
+        )}
+      </h3>
+      <p>{converter?.description ?? family?.description ?? tool.description}</p>
       <span className="tool-card-bottom">
         <span className="tool-card-category">{tool.category}</span>
         <span
@@ -997,19 +1030,37 @@ export default function App() {
             ? "Audio tools"
             : undefined
 
+  // Mirrored directions and related-tool families share their head card; every
+  // member keeps its own route, so search still lands on the right tool.
+  const catalogTools = useMemo(
+    () => tools.filter((t) => !isConverterTail(t.id) && !isFamilyTail(t.id)),
+    [],
+  )
+  const toolsById = useMemo(
+    () => new Map(tools.map((t) => [t.id, t])),
+    [],
+  )
+
   const filtered = useMemo(
     () =>
-      tools.filter(
+      catalogTools.filter(
         (t) =>
           (category
             ? t.category === category
             : filter === "All tools" || t.category === filter) &&
-          `${t.name} ${t.description}`
+          [
+            t.name,
+            t.description,
+            ...[...converterMemberIds(t.id), ...familyMemberIds(t.id)].map(
+              (id) => toolsById.get(id)?.name ?? "",
+            ),
+          ]
+            .join(" ")
             .toLowerCase()
             .includes(query.toLowerCase()),
       ),
 
-    [category, filter, query],
+    [catalogTools, toolsById, category, filter, query],
   )
 
   const activityContent = (
@@ -1260,7 +1311,7 @@ export default function App() {
                 key={n.id}
                 aria-label={
                   n.id === "all"
-                    ? `${n.name} ${tools.length}`
+                    ? `${n.name} ${catalogTools.length}`
                     : n.id === "ai"
                       ? `${n.name} NEW`
                       : n.name
@@ -1273,7 +1324,7 @@ export default function App() {
                     the aria-label; without it axe reports label-content-name-mismatch. */}
                 <n.icon size={18} />
                 <span>{n.name}</span>{" "}
-                {n.id === "all" && <small>{tools.length}</small>}
+                {n.id === "all" && <small>{catalogTools.length}</small>}
                 {n.id === "ai" && <span className="new-label">NEW</span>}
               </button>
             ))}
@@ -1825,6 +1876,8 @@ export default function App() {
                     tool={t}
                     navigate={navigate}
                     currentUser={currentUser}
+                    converter={converterGroupFor(t.id)}
+                    family={toolFamilyFor(t.id)}
                   />
                 ))}
               </div>
