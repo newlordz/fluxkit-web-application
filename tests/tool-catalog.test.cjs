@@ -43,9 +43,9 @@ const { tools } = loadSource("config")
 const entries = catalog.catalogTools
 
 test("the catalog exposes one card per merged group and standalone tool", () => {
-  assert.equal(entries.length, 49)
-  assert.equal(new Set(entries.map((entry) => entry.id)).size, 49)
-  assert.equal(entries.filter((entry) => entry.badge).length, 7)
+  assert.equal(entries.length, 45)
+  assert.equal(new Set(entries.map((entry) => entry.id)).size, 45)
+  assert.equal(entries.filter((entry) => entry.badge).length, 8)
 })
 
 test("merged cards carry their group label, blurb and badge", () => {
@@ -68,6 +68,18 @@ test("merged cards carry their group label, blurb and badge", () => {
     Array.from(image.memberIds),
     ["image-crop", "image-resize", "passport-photo"],
   )
+
+  const qr = entries.find((entry) => entry.id === "qr-scanner")
+  assert.equal(qr.name, "QR Codes & Passes")
+  assert.equal(qr.badge, "5 TOOLS")
+  assert.deepEqual(
+    Array.from(qr.memberIds),
+    ["qr-scanner", "qr-vcard", "qr-event", "qr-batch", "visitor-pass"],
+  )
+
+  const studio = entries.find((entry) => entry.id === "qr")
+  assert.equal(studio.name, "QR Code Studio")
+  assert.equal(studio.badge, undefined)
 })
 
 test("standalone tools keep their own name and members", () => {
@@ -85,5 +97,8 @@ test("every tool id maps to a visible catalog card", () => {
   assert.equal(catalog.catalogIdFor("word-to-pdf"), "pdf-to-word")
   assert.equal(catalog.catalogIdFor("merge-word"), "merge-pdf")
   assert.equal(catalog.catalogIdFor("passport-photo"), "image-crop")
+  assert.equal(catalog.catalogIdFor("qr-vcard"), "qr-scanner")
+  assert.equal(catalog.catalogIdFor("visitor-pass"), "qr-scanner")
+  assert.equal(catalog.catalogIdFor("qr"), "qr")
   assert.equal(catalog.catalogIdFor("compress"), "compress")
 })

@@ -33,6 +33,13 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
       "Crop, resize, or turn a photo into a passport-ready ID picture — all processed on this device.",
     members: ["image-crop", "image-resize", "passport-photo"],
   },
+  {
+    id: "qr-tools",
+    label: "QR Codes & Passes",
+    description:
+      "Scan a code, or create contact, event, visitor-pass, and batch QR codes — five tools in one workspace.",
+    members: ["qr-scanner", "qr-vcard", "qr-event", "qr-batch", "visitor-pass"],
+  },
 ]
 
 const FAMILY_BY_MEMBER = new Map<string, ToolFamily>()

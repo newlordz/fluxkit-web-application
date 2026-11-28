@@ -44,7 +44,7 @@ const { tools } = loadSource("config")
 const toolById = new Map(tools.map((tool) => [tool.id, tool]))
 
 test("every tool family points at real, available tools with a known head", () => {
-  assert.equal(families.TOOL_FAMILIES.length, 3)
+  assert.equal(families.TOOL_FAMILIES.length, 4)
   for (const family of families.TOOL_FAMILIES) {
     assert.ok(family.members.length >= 2, family.id)
     for (const id of family.members) {
@@ -87,7 +87,7 @@ test("merged catalog hides one card per family member after the head", () => {
     converters.CONVERTER_GROUPS.length +
       families.TOOL_FAMILIES.reduce((sum, family) => sum + family.members.length - 1, 0),
   )
-  assert.equal(heads, 49)
+  assert.equal(heads, 45)
   for (const family of families.TOOL_FAMILIES) {
     assert.ok(!hidden.some((tool) => tool.id === family.members[0]), family.id)
   }
