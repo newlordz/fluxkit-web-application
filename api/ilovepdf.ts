@@ -1,6 +1,8 @@
+import crypto from "node:crypto"
 import { cors } from "../server/_lib/db.ts"
 import { requireActiveUser, type AuthUser } from "../server/_lib/auth.ts"
 import {
+  countApiUsage,
   getILovePdfCredentials,
   isProviderOutOfQuota,
   recordApiCall,
@@ -13,6 +15,30 @@ const EXPECTED_MEMBER: Record<string, string[]> = {
   pdfppt: [".pptx", ".ppt"],
   compress: [".pdf"],
   officepdf: [".pdf"],
+}
+
+// A visitor converting a few documents in a day is ordinary use; a burst is what
+// drains the free 250/month before real visitors get their fonts back.
+const DEFAULT_ANONYMOUS_DAILY_LIMIT = 3
+
+function configuredLimit(name: string, fallback: number): number {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+}
+
+/**
+ * Anonymous spend is attributed to a keyed hash of the visitor's address, never
+ * the address itself, so a day's conversions can be counted per visitor without
+ * the ledger holding who they are.
+ */
+function anonymousVisitorKey(req: any): string {
+  const forwarded = req.headers?.["x-vercel-forwarded-for"] || req.headers?.["x-forwarded-for"]
+  const address = String(forwarded || req.socket?.remoteAddress || "unknown").split(",")[0].trim()
+  const digest = crypto
+    .createHmac("sha256", process.env.SUPABASE_DB_URL || "masterfilepro-anonymous-conversions")
+    .update(address)
+    .digest("hex")
+  return `anon:${digest.slice(0, 32)}`
 }
 
 function mimeOf(name: string): string {
@@ -119,9 +145,32 @@ export default async function handler(req: any, res: any) {
   // which the in-page renderer cannot, so they stay open to signed-out visitors.
   // The provider quota still bounds the spend; the client falls back when full.
   let actor: AuthUser | null = null
+  let ledgerUserId: string | null = null
   if (action === "officepdf") {
     try {
       actor = await requireActiveUser(req)
+      if (!actor) {
+        // Signed-out visitors share one free monthly quota, so each address gets a
+        // small daily allowance. Checked before the upload is buffered so a refused
+        // visitor never costs the invocation a 34 MB body.
+        ledgerUserId = anonymousVisitorKey(req)
+        const dayStart = new Date()
+        dayStart.setUTCHours(0, 0, 0, 0)
+        const visitorCalls = await countApiUsage("ilovepdf", {
+          since: dayStart,
+          userId: ledgerUserId,
+        })
+        if (visitorCalls >= configuredLimit("ILOVEPDF_ANONYMOUS_DAILY_LIMIT", DEFAULT_ANONYMOUS_DAILY_LIMIT)) {
+          res.status?.(429)?.json?.({
+            ok: false,
+            error:
+              "You've reached today's free cloud conversions. Your file can still be converted on this device.",
+            code: "daily_visitor_limit",
+          }) ||
+            res.end?.(JSON.stringify({ ok: false, code: "daily_visitor_limit" }))
+          return
+        }
+      }
       if (await isProviderOutOfQuota("ilovepdf")) {
         res.status?.(429)?.json?.({
           ok: false,
@@ -272,7 +321,8 @@ export default async function handler(req: any, res: any) {
     const resultBuffer = await unwrapMember(await downloadRes.arrayBuffer(), tool)
 
     // Append-only usage ledger; monthly totals derive from this, never a stored counter.
-    await recordApiCall("ilovepdf", tool, actor?.id ?? null, "success")
+    // A signed-out job is attributed to the visitor key so the daily cap can count it.
+    await recordApiCall("ilovepdf", tool, actor?.id ?? ledgerUserId, "success")
 
     const resultBase64 = resultBuffer.toString("base64")
     const responsePayload = {

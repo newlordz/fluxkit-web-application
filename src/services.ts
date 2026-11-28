@@ -6822,13 +6822,19 @@ async function cloudWordConversion(
         }
       }
     } else {
-      recordApiOutcome(iloveApi.id, {
-        success: false,
+      // A visitor who used up their own daily allowance has not exhausted the
+      // engine, so this 429 must not mark the provider dead for this browser.
+      const refusal = await response.json().catch(() => null)
 
-        statusCode: response.status,
+      if (refusal?.code !== "daily_visitor_limit") {
+        recordApiOutcome(iloveApi.id, {
+          success: false,
 
-        errorMessage: `iLovePDF officepdf returned ${response.status}`,
-      })
+          statusCode: response.status,
+
+          errorMessage: `iLovePDF officepdf returned ${response.status}`,
+        })
+      }
     }
   } catch (cloudErr) {
     ensureNotCancelled(options.signal)
@@ -7684,13 +7690,18 @@ async function cloudDeckRescue(
             }
           }
         } else {
-          recordApiOutcome(iloveApi.id, {
-            success: false,
+          // The daily allowance is per visitor, not a dead engine.
+          const refusal = await response.json().catch(() => null)
 
-            statusCode: response.status,
+          if (refusal?.code !== "daily_visitor_limit") {
+            recordApiOutcome(iloveApi.id, {
+              success: false,
 
-            errorMessage: `iLovePDF officepdf returned ${response.status}`,
-          })
+              statusCode: response.status,
+
+              errorMessage: `iLovePDF officepdf returned ${response.status}`,
+            })
+          }
         }
       } catch (iloveErr) {
         ensureNotCancelled(options?.signal)

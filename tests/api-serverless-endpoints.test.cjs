@@ -801,8 +801,9 @@ const MEMBER = {
   unlocked_tools: [],
 }
 
-function cloudStubs({ user = null, outOfQuota = false, hooks = {} } = {}) {
+function cloudStubs({ user = null, outOfQuota = false, hooks = {}, anonymousCalls = 0 } = {}) {
   const s = createStubs({ admin: user })
+  const usageChecks = []
 
   const baseReadBody = s.db.readBody
   s.db.readBody = async (req, maxBytes) => {
@@ -812,11 +813,17 @@ function cloudStubs({ user = null, outOfQuota = false, hooks = {} } = {}) {
 
   return {
     s,
+    usageChecks,
     stubs: {
       "../server/_lib/db.ts": s.db,
       "../server/_lib/auth.ts": s.auth,
       "../server/_lib/providers.ts": {
         ...s.providers,
+        countApiUsage: async (_provider, options) => {
+          usageChecks.push(options)
+          // Signed-in callers are identified by a user id; anonymous ones by a key.
+          return options.userId ? anonymousCalls : 0
+        },
         getAdobeCredentials: async () => ({ clientId: "client_id", clientSecret: "client_secret" }),
         getILovePdfCredentials: async () => ({ publicKey: "public_key", secretKey: "secret_key" }),
         isProviderOutOfQuota: async () => outOfQuota,
@@ -911,6 +918,7 @@ test("API Cloud: /api/ilovepdf/officepdf converts for a signed-out visitor and l
   const { req, res } = createMockReqRes({
     method: "POST",
     query: { action: "officepdf" },
+    headers: { "x-forwarded-for": "203.0.113.42" },
     body: {
       fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
       fileName: "Letterhead.docx",
@@ -927,7 +935,79 @@ test("API Cloud: /api/ilovepdf/officepdf converts for a signed-out visitor and l
   assert.equal(res._getData().success, true)
   assert.equal(res._getData().base64, net.pdf.toString("base64"))
   assert.ok(net.seen.some((url) => url.includes("/v1/start/officepdf")))
-  assert.deepEqual(ledger, [["ilovepdf", "officepdf", null, "success"]])
+
+  // The ledger row is attributed to a keyed visitor hash, never the raw address.
+  assert.equal(ledger.length, 1)
+  const [provider, tool, ledgerUserId, status] = ledger[0]
+  assert.deepEqual([provider, tool, status], ["ilovepdf", "officepdf", "success"])
+  assert.match(ledgerUserId, /^anon:[a-f0-9]{32}$/)
+  assert.ok(!ledgerUserId.includes("203.0.113.42"), "the address itself is never stored")
+})
+
+test("API Cloud: a signed-out visitor at the daily cap is refused before the upload is read", async () => {
+  const { stubs, usageChecks } = cloudStubs({ user: null, anonymousCalls: 3 })
+  let readCalled = false
+  const base = stubs["../server/_lib/db.ts"].readBody
+  stubs["../server/_lib/db.ts"].readBody = async (req, maxBytes) => {
+    readCalled = true
+    return base(req, maxBytes)
+  }
+
+  const net = stubOutboundFetch()
+  const handler = loadHandler("api/ilovepdf.ts", stubs, { FormData, Blob })
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    query: { action: "officepdf" },
+    headers: { "x-forwarded-for": "203.0.113.42" },
+    body: {
+      fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
+      fileName: "Letterhead.docx",
+    },
+  })
+
+  try {
+    await handler(req, res)
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(res.statusCode, 429)
+  assert.equal(res._getData().code, "daily_visitor_limit")
+  assert.equal(readCalled, false, "a capped visitor never costs a 34 MB body read")
+  assert.deepEqual(net.seen, [], "the provider is never contacted once the day is spent")
+
+  // The count is per visitor and per UTC day, not the shared monthly quota.
+  assert.equal(usageChecks.length, 1)
+  assert.match(usageChecks[0].userId, /^anon:[a-f0-9]{32}$/)
+  assert.equal(usageChecks[0].since.toISOString().slice(11), "00:00:00.000Z")
+})
+
+test("API Cloud: a signed-in member is not counted against the anonymous daily cap", async () => {
+  const { stubs, usageChecks } = cloudStubs({ user: MEMBER })
+  const ledger = []
+  stubs["../server/_lib/providers.ts"].recordApiCall = async (...args) => ledger.push(args)
+
+  const net = stubILovePdfFlow()
+  const handler = loadHandler("api/ilovepdf.ts", stubs, { FormData, Blob })
+  const { req, res } = createMockReqRes({
+    method: "POST",
+    query: { action: "officepdf" },
+    headers: { "x-forwarded-for": "203.0.113.42" },
+    body: {
+      fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
+      fileName: "Letterhead.docx",
+    },
+  })
+
+  try {
+    await handler(req, res)
+  } finally {
+    net.restore()
+  }
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res._getData()))
+  assert.deepEqual(usageChecks, [], "the visitor cap is only asked about signed-out jobs")
+  assert.deepEqual(ledger, [["ilovepdf", "officepdf", MEMBER.id, "success"]])
 })
 
 test("API Cloud: /api/ilovepdf/officepdf still stops at the quota for a signed-out visitor", async () => {
@@ -937,6 +1017,7 @@ test("API Cloud: /api/ilovepdf/officepdf still stops at the quota for a signed-o
   const { req, res } = createMockReqRes({
     method: "POST",
     query: { action: "officepdf" },
+    headers: { "x-forwarded-for": "203.0.113.42" },
     body: {
       fileBase64: Buffer.from("PK\u0003\u0004 an office document").toString("base64"),
       fileName: "Letterhead.docx",

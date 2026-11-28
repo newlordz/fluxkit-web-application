@@ -43,7 +43,7 @@ function loadServices(session) {
   return mod.exports
 }
 
-function withBrowserGlobals(fetchImpl) {
+function withBrowserGlobals(fetchImpl, outcomes = []) {
   const previousWindow = globalThis.window
   const previousFetch = globalThis.fetch
 
@@ -63,7 +63,7 @@ function withBrowserGlobals(fetchImpl) {
       // The Word path must skip Adobe and ask for iLovePDF specifically.
       getNextAvailableApi: (_category, excluded = []) =>
         excluded.includes(ilove.id) ? null : ilove,
-      recordApiOutcome: () => {},
+      recordApiOutcome: (id, result) => outcomes.push([id, result]),
     },
   }
   globalThis.fetch = fetchImpl
@@ -210,6 +210,67 @@ test("wordToPDF: signed-out visitors still get their document's own fonts and pa
     const doc = await PDFDocument.load(out)
     assert.equal(Math.round(doc.getPage(0).getSize().width), 595)
     assert.equal(Math.round(doc.getPage(0).getSize().height), 842)
+  } finally {
+    restore()
+  }
+})
+
+test("wordToPDF: a spent daily allowance falls back locally without retiring the engine", async () => {
+  const outcomes = []
+  const requests = []
+
+  const restore = withBrowserGlobals(async (url, init) => {
+    requests.push({ url: String(url), init })
+    return new Response(
+      JSON.stringify({ ok: false, error: "Today's free cloud conversions are used up.", code: "daily_visitor_limit" }),
+      { status: 429, headers: { "Content-Type": "application/json" } },
+    )
+  }, outcomes)
+
+  try {
+    const services = loadServices({
+      getSessionToken: () => null,
+      authHeaders: () => ({}),
+    })
+
+    const res = await services.wordToPDF(buildA4Docx(services))
+
+    assert.equal(requests.length, 1)
+
+    // The visitor is capped, not the provider: nothing is recorded against it, so
+    // tomorrow's first conversion still reaches the Office engine.
+    assert.deepEqual(outcomes, [])
+
+    const local = Buffer.from(await res.blob.arrayBuffer())
+    assert.equal(local.subarray(0, 5).toString("latin1"), "%PDF-")
+    const doc = await PDFDocument.load(local)
+    assert.equal(doc.getPage(0).getSize().width, 612)
+  } finally {
+    restore()
+  }
+})
+
+test("wordToPDF: any other refusal still counts as an engine failure", async () => {
+  const outcomes = []
+
+  const restore = withBrowserGlobals(async () => {
+    return new Response(JSON.stringify({ error: "quota_exhausted" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    })
+  }, outcomes)
+
+  try {
+    const services = loadServices({
+      getSessionToken: () => null,
+      authHeaders: () => ({}),
+    })
+
+    await services.wordToPDF(buildA4Docx(services))
+
+    assert.equal(outcomes.length, 1)
+    assert.equal(outcomes[0][1].success, false)
+    assert.equal(outcomes[0][1].statusCode, 429)
   } finally {
     restore()
   }
